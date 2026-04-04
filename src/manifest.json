@@ -1,0 +1,72 @@
+{
+    "manifest_version": 3,
+    "name": "__EXT_NAME__",
+    "version": "1.1.0",
+    "description": "__EXT_DESC__",
+    "author": "Huỳnh Trung Anh",
+    "permissions": [
+        "activeTab",
+        "storage"
+    ],
+    "host_permissions": [
+        "*://*.vncare.vn/*"
+    ],
+    "action": {
+        "default_popup": "popup/popup.html",
+        "default_icon": {
+            "16": "assets/icons/icon16.png",
+            "48": "assets/icons/icon48.png",
+            "128": "assets/icons/icon128.png"
+        },
+        "default_title": "__EXT_DESC__"
+    },
+    "icons": {
+        "16": "assets/icons/icon16.png",
+        "48": "assets/icons/icon48.png",
+        "128": "assets/icons/icon128.png"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.vncare.vn/*"
+            ],
+            "js": [
+                "shared/constants.js",
+                "shared/logger.js",
+                "shared/utils.js",
+                "shared/storage.js",
+                "shared/his-core.js",
+                "shared/his-selectors.js",
+                "shared/patient-lock.js",
+                "shared/message.js",
+                "shared/fill-tracker.js",
+                "shared/ui-components.js",
+                "content/constants.js",
+                "content/infusion-reader.js",
+                "content/infusion-filler.js",
+                "content/caresheet-config.js",
+                "content/caresheet-filler.js",
+                "content/caresheet-ui.js",
+                "content/ui-panel.js",
+                "content/content.js"
+            ],
+            "css": [
+                "shared/styles/his-base.css",
+                "styles/nurse-panel.css"
+            ],
+            "run_at": "document_end",
+            "all_frames": true
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "injected/his-bridge.js",
+                "assets/icons/*"
+            ],
+            "matches": [
+                "*://*.vncare.vn/*"
+            ]
+        }
+    ]
+}

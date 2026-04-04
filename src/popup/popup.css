@@ -1,0 +1,312 @@
+/*
+ * __EXT_EMOJI__ __EXT_NAME__ — Popup CSS
+ * Giao diện ấm áp, gradient hồng-tím, micro-animations
+ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Quicksand', 'Segoe UI', Tahoma, sans-serif;
+    background: linear-gradient(135deg, #fce4ec 0%, #f3e5f5 100%);
+    min-width: 340px;
+    max-width: 400px;
+}
+
+.popup-container {
+    padding: 0;
+}
+
+/* ==========================================
+   HEADER
+   ========================================== */
+.popup-header {
+    background: linear-gradient(135deg, #e91e63, #9c27b0, #7b1fa2);
+    color: white;
+    padding: 20px 16px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.popup-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    animation: popup-shimmer 4s ease-in-out infinite;
+}
+
+@keyframes popup-shimmer {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(180deg); }
+}
+
+.header-blossom {
+    font-size: 36px;
+    margin-bottom: 8px;
+    animation: blossom-float 3s ease-in-out infinite;
+    position: relative;
+}
+
+@keyframes blossom-float {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-8px) rotate(10deg); }
+}
+
+.header-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    position: relative;
+}
+
+.header-subtitle {
+    font-size: 12px;
+    opacity: 0.85;
+    font-weight: 500;
+    position: relative;
+}
+
+/* ==========================================
+   THANK CARD
+   ========================================== */
+.thank-card {
+    margin: 16px;
+    padding: 14px;
+    background: white;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 12px rgba(233, 30, 99, 0.1);
+    border: 1px solid rgba(233, 30, 99, 0.08);
+    animation: thank-glow 3s ease-in-out infinite;
+}
+
+@keyframes thank-glow {
+    0%, 100% { box-shadow: 0 2px 12px rgba(233, 30, 99, 0.1); }
+    50% { box-shadow: 0 4px 20px rgba(233, 30, 99, 0.2); }
+}
+
+.thank-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+}
+
+.thank-text {
+    font-size: 12px;
+    color: #880e4f;
+    line-height: 1.5;
+    font-weight: 500;
+    font-style: italic;
+}
+
+/* ==========================================
+   STATS
+   ========================================== */
+.stats-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 0 16px;
+    margin-bottom: 16px;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    border: 1px solid rgba(233, 30, 99, 0.08);
+    transition: transform 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.stat-number {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #e91e63, #9c27b0);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.2;
+}
+
+.stat-label {
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+/* ==========================================
+   SETTINGS
+   ========================================== */
+.settings-section {
+    padding: 0 16px;
+    margin-bottom: 16px;
+}
+
+.section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #4a148c;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid rgba(156, 39, 176, 0.15);
+}
+
+.setting-row {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.setting-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 4px;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: #ccc;
+    border-radius: 24px;
+    transition: 0.3s;
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: linear-gradient(135deg, #e91e63, #9c27b0);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(20px);
+}
+
+.setting-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.setting-input {
+    padding: 8px 12px;
+    border: 1.5px solid rgba(233, 30, 99, 0.2);
+    border-radius: 8px;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    width: 100px;
+}
+
+.setting-input:focus {
+    border-color: #e91e63;
+    box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.1);
+}
+
+.setting-input-full {
+    width: 100%;
+}
+
+.setting-unit {
+    font-size: 12px;
+    color: #888;
+    white-space: nowrap;
+}
+
+.btn-save {
+    width: 100%;
+    padding: 10px;
+    background: linear-gradient(135deg, #e91e63, #9c27b0);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Quicksand', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 6px;
+}
+
+.btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(233, 30, 99, 0.3);
+}
+
+.btn-save:active {
+    transform: translateY(0);
+}
+
+/* ==========================================
+   FOOTER
+   ========================================== */
+.popup-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    font-size: 11px;
+    color: #ad1457;
+    border-top: 1px solid rgba(233, 30, 99, 0.1);
+    background: rgba(255,255,255,0.5);
+}
+
+.footer-flower {
+    animation: footer-sway 2s ease-in-out infinite;
+}
+
+.footer-flower:last-child {
+    animation-delay: 1s;
+}
+
+@keyframes footer-sway {
+    0%, 100% { transform: rotate(-5deg); }
+    50% { transform: rotate(5deg); }
+}

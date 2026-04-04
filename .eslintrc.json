@@ -1,0 +1,26 @@
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "webextensions": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": 12,
+    "sourceType": "module"
+  },
+  "globals": {
+    "QuyenInfusionFiller": "readonly",
+    "QuyenCareSheetUI": "readonly",
+    "QuyenCareSheetFiller": "readonly",
+    "QuyenLog": "readonly"
+  },
+  "rules": {
+    "no-var": "off",
+    "prefer-const": "off",
+    "no-empty": "warn",
+    "no-useless-escape": "warn",
+    "no-prototype-builtins": "warn",
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }]
+  }
+}

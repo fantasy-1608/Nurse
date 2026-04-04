@@ -1,0 +1,363 @@
+/*
+ * 🏥 HIS Shared — Base CSS
+ * Styles dùng chung cho tất cả Chrome Extension VNPT HIS
+ * 
+ * Sử dụng CSS custom properties (variables) để mỗi extension
+ * có thể override màu sắc theo theme riêng.
+ * 
+ * VD trong extension Nurse:
+ *   :root { --his-primary: #ec4899; --his-emoji: '__EXT_EMOJI__'; }
+ */
+
+/* ==========================================
+   CSS VARIABLES — Override trong từng extension
+   ========================================== */
+:root {
+    --his-primary: #3b82f6;
+    --his-primary-hover: #2563eb;
+    --his-success: #10b981;
+    --his-error: #ef4444;
+    --his-warning: #f59e0b;
+    --his-info: #3b82f6;
+    --his-text: #1e293b;
+    --his-text-light: #64748b;
+    --his-bg: #ffffff;
+    --his-bg-secondary: #f8fafc;
+    --his-border: #e2e8f0;
+    --his-radius: 12px;
+    --his-radius-sm: 8px;
+    --his-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+    --his-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+    --his-font: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    --his-panel-width: 340px;
+}
+
+/* ==========================================
+   PANEL — Floating panel chung
+   ========================================== */
+[id$="-panel"] {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: var(--his-panel-width);
+    max-height: 85vh;
+    background: var(--his-bg);
+    border-radius: var(--his-radius);
+    box-shadow: var(--his-shadow);
+    font-family: var(--his-font);
+    font-size: 13px;
+    color: var(--his-text);
+    z-index: 9400;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    border: 1px solid var(--his-border);
+}
+
+/* ==========================================
+   PANEL HEADER
+   ========================================== */
+[class$="-panel-header"] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, var(--his-primary), var(--his-primary-hover));
+    color: white;
+    cursor: move;
+    user-select: none;
+}
+
+[class$="-header-left"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+[class$="-logo"] {
+    font-size: 18px;
+}
+
+[class$="-title"] {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+[class$="-header-right"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+[class$="-stats"] {
+    font-size: 11px;
+    opacity: 0.9;
+}
+
+/* ==========================================
+   MINIMIZE BUTTON
+   ========================================== */
+[class$="-btn-minimize"] {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+[class$="-btn-minimize"]:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+/* ==========================================
+   TAB BAR
+   ========================================== */
+[class$="-tab-bar"] {
+    display: flex;
+    background: var(--his-bg-secondary);
+    border-bottom: 1px solid var(--his-border);
+}
+
+[class$="-tab"] {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--his-text-light);
+    transition: all 0.2s;
+    border-bottom: 2px solid transparent;
+}
+
+[class$="-tab"]:hover {
+    color: var(--his-primary);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+[class$="-tab-active"] {
+    color: var(--his-primary) !important;
+    border-bottom-color: var(--his-primary) !important;
+    background: var(--his-bg) !important;
+}
+
+/* ==========================================
+   TAB CONTENT
+   ========================================== */
+[class$="-tab-content"] {
+    display: none;
+}
+
+[class$="-tab-content-active"] {
+    display: block !important;
+}
+
+/* ==========================================
+   PANEL BODY
+   ========================================== */
+[class$="-panel-body"] {
+    overflow-y: auto;
+    max-height: calc(85vh - 100px);
+}
+
+/* ==========================================
+   BUTTONS
+   ========================================== */
+[class*="-btn"] {
+    font-family: var(--his-font);
+}
+
+[class$="-btn-fill"], [class$="-btn-fill-all"] {
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--his-radius-sm);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+[class$="-btn-fill"] {
+    background: var(--his-primary);
+    color: white;
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+[class$="-btn-fill"]:hover {
+    background: var(--his-primary-hover);
+    transform: translateY(-1px);
+}
+
+[class$="-btn-fill-all"] {
+    width: 100%;
+    background: linear-gradient(135deg, var(--his-primary), var(--his-primary-hover));
+    color: white;
+}
+
+[class$="-btn-fill-all"]:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: var(--his-shadow-sm);
+}
+
+[class$="-btn-fill-all"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+[class$="-btn-done"] {
+    background: var(--his-success) !important;
+}
+
+/* ==========================================
+   CARD
+   ========================================== */
+[class$="-drug-card"] {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--his-border);
+    gap: 8px;
+    transition: background 0.15s;
+}
+
+[class$="-drug-card"]:hover {
+    background: var(--his-bg-secondary);
+}
+
+[class$="-drug-name"] {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--his-text);
+    margin-bottom: 4px;
+}
+
+[class$="-drug-details"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+[class$="-detail"] {
+    font-size: 11px;
+    color: var(--his-text-light);
+}
+
+[class$="-badge"] {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+[class$="-badge-iv"] {
+    background: rgba(236, 72, 153, 0.1);
+    color: #ec4899;
+}
+
+/* ==========================================
+   TOAST
+   ========================================== */
+[class$="-toast-container"] {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9600;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+/* ==========================================
+   MISC
+   ========================================== */
+[class$="-empty"] {
+    text-align: center;
+    padding: 20px;
+    color: var(--his-text-light);
+    font-size: 13px;
+}
+
+[class$="-section-title"] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--his-text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--his-border);
+}
+
+[class$="-footer"] {
+    padding: 8px 12px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--his-text-light);
+    border-top: 1px solid var(--his-border);
+    background: var(--his-bg-secondary);
+}
+
+[class$="-actions"] {
+    padding: 10px 12px;
+}
+
+/* ==========================================
+   ANIMATIONS
+   ========================================== */
+[class$="-fade-in"] {
+    animation: hisFadeIn 0.3s ease;
+}
+
+@keyframes hisFadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+[class$="-btn-refresh"] {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px;
+    opacity: 0.7;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+[class$="-btn-refresh"]:hover {
+    opacity: 1;
+    transform: rotate(180deg);
+}
+
+/* ==========================================
+   SCROLLBAR
+   ========================================== */
+[class$="-panel-body"]::-webkit-scrollbar {
+    width: 4px;
+}
+
+[class$="-panel-body"]::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+[class$="-panel-body"]::-webkit-scrollbar-thumb {
+    background: var(--his-border);
+    border-radius: 2px;
+}
+
+[class$="-panel-body"]::-webkit-scrollbar-thumb:hover {
+    background: var(--his-text-light);
+}
