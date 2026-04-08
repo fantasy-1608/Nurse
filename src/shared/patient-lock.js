@@ -328,16 +328,16 @@ HIS.PatientLock = (function () {
                 let careName = '', careDob = '', careGender = '';
                 let infName = '', infDob = '', infHsba = '';
 
-                // Pattern 1: Care sheet title — "HIS-Thêm phiếu (TRẦN THỊ NHƯ Ý/ 2001/ Nữ)"
+                // Pattern 1: Care sheet title / Infusion title — "HIS-Thêm phiếu (TRẦN THỊ NHƯ Ý/ 2001/ Nữ)" hoặc "Tạo Phiếu truyền dịch (TRẦN THANH NHÂN/ 1978/ )"
                 const walker = doc.createTreeWalker(doc.body || doc, NodeFilter.SHOW_TEXT);
                 while (walker.nextNode()) {
                     const text = walker.currentNode.textContent || '';
 
-                    const csMatch = text.match(/HIS[^(]*\(([^/)]+)\s*\/\s*([^/)]+)?\s*\/\s*([^/)]+)?\)/);
+                    const csMatch = text.match(/(?:HIS|Tạo Phiếu)[^(]*\(([^/)]+)\s*\/\s*([^/)]+)?\s*\//i);
                     if (csMatch && !careName) {
                         careName = (csMatch[1] || '').trim();
                         careDob = (csMatch[2] || '').trim();
-                        careGender = (csMatch[3] || '').trim();
+                        // careGender không trích xuất từ regex mới này vì ít quan trọng và hay thiếu
                     }
 
                     // Pattern 2: Infusion header — "2603171231 | NGUYỄN THỊ MỸ LỆ | 01/01/1963"
@@ -421,12 +421,16 @@ HIS.PatientLock = (function () {
         try {
             const iframes = document.querySelectorAll('iframe');
             for (let i = 0; i < iframes.length; i++) {
+                // Bỏ qua iframe ẩn (background tabs)
+                if (iframes[i].offsetParent === null) continue;
+
                 try {
                     const iDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
                     if (iDoc) {
                         docs.push(iDoc);
                         const subIframes = iDoc.querySelectorAll('iframe');
                         for (let j = 0; j < subIframes.length; j++) {
+                            if (subIframes[j].offsetParent === null) continue;
                             try {
                                 const sDoc = subIframes[j].contentDocument || subIframes[j].contentWindow.document;
                                 if (sDoc) docs.push(sDoc);
