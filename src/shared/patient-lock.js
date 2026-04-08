@@ -421,8 +421,9 @@ HIS.PatientLock = (function () {
         try {
             const iframes = document.querySelectorAll('iframe');
             for (let i = 0; i < iframes.length; i++) {
-                // Bỏ qua iframe ẩn (background tabs)
-                if (iframes[i].offsetParent === null) continue;
+                // Bỏ qua iframe ẩn (background tabs) - Cập nhật cách bắt vị trí cực mạnh
+                const rect = iframes[i].getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0 || iframes[i].style.visibility === 'hidden' || iframes[i].style.display === 'none') continue;
 
                 try {
                     const iDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
@@ -430,7 +431,8 @@ HIS.PatientLock = (function () {
                         docs.push(iDoc);
                         const subIframes = iDoc.querySelectorAll('iframe');
                         for (let j = 0; j < subIframes.length; j++) {
-                            if (subIframes[j].offsetParent === null) continue;
+                            const subRect = subIframes[j].getBoundingClientRect();
+                            if (subRect.width === 0 || subRect.height === 0 || subIframes[j].style.visibility === 'hidden' || subIframes[j].style.display === 'none') continue;
                             try {
                                 const sDoc = subIframes[j].contentDocument || subIframes[j].contentWindow.document;
                                 if (sDoc) docs.push(sDoc);

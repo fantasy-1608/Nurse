@@ -881,6 +881,11 @@ const QuyenUI = (function () {
                 indicator.title = 'Xác nhận: BN khớp\n' + result.details;
                 indicator.style.cssText = baseStyle + 'color: #28a745;';
                 if (_panel) _panel.classList.remove('quyen-theme-danger');
+            } else if (result.reason === 'NO_TARGET') {
+                indicator.textContent = '⚠️';
+                indicator.title = 'Thông tin chặn:\n' + result.details;
+                indicator.style.cssText = baseStyle + 'color: #e67e22;';
+                if (_panel) _panel.classList.remove('quyen-theme-danger');
             } else {
                 indicator.textContent = '❌';
                 indicator.title = 'Chưa khớp BN!\n' + result.details;
