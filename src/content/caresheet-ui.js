@@ -867,11 +867,12 @@ const QuyenCareSheetUI = (function () {
         }
 
         panel.style.display = 'block';
-        const saved = JSON.parse(localStorage.getItem('quyen_cs_custom_secs') || '[]');
+        const rawSaved = localStorage.getItem('quyen_cs_custom_secs');
+        const saved = rawSaved ? JSON.parse(rawSaved) : null;
         const sections = CARESHEET_CONFIG.SECTIONS;
         let html = '<div style="display:flex;flex-wrap:wrap;gap:3px;">';
         for (let i = 0; i < sections.length; i++) {
-            const isChecked = saved.length === 0 || saved.includes(i);
+            const isChecked = saved === null || saved.includes(i);
             const checkedAttr = isChecked ? 'checked' : '';
             // ★ Numbered label: "1. Thông tin ch", "2. Chỉ số S"
             const secNum = i + 1;
@@ -885,7 +886,7 @@ const QuyenCareSheetUI = (function () {
         panel.innerHTML = html;
 
         // Apply initial filter from saved state
-        _customSectionFilter = saved.length > 0 ? saved : null;
+        _customSectionFilter = saved;
         if (Object.keys(_customValues).length > 0) renderEditableFields();
 
         // Save on change + live re-render editable fields
@@ -897,7 +898,7 @@ const QuyenCareSheetUI = (function () {
                 });
                 localStorage.setItem('quyen_cs_custom_secs', JSON.stringify(checkedIndices));
                 // ★ Update filter and immediately re-render the edit panel
-                _customSectionFilter = checkedIndices.length > 0 ? checkedIndices : null;
+                _customSectionFilter = checkedIndices;
                 if (Object.keys(_customValues).length > 0) renderEditableFields();
             });
         });
@@ -999,16 +1000,17 @@ const QuyenCareSheetUI = (function () {
         // ★ Filter values theo fill mode
         const mode = (document.getElementById('quyen-cs-mode') || {}).value || 'full';
         let valuesToFill = _customValues;
+        let allowedSections = null; // ★ Khai báo null để báo hiệu "Đầy đủ" (không filter)
 
         if (mode === 'simple' || mode === 'custom') {
-            let allowedSections = [];
+            allowedSections = []; // Có filter
             if (mode === 'simple') {
                 // Mục 0-6 (Thông tin chung + sections 1-6)
                 allowedSections = [0, 1, 2, 3, 4, 5, 6];
             } else {
-                // Custom: from localStorage
-                allowedSections = JSON.parse(localStorage.getItem('quyen_cs_custom_secs') || '[]');
-                if (allowedSections.length === 0) allowedSections = CARESHEET_CONFIG.SECTIONS.map(function (_, i) { return i; });
+                // Custom: from localStorage (xử lý đúng mảng rỗng [])
+                const rawSaved = localStorage.getItem('quyen_cs_custom_secs');
+                allowedSections = rawSaved ? JSON.parse(rawSaved) : CARESHEET_CONFIG.SECTIONS.map(function (_, i) { return i; });
             }
 
             // Get allowed field keys from selected sections
@@ -1055,7 +1057,8 @@ const QuyenCareSheetUI = (function () {
                     addExtensionStep('Bỏ qua copy phiếu cũ: BN thay đổi', 'error');
                 } else {
                     addExtensionStep('Đang copy dữ liệu phiếu cũ...', 'loading');
-                    const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious();
+                    // ★ Pass allowedSections để chỉ copy đúng những phần được tick trong mục Tùy chọn
+                    const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious(allowedSections);
                     function showSec4Result(r) {
                          if (r && r.success) {
                             let msg = '📋 Phiếu cũ #' + (r.phieuId || '?') + ' → ' + r.filledCount + ' ô';

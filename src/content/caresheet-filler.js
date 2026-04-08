@@ -419,7 +419,7 @@ const QuyenCareSheetFiller = (function () {
     /**
      * Điền Section 4 "Cơ quan bệnh" + cân nặng từ phiếu chăm sóc gần nhất.
      */
-    function fillSection4FromPrevious() {
+    function fillSection4FromPrevious(allowedSections = null) {
         const formDoc = getFormDocument();
         if (!formDoc) {
             QuyenLog.warn('❌ Form phiếu chăm sóc chưa mở!');
@@ -430,7 +430,7 @@ const QuyenCareSheetFiller = (function () {
         const hasCachedSec4 = !!(_cachedSec4Data && Object.keys(_cachedSec4Data).length > 0);
         const hasCachedSec17 = !!(_cachedSec17Data && Object.keys(_cachedSec17Data).length > 0);
         if (hasCachedSec4 || hasCachedSec17) {
-            return _doFillSection4(formDoc, _cachedSec4Data || {}, _cachedWeight, _cachedSec17Data || {});
+            return _doFillSection4(formDoc, _cachedSec4Data || {}, _cachedWeight, _cachedSec17Data || {}, allowedSections);
         }
 
         // Chưa có cache → request Bridge
@@ -470,7 +470,7 @@ const QuyenCareSheetFiller = (function () {
                     _cachedWeight = ev.data.weight || '';
                     _cachedPatientName = ev.data.patientName || '';
                     if (Object.keys(_cachedSec4Data).length > 0 || _cachedWeight || Object.keys(_cachedSec17Data).length > 0) {
-                        resolve(_doFillSection4(formDoc, _cachedSec4Data, _cachedWeight, _cachedSec17Data));
+                        resolve(_doFillSection4(formDoc, _cachedSec4Data, _cachedWeight, _cachedSec17Data, allowedSections));
                     } else {
                         QuyenLog.warn('📋 Không có dữ liệu từ phiếu cũ');
                         resolve({ success: false, error: 'Không tìm thấy phiếu cũ' });
@@ -490,108 +490,114 @@ const QuyenCareSheetFiller = (function () {
     }
 
     /** Điền Section 4 + Section 17 + cân nặng vào form */
-    function _doFillSection4(formDoc, sec4Data, weight, sec17Data) {
+    function _doFillSection4(formDoc, sec4Data, weight, sec17Data, allowedSections = null) {
         const idToKey = { '1169': 'coQuanBenh1', '1170': 'coQuanBenh2', '1171': 'coQuanBenh3', '1232': 'coQuanBenh4' };
         let filledCount = 0;
 
         // ═══ Section 4: Cơ quan bệnh ═══
-        console.groupCollapsed('__EXT_EMOJI__ 4. Cơ quan bệnh (từ phiếu cũ)');
-        for (const ctId in sec4Data) {
-            if (!sec4Data.hasOwnProperty(ctId)) continue;
-            const value = sec4Data[ctId];
-            if (!value) continue;
+        if (!allowedSections || allowedSections.includes(4)) {
+            console.groupCollapsed('__EXT_EMOJI__ 4. Cơ quan bệnh (từ phiếu cũ)');
+            for (const ctId in sec4Data) {
+                if (!sec4Data.hasOwnProperty(ctId)) continue;
+                const value = sec4Data[ctId];
+                if (!value) continue;
 
-            const container = formDoc.querySelector('[data-ct-form-id="' + ctId + '"]');
-            if (!container) continue;
+                const container = formDoc.querySelector('[data-ct-form-id="' + ctId + '"]');
+                if (!container) continue;
 
-            const input = container.querySelector('input[type="text"], input:not([type]), textarea');
-            if (!input) continue;
+                const input = container.querySelector('input[type="text"], input:not([type]), textarea');
+                if (!input) continue;
 
-            setInputValue(input, value);
-            filledCount++;
-            QuyenLog.info('  ✅ ' + (idToKey[ctId] || ctId) + ': "' + value + '"');
+                setInputValue(input, value);
+                filledCount++;
+                QuyenLog.info('  ✅ ' + (idToKey[ctId] || ctId) + ': "' + value + '"');
+            }
+            if (Object.keys(sec4Data).length === 0) QuyenLog.info('  (không có dữ liệu)');
+            console.groupEnd();
         }
-        if (Object.keys(sec4Data).length === 0) QuyenLog.info('  (không có dữ liệu)');
-        console.groupEnd();
 
         // ═══ Cân nặng + Chiều cao + BMI + ★ SINH HIỆU TỪ PHIỪU CŨ ═══
-        console.groupCollapsed('__EXT_EMOJI__ 1. Chỉ số sinh tồn (từ phiếu cũ)');
-        if (weight) {
-            const weightContainer = formDoc.querySelector('[data-ct-form-id="1248"]');
-            if (weightContainer) {
-                const weightInput = weightContainer.querySelector('input[type="text"], input:not([type])');
-                if (weightInput) {
-                    setInputValue(weightInput, weight);
-                    filledCount++;
-                    QuyenLog.info('  ⚖️ Cân nặng: ' + weight + ' kg');
-                }
-            }
-        }
-
-        const height = _cachedHeight;
-        if (height) {
-            let heightContainer = formDoc.querySelector('[data-ct-form-id="1317"]');
-            if (!heightContainer) heightContainer = formDoc.querySelector('[data-ct-form-id="1251"]');
-            if (heightContainer) {
-                const heightInput = heightContainer.querySelector('input[type="text"], input:not([type])');
-                if (heightInput) {
-                    setInputValue(heightInput, height);
-                    filledCount++;
-                    QuyenLog.info('  📏 Chiều cao: ' + height + ' cm');
-                }
-            }
-        }
-
-        if (weight && height) {
-            const w = parseFloat(weight);
-            const h = parseFloat(height) / 100;
-            if (w > 0 && h > 0) {
-                const bmi = (w / (h * h)).toFixed(1);
-                const bmiContainer = formDoc.querySelector('[data-ct-form-id="1250"]');
-                if (bmiContainer) {
-                    const bmiInput = bmiContainer.querySelector('input[type="text"], input:not([type])');
-                    if (bmiInput) {
-                        setInputValue(bmiInput, bmi);
+        if (!allowedSections || allowedSections.includes(1)) {
+            console.groupCollapsed('__EXT_EMOJI__ 1. Chỉ số sinh tồn (từ phiếu cũ)');
+            if (weight) {
+                const weightContainer = formDoc.querySelector('[data-ct-form-id="1248"]');
+                if (weightContainer) {
+                    const weightInput = weightContainer.querySelector('input[type="text"], input:not([type])');
+                    if (weightInput) {
+                        setInputValue(weightInput, weight);
                         filledCount++;
-                        QuyenLog.info('  📊 BMI: ' + bmi + ' (CN=' + weight + ', CC=' + height + ')');
+                        QuyenLog.info('  ⚖️ Cân nặng: ' + weight + ' kg');
                     }
                 }
             }
-        }
 
-        // ★ SINH HIỆU TỪ PHIẾU CŨ (dữ liệu thật, không bịa)
-        if (_cachedVitalsFromPrev) {
-            const VITAL_FIELDS = [
-                { key: 'nhipTim', ctFormId: '1243', label: 'Mạch' },
-                { key: 'nhietDo', ctFormId: '1244', label: 'Nhiệt độ' },
-                { key: 'huyetAp', ctFormId: '1245', label: 'Huyết áp' },
-                { key: 'nhipTho', ctFormId: '1246', label: 'Nhịp thở' },
-                { key: 'spO2', ctFormId: '1247', label: 'SpO2' }
-            ];
-            for (let vi = 0; vi < VITAL_FIELDS.length; vi++) {
-                const vf = VITAL_FIELDS[vi];
-                const vVal = _cachedVitalsFromPrev[vf.key];
-                if (!vVal) continue;
-                const vContainer = formDoc.querySelector('[data-ct-form-id="' + vf.ctFormId + '"]');
-                if (!vContainer) continue;
-                const vInput = vContainer.querySelector('input[type="text"], input:not([type])');
-                if (!vInput) continue;
-                setInputValue(vInput, vVal);
-                filledCount++;
-                QuyenLog.info('  📋 ' + vf.label + ': ' + vVal + ' (từ phiếu cũ)');
+            const height = _cachedHeight;
+            if (height) {
+                let heightContainer = formDoc.querySelector('[data-ct-form-id="1317"]');
+                if (!heightContainer) heightContainer = formDoc.querySelector('[data-ct-form-id="1251"]');
+                if (heightContainer) {
+                    const heightInput = heightContainer.querySelector('input[type="text"], input:not([type])');
+                    if (heightInput) {
+                        setInputValue(heightInput, height);
+                        filledCount++;
+                        QuyenLog.info('  📏 Chiều cao: ' + height + ' cm');
+                    }
+                }
             }
+
+            if (weight && height) {
+                const w = parseFloat(weight);
+                const h = parseFloat(height) / 100;
+                if (w > 0 && h > 0) {
+                    const bmi = (w / (h * h)).toFixed(1);
+                    const bmiContainer = formDoc.querySelector('[data-ct-form-id="1250"]');
+                    if (bmiContainer) {
+                        const bmiInput = bmiContainer.querySelector('input[type="text"], input:not([type])');
+                        if (bmiInput) {
+                            setInputValue(bmiInput, bmi);
+                            filledCount++;
+                            QuyenLog.info('  📊 BMI: ' + bmi + ' (CN=' + weight + ', CC=' + height + ')');
+                        }
+                    }
+                }
+            }
+
+            // ★ SINH HIỆU TỪ PHIẾU CŨ (dữ liệu thật, không bịa)
+            if (_cachedVitalsFromPrev) {
+                const VITAL_FIELDS = [
+                    { key: 'nhipTim', ctFormId: '1243', label: 'Mạch' },
+                    { key: 'nhietDo', ctFormId: '1244', label: 'Nhiệt độ' },
+                    { key: 'huyetAp', ctFormId: '1245', label: 'Huyết áp' },
+                    { key: 'nhipTho', ctFormId: '1246', label: 'Nhịp thở' },
+                    { key: 'spO2', ctFormId: '1247', label: 'SpO2' }
+                ];
+                for (let vi = 0; vi < VITAL_FIELDS.length; vi++) {
+                    const vf = VITAL_FIELDS[vi];
+                    const vVal = _cachedVitalsFromPrev[vf.key];
+                    if (!vVal) continue;
+                    const vContainer = formDoc.querySelector('[data-ct-form-id="' + vf.ctFormId + '"]');
+                    if (!vContainer) continue;
+                    const vInput = vContainer.querySelector('input[type="text"], input:not([type])');
+                    if (!vInput) continue;
+                    setInputValue(vInput, vVal);
+                    filledCount++;
+                    QuyenLog.info('  📋 ' + vf.label + ': ' + vVal + ' (từ phiếu cũ)');
+                }
+            }
+            console.groupEnd();
         }
-        console.groupEnd();
 
         // ═══ Section 17: Can thiệp điều dưỡng ═══
-        console.groupCollapsed('__EXT_EMOJI__ 17. Can thiệp điều dưỡng (từ phiếu cũ)');
-        if (sec17Data && Object.keys(sec17Data).length > 0) {
-            QuyenLog.info('🏥 ' + Object.keys(sec17Data).length + ' mục combogrid');
-            fillSection17Sequential(formDoc, sec17Data);
-        } else {
-            QuyenLog.info('  (không có dữ liệu)');
+        if (!allowedSections || allowedSections.includes(16)) {
+            console.groupCollapsed('__EXT_EMOJI__ 17. Can thiệp điều dưỡng (từ phiếu cũ)');
+            if (sec17Data && Object.keys(sec17Data).length > 0) {
+                QuyenLog.info('🏥 ' + Object.keys(sec17Data).length + ' mục combogrid');
+                fillSection17Sequential(formDoc, sec17Data);
+            } else {
+                QuyenLog.info('  (không có dữ liệu)');
+            }
+            console.groupEnd();
         }
-        console.groupEnd();
 
         if (filledCount > 0) {
             QuyenLog.info('📋 Đã copy ' + filledCount + ' ô từ phiếu cũ! __EXT_EMOJI__');
