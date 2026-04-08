@@ -393,20 +393,36 @@ HIS.PatientLock = (function () {
             return null; // Fail-closed
         }
 
-        // Chọn candidate mạnh nhất:
-        // - Ưu tiên context từ form/header hơn grid
-        // - Ưu tiên candidate có ID, rồi đến tên+dob
+        // ★ FIX v3: Grid luôn phản ánh BN hiện tại.
+        // Nếu grid candidate tồn tại VÀ care_title/infusion_header có tên KHÁC grid → loại bỏ stale iframe.
+        const gridCandidate = candidates.filter(function(c) { return c.source === 'grid_selected'; })[0];
+        let filtered = candidates;
+        if (gridCandidate && gridCandidate.name) {
+            filtered = candidates.filter(function(c) {
+                if (c.source === 'grid_selected') return true;
+                // Giữ care_title/infusion_header chỉ khi tên khớp với grid (= cùng BN)
+                if (c.source === 'care_title' || c.source === 'infusion_header') {
+                    if (c.name && !namesMatch(c.name, gridCandidate.name)) {
+                        return false; // Stale iframe — loại bỏ
+                    }
+                }
+                return true;
+            });
+        }
+
+        // Scoring: ưu tiên grid_selected (luôn chính xác) > care_title > infusion_header
         function scoreCandidate(c) {
             let score = 0;
-            if (c.source === 'care_title' || c.source === 'infusion_header') score += 100;
+            if (c.source === 'grid_selected') score += 200;
+            if (c.source === 'care_title' || c.source === 'infusion_header') score += 50;
             if (c.khambenhId) score += 40;
             if (c.hosobenhanid) score += 40;
             if (c.name) score += 10;
             if (c.dob) score += 10;
             return score;
         }
-        candidates.sort(function (a, b) { return scoreCandidate(b) - scoreCandidate(a); });
-        const best = candidates[0];
+        filtered.sort(function (a, b) { return scoreCandidate(b) - scoreCandidate(a); });
+        const best = filtered[0];
         return {
             name: best.name || '',
             khambenhId: best.khambenhId || '',
@@ -447,12 +463,27 @@ HIS.PatientLock = (function () {
 
     /**
      * CONVENIENCE: verify against current DOM (với fallback targetHint)
+     * ★ FIX v3: Nếu không đọc được target (không có form nào mở), trả OK luôn
+     * vì không có gì để so sánh. Chỉ cảnh báo khi THỰC SỰ đọc được form khác BN.
      */
     function verifyCurrentForm() {
         let target = readTargetFromDOM();
         // Fallback: dùng targetHint từ UI module nếu DOM reading thất bại
         if (!target && _targetHint) {
             target = _targetHint;
+        }
+        // ★ FIX v3: Nếu hoàn toàn không có target → không có form nào mở
+        // → Không có gì để mismatch → trả OK (thay vì fail-closed gây false alarm)
+        if (!target) {
+            return {
+                ok: true,
+                reason: 'NO_FORM',
+                details: 'Không có form nào đang mở. BN từ danh sách được chấp nhận.'
+            };
+        }
+        // ★ FIX v3: Nếu target khớp với source (đang chọn trong danh sách), short-circuit OK
+        if (_source && target.name && namesMatch(target.name, _source.name)) {
+            return { ok: true, reason: 'MATCH_SHORT_CIRCUIT', details: 'BN khớp (short-circuit).' };
         }
         // Merge có điều kiện: chỉ merge hint khi cùng BN theo tên, tránh trộn context chéo BN
         if (target && _targetHint) {
