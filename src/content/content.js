@@ -93,9 +93,42 @@
         QuyenLog.info('✅ Tất cả module đã sẵn sàng! __EXT_NAME__ __EXT_EMOJI__');
     }
 
-    try {
-        initModules();
-    } catch (err) {
-        QuyenLog.error('Lỗi khởi tạo:', err);
+    // ==========================================
+    // ★ ACTIVATION GATE — Chỉ chạy khi đã kích hoạt
+    // ==========================================
+    let _initialized = false;
+
+    function bootIfActivated() {
+        chrome.storage.local.get('quyen_activated', function (data) {
+            if (data.quyen_activated === true) {
+                if (!_initialized) {
+                    _initialized = true;
+                    try {
+                        initModules();
+                    } catch (err) {
+                        QuyenLog.error('Lỗi khởi tạo:', err);
+                    }
+                }
+            } else {
+                QuyenLog.info('🔐 Extension chưa kích hoạt. Mở popup để nhập mã.');
+            }
+        });
     }
+
+    // Lắng nghe kích hoạt từ popup (hot-enable không cần F5)
+    chrome.runtime.onMessage.addListener(function (msg) {
+        if (msg && msg.type === 'QUYEN_ACTIVATION_CHANGED' && msg.activated === true) {
+            QuyenLog.info('🔓 Đã kích hoạt! Khởi động extension...');
+            if (!_initialized) {
+                _initialized = true;
+                try {
+                    initModules();
+                } catch (err) {
+                    QuyenLog.error('Lỗi khởi tạo:', err);
+                }
+            }
+        }
+    });
+
+    bootIfActivated();
 })();

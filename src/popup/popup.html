@@ -122,14 +122,103 @@
             font-size: 10px;
             color: #ccc;
         }
+
+        /* ★ Activation Lock Screen */
+        .activation-screen {
+            padding: 24px 16px;
+            text-align: center;
+        }
+        .activation-screen .lock-icon {
+            font-size: 40px;
+            margin-bottom: 8px;
+        }
+        .activation-screen .lock-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #e91e8c;
+            margin-bottom: 4px;
+        }
+        .activation-screen .lock-desc {
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+        .activation-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-family: 'Quicksand', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.2s;
+            letter-spacing: 1px;
+        }
+        .activation-input:focus {
+            border-color: #e91e8c;
+        }
+        .activation-input.shake {
+            animation: shake 0.4s ease-in-out;
+            border-color: #f44336;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-6px); }
+            40%, 80% { transform: translateX(6px); }
+        }
+        .activation-btn {
+            width: 100%;
+            margin-top: 12px;
+            padding: 10px;
+            background: linear-gradient(135deg, #e91e63, #ff5722);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-family: 'Quicksand', sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .activation-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(233, 30, 99, 0.3);
+        }
+        .activation-error {
+            font-size: 10px;
+            color: #f44336;
+            margin-top: 8px;
+            display: none;
+        }
+        .activation-error.show { display: block; }
+        .activation-footer {
+            margin-top: 16px;
+            font-size: 9px;
+            color: #ccc;
+        }
     </style>
 </head>
 <body>
-    <div class="popup">
+    <!-- ★ Màn hình kích hoạt (hiện khi chưa có mã) -->
+    <div class="activation-screen" id="activation-screen" style="display: none;">
+        <div class="lock-icon">🔐</div>
+        <div class="lock-title">Kích hoạt Extension</div>
+        <div class="lock-desc">Nhập mã kích hoạt để sử dụng.<br>Liên hệ quản lý để nhận mã.</div>
+        <input type="password" class="activation-input" id="activation-input" placeholder="Nhập mã kích hoạt" autocomplete="off">
+        <button class="activation-btn" id="activation-btn">🔓 Kích hoạt</button>
+        <div class="activation-error" id="activation-error">❌ Mã không đúng. Vui lòng thử lại.</div>
+        <div class="activation-footer">__EXT_EMOJI__ __EXT_SHORT_NAME__</div>
+    </div>
+
+    <!-- ★ Giao diện chính (hiện khi đã kích hoạt) -->
+    <div class="popup" id="main-popup" style="display: none;">
         <div class="header">
             <div class="header-icon">__EXT_EMOJI__</div>
             <div class="header-title">__EXT_SHORT_NAME__</div>
-            <div class="header-version" id="version-display">v1.1.1</div>
+            <div class="header-version" id="version-display">v1.1.2</div>
         </div>
 
         <div class="toggle-row">
