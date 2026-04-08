@@ -1093,12 +1093,21 @@ const QuyenCareSheetUI = (function () {
 
         container.style.display = 'block';
 
+        // ★ Tự động chuyển tất cả step "loading" cũ sang "done"
+        const oldLoadingIcons = list.querySelectorAll('.quyen-step-loading');
+        for (let i = 0; i < oldLoadingIcons.length; i++) {
+            oldLoadingIcons[i].style.animation = 'none';
+            oldLoadingIcons[i].style.color = '#4caf50';
+            oldLoadingIcons[i].textContent = '✅';
+            oldLoadingIcons[i].classList.remove('quyen-step-loading');
+        }
+
         const li = document.createElement('li');
         li.className = 'quyen-step-item';
         
         let iconHtml = '<span class="quyen-step-icon" style="color:#4caf50;">✅</span>';
         if (status === 'loading') {
-            iconHtml = '<span class="quyen-step-icon" style="color:#2196f3; animation: quyen-spin 1s linear infinite;">⏳</span>';
+            iconHtml = '<span class="quyen-step-icon quyen-step-loading" style="color:#2196f3; animation: quyen-spin 1s linear infinite;">⏳</span>';
         } else if (status === 'error') {
             iconHtml = '<span class="quyen-step-icon" style="color:#f44336;">❌</span>';
         }
