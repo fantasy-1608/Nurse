@@ -298,8 +298,42 @@ HIS.PatientLock = (function () {
     // ==========================================
 
     /**
+     * ★ FIX v4: Kiểm tra text node có nằm trong element visible hay không
+     * Quét ngược lên parent chain, kiểm tra display/visibility/opacity.
+     * VNPT HIS ẩn tab bằng CSS (display:none, visibility:hidden) trên DIV,
+     * không phải bằng iframe — nên phải check từng text node.
+     */
+    function _isNodeVisible(textNode) {
+        let el = textNode.parentElement;
+        if (!el) return true;
+        try {
+            const win = el.ownerDocument && el.ownerDocument.defaultView;
+            if (!win) return true; // Không có window → assume visible
+            // Đi ngược lên tối đa 15 cấp (đủ cho HIS tab nesting)
+            let depth = 0;
+            while (el && depth < 15) {
+                // Fast check: inline style
+                if (el.style && (el.style.display === 'none' || el.style.visibility === 'hidden')) {
+                    return false;
+                }
+                // Computed style check (chính xác hơn, bắt cả CSS class)
+                try {
+                    const cs = win.getComputedStyle(el);
+                    if (cs.display === 'none' || cs.visibility === 'hidden') {
+                        return false;
+                    }
+                } catch (e) { /* ignore */ }
+                el = el.parentElement;
+                depth++;
+            }
+        } catch (e) { /* cross-origin or error */ }
+        return true;
+    }
+
+    /**
      * ★ Đọc thông tin BN từ form đang mở
      * Tìm trong title bars, headers, iframes
+     * ★ FIX v4: Chỉ lấy text từ VISIBLE elements — bỏ qua tab ẩn
      * @returns {Object|null} { name, khambenhId, hosobenhanid, dob }
      */
     function readTargetFromDOM() {
@@ -328,21 +362,25 @@ HIS.PatientLock = (function () {
                 let careName = '', careDob = '', careGender = '';
                 let infName = '', infDob = '', infHsba = '';
 
-                // Pattern 1: Care sheet title / Infusion title — "HIS-Thêm phiếu (TRẦN THỊ NHƯ Ý/ 2001/ Nữ)" hoặc "Tạo Phiếu truyền dịch (TRẦN THANH NHÂN/ 1978/ )"
+                // Pattern 1 & 2: Quét text nodes — CHỈ lấy từ elements đang visible
                 const walker = doc.createTreeWalker(doc.body || doc, NodeFilter.SHOW_TEXT);
                 while (walker.nextNode()) {
                     const text = walker.currentNode.textContent || '';
 
+                    // Pattern 1: Care sheet title — "HIS-Thêm phiếu (TRẦN THỊ NHƯ Ý/ 2001/ Nữ)"
                     const csMatch = text.match(/(?:HIS|Tạo Phiếu)[^(]*\(([^/)]+)\s*\/\s*([^/)]+)?\s*\//i);
                     if (csMatch && !careName) {
+                        // ★ FIX v4: Kiểm tra visibility trước khi chấp nhận
+                        if (!_isNodeVisible(walker.currentNode)) continue;
                         careName = (csMatch[1] || '').trim();
                         careDob = (csMatch[2] || '').trim();
-                        // careGender không trích xuất từ regex mới này vì ít quan trọng và hay thiếu
                     }
 
-                    // Pattern 2: Infusion header — "2603171231 | NGUYỄN THỊ MỸ LỆ | 01/01/1963"
+                    // Pattern 2: Header — "2603171231 | NGUYỄN THỊ MỸ LỆ | 01/01/1963"
                     const infMatch = text.match(/(\d{10})\s*\|\s*([A-ZÀ-Ỹ][A-ZÀ-Ỹa-zà-ỹ\s]+)\s*\|\s*(\d{2}\/\d{2}\/\d{4})/);
                     if (infMatch) {
+                        // ★ FIX v4: Kiểm tra visibility trước khi chấp nhận
+                        if (!_isNodeVisible(walker.currentNode)) continue;
                         if (!infHsba) infHsba = infMatch[1].trim();
                         if (!infName) infName = infMatch[2].trim();
                         if (!infDob) infDob = infMatch[3].trim();
@@ -365,6 +403,8 @@ HIS.PatientLock = (function () {
                 }
 
                 // Pattern 3: jqGrid selected row — lấy KHAMBENHID từ rowData
+                // Lưu ý: Pattern này chỉ hoạt động trong page context (his-bridge),
+                // KHÔNG hoạt động trong content script (isolated world, không có jQuery)
                 try {
                     const grid = doc.querySelector('#grdBenhNhan');
                     if (grid) {
