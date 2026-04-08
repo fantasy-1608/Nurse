@@ -20,6 +20,8 @@ const QuyenInfusionFiller = (function () {
     let _formDoc = null;  // Document chứa form (có thể là iframe doc)
     let _formRoot = null;  // ★ Element gốc chứa form (để tránh tìm nhầm form cũ)
     let _fillSessionId = 0;  // ★ Session ID để cancel stale callbacks
+    let _cachedDocs = null;  // ★ BUG-20: Cache getAllDocuments per session
+    let _cachedDocsSessionId = 0;
 
     // ==========================================
     // ROMAN NUMERAL → ARABIC
@@ -299,6 +301,8 @@ const QuyenInfusionFiller = (function () {
         _formRoot = null;
         _currentDrug = null;
         _currentParsedInfo = null;
+        _cachedDocs = null;  // ★ BUG-20: Reset cache
+        _cachedDocsSessionId = mySession;
 
         const searchInput = findDrugSearchInput();
         if (searchInput) {
@@ -331,7 +335,8 @@ const QuyenInfusionFiller = (function () {
         QuyenLog.info('📊 Thông tin trích xuất:', parsedInfo);
 
         // Bắt đầu flow: Drug → Speed/Qty → Doctor → Nurse
-        startDrugSelection(searchInput, drug, parsedInfo);
+        // ★ BUG-01: Truyền sessionId xuyên suốt async chain
+        startDrugSelection(searchInput, drug, parsedInfo, sessionId);
 
         return { success: true, filledCount: 1, drug: drug.name };
     }
@@ -363,7 +368,12 @@ const QuyenInfusionFiller = (function () {
     // ==========================================
     // STEP 1: DRUG SELECTION (ComboGrid)
     // ==========================================
-    function startDrugSelection(searchInput, drug, parsedInfo) {
+    function startDrugSelection(searchInput, drug, parsedInfo, sessionId) {
+        // ★ BUG-01: Check session trước khi bắt đầu
+        if (sessionId !== _fillSessionId) {
+            QuyenLog.warn('  ⛔ startDrugSelection cancelled — stale session #' + sessionId);
+            return;
+        }
         const searchTerm = getSearchTerm(drug.name);
 
         // matchTexts: tên thuốc + ngày
@@ -379,6 +389,11 @@ const QuyenInfusionFiller = (function () {
             matchTexts: matchTexts,
             label: 'Thuốc',
             onComplete: function (success) {
+                // ★ BUG-01: Check session sau mỗi bước async
+                if (sessionId !== _fillSessionId) {
+                    QuyenLog.warn('  ⛔ Drug selection callback cancelled — stale session #' + sessionId);
+                    return;
+                }
                 if (success) {
                     QuyenLog.info('  ✅ Thuốc đã chọn, chờ form update...');
                     // ★ SPRINT D: advance
@@ -386,9 +401,10 @@ const QuyenInfusionFiller = (function () {
                 }
                 // Luôn tiếp tục dù thành công hay thất bại
                 setTimeout(function () {
+                    if (sessionId !== _fillSessionId) return; // ★ BUG-01
                     // ★ Cleanup tên thuốc: xóa "x2 Túi", "x1 Chai" etc.
                     cleanupDrugName(searchInput, parsedInfo);
-                    fillSpeedAndQuantity(parsedInfo);
+                    fillSpeedAndQuantity(parsedInfo, sessionId);
                 }, 300);  // ★ tối ưu: 800→300ms
             }
         });
@@ -437,7 +453,12 @@ const QuyenInfusionFiller = (function () {
     // ==========================================
     // STEP 2: FILL SPEED + QUANTITY (direct input)
     // ==========================================
-    function fillSpeedAndQuantity(parsedInfo) {
+    function fillSpeedAndQuantity(parsedInfo, sessionId) {
+        // ★ BUG-01: Check session trước khi điền
+        if (sessionId !== undefined && sessionId !== _fillSessionId) {
+            QuyenLog.warn('  ⛔ fillSpeedAndQuantity cancelled — stale session #' + sessionId);
+            return;
+        }
         QuyenLog.info('  📋 Điền Số lượng + Tốc độ:', parsedInfo);
         const doc = _formDoc || document;
 
@@ -500,8 +521,18 @@ const QuyenInfusionFiller = (function () {
 
         // ★ SEQUENTIAL: Doctor → Nurse (không chạy song song vì HIS chỉ hiện 1 dropdown) ★
         setTimeout(function () {
+            // ★ BUG-01: Check session trước mỗi bước async
+            if (sessionId !== undefined && sessionId !== _fillSessionId) {
+                QuyenLog.warn('  ⛔ Doctor step cancelled — stale session #' + sessionId);
+                return;
+            }
             startDoctorSelection(function () {
                 setTimeout(function () {
+                    // ★ BUG-01: Check session trước nurse step
+                    if (sessionId !== undefined && sessionId !== _fillSessionId) {
+                        QuyenLog.warn('  ⛔ Nurse step cancelled — stale session #' + sessionId);
+                        return;
+                    }
                     startNurseSelection(function () {
                         QuyenLog.info('__EXT_EMOJI__ Hoàn tất điền form! __EXT_NAME__ __EXT_EMOJI__');
                         showCompletionEffect(_currentDrug ? _currentDrug.name : 'thuốc');
@@ -828,7 +859,8 @@ const QuyenInfusionFiller = (function () {
 
         for (const sel of selectors) {
             el = document.querySelector(sel);
-            if (el) {
+            // ★ BUG-13: Kiểm tra visibility cho fallback selectors
+            if (el && (el.offsetParent !== null || el.offsetWidth > 0)) {
                 QuyenLog.info(`  🔎 Tìm thấy qua selector: ${sel}`);
                 return el;
             }
@@ -1155,9 +1187,19 @@ const QuyenInfusionFiller = (function () {
     /**
      * Gửi message tới Bridge.
      * Bridge CHỈ chạy ở TOP WINDOW (do content.js dòng 14: if (window !== window.top) return).
-     * Nên luôn luôn gửi vào `window` (top), không bao giờ gửi vào iframe!
+     * ★ BUG-03: Gửi lên window.top để bridge nhận được từ iframe context.
+     * Dùng '*' vì cross-origin iframe không thể biết target origin.
      */
     function postToBridge(msg) {
+        try {
+            // Ưu tiên gửi lên top window (nơi bridge chạy)
+            if (window.top && window.top !== window) {
+                window.top.postMessage(msg, '*');
+                return;
+            }
+        } catch (e) {
+            // Cross-origin top → fallback gửi trên window hiện tại
+        }
         window.postMessage(msg, location.origin);
     }
 
@@ -1189,7 +1231,8 @@ const QuyenInfusionFiller = (function () {
     /** Search term cho tên thuốc: 5 ký tự đầu */
     function getSearchTerm(drugName) {
         const clean = drugName.replace(/\s*\d+\s*(mg|ml|g|mcg|%)\/?.*$/i, '').trim();
-        return clean.length > 5 ? clean.substring(0, 5) : clean;
+        // ★ BUG-11: Trim kết quả để tránh trailing space khi cắt giữa từ
+        return (clean.length > 5 ? clean.substring(0, 5) : clean).trim();
     }
 
     /** Search term cho tên người: lấy tên + họ lót cuối
@@ -1209,8 +1252,12 @@ const QuyenInfusionFiller = (function () {
     }
 
     /** Tìm input by ID/name patterns */
-    /** Lấy tất cả documents (main + parent + top + iframes) */
+    /** Lấy tất cả documents (main + parent + top + iframes) — ★ BUG-20: cached per session */
     function getAllDocuments() {
+        // ★ BUG-20: Cache kết quả trong cùng session, tránh scan lại 5+ lần
+        if (_cachedDocs && _cachedDocsSessionId === _fillSessionId) {
+            return _cachedDocs;
+        }
         const docs = new Set();
         try { docs.add(document); } catch (e) { /* ignore */ }
         try { if (window.parent && window.parent.document) docs.add(window.parent.document); } catch (e) { /* ignore */ }
@@ -1224,7 +1271,9 @@ const QuyenInfusionFiller = (function () {
                 }
             } catch (e) { /* ignore */ }
         }
-        return [...docs];
+        _cachedDocs = [...docs];
+        _cachedDocsSessionId = _fillSessionId;
+        return _cachedDocs;
     }
 
     function findInput(patterns, doc) {
@@ -1309,7 +1358,10 @@ const QuyenInfusionFiller = (function () {
         // ★ Toast banner ★
         const toast = document.createElement('div');
         toast.className = 'quyen-infusion-toast';
-        toast.innerHTML = `<span class="quyen-toast-icon">✅</span> Đã điền "<b>${drugName}</b>" thành công`;
+        // ★ BUG-06: Escape HTML trong tên thuốc để chống XSS
+        const safeName = document.createElement('span');
+        safeName.textContent = drugName;
+        toast.innerHTML = `<span class="quyen-toast-icon">✅</span> Đã điền "<b>${safeName.innerHTML}</b>" thành công`;
         document.body.appendChild(toast);
         requestAnimationFrame(function () {
             toast.classList.add('quyen-toast-show');

@@ -36,7 +36,7 @@ HIS.FillTracker = (function () {
     let _currentDrug = null;
     let _steps = [];         // Log của từng bước
     let _listeners = [];     // onChange callbacks
-    const _timeoutMs = 15000;  // 15 giây
+    const _timeoutMs = 30000;  // ★ BUG-05: 30 giây (tăng từ 15s vì 3 ComboGrid có thể tốn 22s trên server chậm)
 
     // ==========================================
     // START — bắt đầu fill session mới
@@ -143,6 +143,11 @@ HIS.FillTracker = (function () {
     // LISTENERS — onChange callbacks
     // ==========================================
     function onChange(callback) {
+        // ★ BUG-19: Giới hạn số listener để tránh leak
+        if (_listeners.length >= 10) {
+            console.warn('[HIS] FillTracker: Too many listeners (' + _listeners.length + '), removing oldest');
+            _listeners.shift();
+        }
         _listeners.push(callback);
         return function () {
             _listeners = _listeners.filter(function (cb) { return cb !== callback; });

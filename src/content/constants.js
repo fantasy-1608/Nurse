@@ -5,7 +5,7 @@
 
 /* exported QUYEN_CONFIG, getRandomThank, QuyenLog */
 const QUYEN_CONFIG = {
-    VERSION: '1.1.0',
+    VERSION: '1.1.1',
     DEBUG: true,
 
     // URL pattern cho trang Buồng Điều Trị (nội trú)

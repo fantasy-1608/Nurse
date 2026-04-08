@@ -41,7 +41,13 @@ HIS.Crypto = (function () {
 
     async function verifyPIN(pin, storedHash, salt) {
         const computedHash = await hashPIN(pin, salt);
-        return computedHash === storedHash;
+        // ★ BUG-18: Constant-time comparison để chống timing attack
+        if (computedHash.length !== storedHash.length) return false;
+        let mismatch = 0;
+        for (let i = 0; i < computedHash.length; i++) {
+            mismatch |= computedHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
+        }
+        return mismatch === 0;
     }
 
     async function deriveKey(pin, salt) {

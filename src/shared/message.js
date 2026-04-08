@@ -134,17 +134,27 @@ HIS.Message = (function () {
     // ==========================================
 
     /**
-     * Kiểm tra event có phải message hợp lệ không
-     * Dùng cho code cũ chưa chuyển sang HIS.Message.listen
-     * @param {MessageEvent} event
-     * @returns {boolean}
+     * Validate incoming message event
+     * ★ BUG-21: Cũng verify _q marker để chống giả mạo từ script khác
      */
     function isValid(event) {
         if (!event || !event.data || !event.data.type) return false;
         // Origin check
         if (_expectedOrigin && event.origin && event.origin !== _expectedOrigin) return false;
         // Type in allowlist
-        return !!_allowedSet[event.data.type];
+        if (!_allowedSet[event.data.type]) return false;
+
+        // New envelope path (ưu tiên): message có marker chuẩn
+        if (event.data._q === MARKER) return true;
+
+        // Legacy bridge path:
+        // his-bridge.js (page context) vẫn gửi postMessage raw, không có _q.
+        // Chỉ chấp nhận nếu là QUYEN_* và phát từ chính window hiện tại.
+        const isLegacyType = typeof event.data.type === 'string' && event.data.type.indexOf('QUYEN_') === 0;
+        const sameWindowSource = !event.source || event.source === window;
+        if (isLegacyType && sameWindowSource) return true;
+
+        return false;
     }
 
     /**

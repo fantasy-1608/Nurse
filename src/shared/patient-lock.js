@@ -253,11 +253,12 @@ HIS.PatientLock = (function () {
         }
 
         // Đánh giá fallback
-        if (checkCount < 1) {
+        // Fail-closed: nếu không có ID thì phải có tối thiểu 2 trường fallback (name + dob)
+        if (checkCount < 2) {
             return {
                 ok: false,
                 reason: 'INSUFFICIENT_DATA',
-                details: 'Không đủ thông tin để xác nhận BN. Thiếu cả ID, Tên và Ngày sinh.'
+                details: 'Không đủ thông tin để xác nhận BN. Cần ít nhất Tên + Ngày sinh khi thiếu Mã BN/Mã BA.'
             };
         }
 
@@ -303,29 +304,64 @@ HIS.PatientLock = (function () {
      */
     function readTargetFromDOM() {
         const docs = _getAllDocuments();
-        let name = '', dob = '', khambenhId = '', hosobenhanid = '';
+        const candidates = [];
+
+        function toSafeStr(v) {
+            return String(v || '').trim();
+        }
+
+        function pushCandidate(source, ctx) {
+            const c = {
+                source: source,
+                name: toSafeStr(ctx.name),
+                dob: toSafeStr(ctx.dob),
+                khambenhId: toSafeStr(ctx.khambenhId),
+                hosobenhanid: toSafeStr(ctx.hosobenhanid)
+            };
+            if (!c.name && !c.dob && !c.khambenhId && !c.hosobenhanid) return;
+            candidates.push(c);
+        }
 
         for (let d = 0; d < docs.length; d++) {
             try {
                 const doc = docs[d];
+                let careName = '', careDob = '', careGender = '';
+                let infName = '', infDob = '', infHsba = '';
 
                 // Pattern 1: Care sheet title — "HIS-Thêm phiếu (TRẦN THỊ NHƯ Ý/ 2001/ Nữ)"
                 const walker = doc.createTreeWalker(doc.body || doc, NodeFilter.SHOW_TEXT);
                 while (walker.nextNode()) {
                     const text = walker.currentNode.textContent || '';
 
-                    const csMatch = text.match(/HIS[^(]*\(([^/]+)\//);
-                    if (csMatch && !name) {
-                        name = csMatch[1].trim();
+                    const csMatch = text.match(/HIS[^(]*\(([^/)]+)\s*\/\s*([^/)]+)?\s*\/\s*([^/)]+)?\)/);
+                    if (csMatch && !careName) {
+                        careName = (csMatch[1] || '').trim();
+                        careDob = (csMatch[2] || '').trim();
+                        careGender = (csMatch[3] || '').trim();
                     }
 
                     // Pattern 2: Infusion header — "2603171231 | NGUYỄN THỊ MỸ LỆ | 01/01/1963"
                     const infMatch = text.match(/(\d{10})\s*\|\s*([A-ZÀ-Ỹ][A-ZÀ-Ỹa-zà-ỹ\s]+)\s*\|\s*(\d{2}\/\d{2}\/\d{4})/);
                     if (infMatch) {
-                        if (!hosobenhanid) hosobenhanid = infMatch[1].trim();
-                        if (!name) name = infMatch[2].trim();
-                        if (!dob) dob = infMatch[3].trim();
+                        if (!infHsba) infHsba = infMatch[1].trim();
+                        if (!infName) infName = infMatch[2].trim();
+                        if (!infDob) infDob = infMatch[3].trim();
                     }
+                }
+
+                if (careName || careDob || careGender) {
+                    pushCandidate('care_title', {
+                        name: careName,
+                        dob: careDob,
+                        gender: careGender
+                    });
+                }
+                if (infName || infDob || infHsba) {
+                    pushCandidate('infusion_header', {
+                        name: infName,
+                        dob: infDob,
+                        hosobenhanid: infHsba
+                    });
                 }
 
                 // Pattern 3: jqGrid selected row — lấy KHAMBENHID từ rowData
@@ -338,10 +374,12 @@ HIS.PatientLock = (function () {
                             if (selRow) {
                                 const rd = jq(grid).jqGrid('getRowData', selRow);
                                 if (rd) {
-                                    if (!khambenhId) khambenhId = rd.KHAMBENHID || rd.KhamBenhID || rd.MABENHNHAN || '';
-                                    if (!hosobenhanid) hosobenhanid = rd.HOSOBENHANID || rd.HoSoBenhAnID || rd.MABENHAN || '';
-                                    if (!name) name = rd.HOTEN || rd.HoTen || rd.TENBENHNHAN || '';
-                                    if (!dob) dob = rd.NGAYSINH || rd.NgaySinh || '';
+                                    pushCandidate('grid_selected', {
+                                        khambenhId: rd.KHAMBENHID || rd.KhamBenhID || rd.MABENHNHAN || '',
+                                        hosobenhanid: rd.HOSOBENHANID || rd.HoSoBenhAnID || rd.MABENHAN || '',
+                                        name: rd.HOTEN || rd.HoTen || rd.TENBENHNHAN || '',
+                                        dob: rd.NGAYSINH || rd.NgaySinh || ''
+                                    });
                                 }
                             }
                         }
@@ -351,11 +389,30 @@ HIS.PatientLock = (function () {
             } catch (e) { /* cross-origin or other error */ }
         }
 
-        if (!name && !khambenhId && !hosobenhanid) {
+        if (candidates.length === 0) {
             return null; // Fail-closed
         }
 
-        return { name, khambenhId, hosobenhanid, dob };
+        // Chọn candidate mạnh nhất:
+        // - Ưu tiên context từ form/header hơn grid
+        // - Ưu tiên candidate có ID, rồi đến tên+dob
+        function scoreCandidate(c) {
+            let score = 0;
+            if (c.source === 'care_title' || c.source === 'infusion_header') score += 100;
+            if (c.khambenhId) score += 40;
+            if (c.hosobenhanid) score += 40;
+            if (c.name) score += 10;
+            if (c.dob) score += 10;
+            return score;
+        }
+        candidates.sort(function (a, b) { return scoreCandidate(b) - scoreCandidate(a); });
+        const best = candidates[0];
+        return {
+            name: best.name || '',
+            khambenhId: best.khambenhId || '',
+            hosobenhanid: best.hosobenhanid || '',
+            dob: best.dob || ''
+        };
     }
 
     /** Collect all documents (top + iframes, 2 levels) */
@@ -391,12 +448,17 @@ HIS.PatientLock = (function () {
         if (!target && _targetHint) {
             target = _targetHint;
         }
-        // Merge: nếu target thiếu fields mà hint có, bổ sung
+        // Merge có điều kiện: chỉ merge hint khi cùng BN theo tên, tránh trộn context chéo BN
         if (target && _targetHint) {
-            if (!target.name && _targetHint.name) target.name = _targetHint.name;
-            if (!target.khambenhId && _targetHint.khambenhId) target.khambenhId = _targetHint.khambenhId;
-            if (!target.hosobenhanid && _targetHint.hosobenhanid) target.hosobenhanid = _targetHint.hosobenhanid;
-            if (!target.dob && _targetHint.dob) target.dob = _targetHint.dob;
+            const targetHasAnyId = !!(target.khambenhId || target.hosobenhanid);
+            const canMerge = (!target.name && !targetHasAnyId)
+                || (!targetHasAnyId && !!target.name && !!_targetHint.name && namesMatch(target.name, _targetHint.name));
+            if (canMerge) {
+                if (!target.name && _targetHint.name) target.name = _targetHint.name;
+                if (!target.khambenhId && _targetHint.khambenhId) target.khambenhId = _targetHint.khambenhId;
+                if (!target.hosobenhanid && _targetHint.hosobenhanid) target.hosobenhanid = _targetHint.hosobenhanid;
+                if (!target.dob && _targetHint.dob) target.dob = _targetHint.dob;
+            }
         }
         return verify(target);
     }

@@ -50,8 +50,23 @@ const QuyenCareSheetUI = (function () {
                     </div>
                 </div>
 
-                <!-- Status -->
-                <div class="quyen-cs-status" id="quyen-cs-status" style="display:none;"></div>
+                <!-- Feedback Wrapper -->
+                <div class="quyen-cs-feedback-wrapper" style="margin-bottom: 8px;">
+                    <!-- Status Important Info -->
+                    <div class="quyen-cs-status" id="quyen-cs-status" style="display:none;"></div>
+                    
+                    <!-- Real-time Steps Log -->
+                    <div class="quyen-cs-steps-container" id="quyen-cs-steps-container" style="display:none; margin-top:6px; padding: 6px 10px; background: rgba(0,0,0,0.02); border: 1px dashed #c0c0c0; border-radius: 6px;">
+                        <div style="font-size: 10px; color: #777; font-weight: 600; margin-bottom: 4px; text-transform: uppercase;">Tiến trình hoạt động</div>
+                        <ul id="quyen-cs-steps-list" style="margin:0; padding-left: 0; list-style-type: none; font-size: 11px; color: #444; display: flex; flex-direction: column; gap: 4px;">
+                        </ul>
+                    </div>
+                </div>
+                <style>
+                    @keyframes quyen-fade-in-up { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+                    .quyen-step-item { animation: quyen-fade-in-up 0.3s ease; display: flex; align-items: flex-start; line-height: 1.3; }
+                    .quyen-step-icon { margin-right: 5px; flex-shrink: 0; }
+                </style>
 
                 <!-- Editable Fields -->
                 <div class="quyen-cs-section">
@@ -79,6 +94,10 @@ const QuyenCareSheetUI = (function () {
     let _cachedPatient = null;
     let _vitalsRequested = false;
 
+    // ★ SAFETY v2: Track BN hiện tại để validate incoming care sheet data
+    let _currentPatientSeq = 0;
+    let _currentKhambenhId = '';
+
     // Listen for patient selection from Bridge (jqGrid hook)
     window.addEventListener('message', function (event) {
         if (!event.data) return;
@@ -91,17 +110,45 @@ const QuyenCareSheetUI = (function () {
             const v = event.data.vitals || {};
             _cachedPatient = p;
             _cachedVitals = v;
-            QuyenLog.info('👤 BN selected | fields:', Object.keys(p).length);
+
+            // ★ SAFETY v2: Cập nhật patient tracking
+            _currentPatientSeq = event.data.seq || 0;
+            _currentKhambenhId = p.khambenhId || '';
+            QuyenLog.info('👤 BN selected | seq:', _currentPatientSeq, '| KB:', _currentKhambenhId);
+
+            // ★ BUG-02: Reset toàn bộ sinh hiệu + cân nặng + BMI trong _customValues khi đổi BN
+            const VITAL_RESET_KEYS = ['nhipTim', 'nhietDo', 'huyetAp', 'nhipTho', 'spO2', 'canNang', 'bmi'];
+            for (let vri = 0; vri < VITAL_RESET_KEYS.length; vri++) {
+                _customValues[VITAL_RESET_KEYS[vri]] = '';
+            }
+            // Reset các input trên panel tương ứng
+            for (let vri2 = 0; vri2 < VITAL_RESET_KEYS.length; vri2++) {
+                const vInput = document.querySelector('#quyen-cs-fields input[data-field-key="' + VITAL_RESET_KEYS[vri2] + '"]');
+                if (vInput) {
+                    vInput.value = '';
+                    vInput.style.borderColor = '';
+                    vInput.style.background = '';
+                    vInput.style.boxShadow = '';
+                    vInput.title = '';
+                }
+            }
+            // Xóa banner cảnh báo sinh hiệu cũ (nếu có)
+            const oldAlert = document.getElementById('quyen-vital-alert');
+            if (oldAlert) oldAlert.remove();
 
             // ★ SPRINT B: set target hint cho patient-lock
             if (typeof HIS !== 'undefined' && HIS.PatientLock) {
                 HIS.PatientLock.setTargetHint(p);
             }
 
+            // Prefill vitals mới (nếu có)
             prefillVitalsToPanel(v);
 
             // Reset Section 4 fields khi chuyển BN
             resetSection4InPanel();
+
+            clearExtensionSteps();
+            addExtensionStep('Chọn BN: ' + (p.name || 'Mới') + (p.khambenhId ? ` (#${p.khambenhId})` : ''), 'done');
         }
 
         // Fallback: vitals result từ REQ_VITALS
@@ -109,16 +156,41 @@ const QuyenCareSheetUI = (function () {
             _cachedVitals = event.data.vitals || {};
             QuyenLog.info('⚖️ Vitals nhận:', JSON.stringify(_cachedVitals));
             prefillVitalsToPanel(_cachedVitals);
+            addExtensionStep('Tải xong sinh hiệu & cân nặng (NT.006)', 'done');
         }
 
         // ★ Auto-prefill Section 4 + 17 vào panel khi nhận từ bridge
         if (event.data.type === 'QUYEN_CARESHEET_SEC4_DATA') {
+            // ★ SAFETY v2: Validate seq + khambenhId trước khi prefill
+            const msgSeq = event.data.seq;
+            const msgKB = event.data.khambenhId || '';
+            if (_currentPatientSeq > 0 && msgSeq === undefined) {
+                QuyenLog.warn('📋 UI: DROPPED SEC4 data — missing seq');
+                return;
+            }
+            if (msgSeq !== undefined && msgSeq !== _currentPatientSeq) {
+                QuyenLog.warn('📋 UI: DROPPED SEC4 data — seq stale (' + msgSeq + ' != ' + _currentPatientSeq + ')');
+                return;
+            }
+            if (msgKB && _currentKhambenhId && msgKB !== _currentKhambenhId) {
+                QuyenLog.warn('📋 UI: DROPPED SEC4 data — KB mismatch (' + msgKB + ' != ' + _currentKhambenhId + ')');
+                return;
+            }
+
             prefillSection4ToPanel(event.data);
 
             // ★ Prefill sinh hiệu từ phiếu cũ vào panel (dữ liệu thật)
             if (event.data.vitalsFromPrev) {
                 prefillOldVitalsToPanel(event.data.vitalsFromPrev);
             }
+            
+            const fetchedItems = [];
+            if (event.data.data && Object.keys(event.data.data).length > 0) fetchedItems.push('Cơ quan bệnh');
+            if (event.data.weight) fetchedItems.push('Cân nặng');
+            if (event.data.vitalsFromPrev && Object.keys(event.data.vitalsFromPrev).length > 0) fetchedItems.push('Sinh hiệu');
+            if (event.data.sec17 && Object.keys(event.data.sec17).length > 0) fetchedItems.push('Can thiệp ĐD');
+            
+            addExtensionStep('Nạp phiếu cũ: ' + (fetchedItems.length > 0 ? fetchedItems.join(', ') : 'Không có dữ liệu mới'), 'done');
         }
     });
 
@@ -267,9 +339,16 @@ const QuyenCareSheetUI = (function () {
             'animation: quyen-shake 0.5s ease-in-out'
         ].join(';');
 
+        // ★ BUG-07: Escape HTML trong warnings để chống XSS
+        function escapeWarningText(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         const lines = ['<div style="font-size:14px; font-weight:700; margin-bottom:4px">🚨 SINH HIỆU BẤT THƯỜNG</div>'];
         for (let i = 0; i < warnings.length; i++) {
-            lines.push('<div style="padding:2px 0">• ' + warnings[i] + '</div>');
+            lines.push('<div style="padding:2px 0">• ' + escapeWarningText(warnings[i]) + '</div>');
         }
         lines.push('<div style="margin-top:6px; font-size:11px; opacity:0.9">⬆ ĐD kiểm tra và sửa trước khi điền phiếu</div>');
         lines.push('<button id="quyen-vital-alert-close" style="position:absolute;top:6px;right:8px;background:none;border:none;color:#fff;font-size:16px;cursor:pointer;opacity:0.7">✕</button>');
@@ -380,7 +459,17 @@ const QuyenCareSheetUI = (function () {
         }, 3000);
     }
 
+    // ★ BUG-04: Module-level refs cho cleanup
+    let _detectObserver = null;
+    let _detectInterval = null;
+    let _detectRetryTimer = null;
+
     function detectPatientInfo() {
+        // ★ BUG-04: Cleanup observer/interval cũ trước khi tạo mới
+        if (_detectObserver) { _detectObserver.disconnect(); _detectObserver = null; }
+        if (_detectInterval) { clearInterval(_detectInterval); _detectInterval = null; }
+        if (_detectRetryTimer) { clearInterval(_detectRetryTimer); _detectRetryTimer = null; }
+
         function findPatientName() {
             // Luôn tìm từ DOM (title bar) ĐẦU TIÊN — để detect BN mới
             const docs = [document];
@@ -465,6 +554,7 @@ const QuyenCareSheetUI = (function () {
                 // Request vitals lần đầu (fallback nếu Bridge chưa gửi)
                 if (!_vitalsRequested && !_cachedVitals) {
                     _vitalsRequested = true;
+                    addExtensionStep('Đang tìm dữ liệu sinh hiệu...', 'loading');
                     window.postMessage({ type: 'QUYEN_REQ_VITALS' }, location.origin);
                 }
             } else if (el && (!el.textContent || el.textContent === 'Chọn bệnh nhân...')) {
@@ -478,11 +568,14 @@ const QuyenCareSheetUI = (function () {
 
         // Retry vài lần cho trang render chậm (BuongDieuTri)
         let _retryCount = 0;
-        const _retryTimer = setInterval(function () {
+        _detectRetryTimer = setInterval(function () {
             _retryCount++;
             update();
-            if (_retryCount >= 5 || document.getElementById('quyen-patient-display').textContent !== 'Chọn bệnh nhân...') {
-                clearInterval(_retryTimer);
+            // ★ BUG-10: Null check cho quyen-patient-display
+            const displayEl = document.getElementById('quyen-patient-display');
+            if (_retryCount >= 5 || (displayEl && displayEl.textContent !== 'Chọn bệnh nhân...')) {
+                clearInterval(_detectRetryTimer);
+                _detectRetryTimer = null;
             }
         }, 2000);
 
@@ -493,7 +586,7 @@ const QuyenCareSheetUI = (function () {
             _updateTimer = setTimeout(update, 500);
         }
 
-        const observer = new MutationObserver(function (mutations) {
+        _detectObserver = new MutationObserver(function (mutations) {
             for (let i = 0; i < mutations.length; i++) {
                 const m = mutations[i];
                 // Iframe mới thêm vào hoặc text thay đổi
@@ -507,14 +600,14 @@ const QuyenCareSheetUI = (function () {
                 }
             }
         });
-        observer.observe(document.body, {
+        _detectObserver.observe(document.body, {
             childList: true,
             subtree: true,
             characterData: true
         });
 
         // Safety net: kiểm tra rất thưa (15s) phòng trường hợp MutationObserver miss
-        setInterval(update, 15000);
+        _detectInterval = setInterval(update, 15000);
     }
 
 
@@ -908,6 +1001,7 @@ const QuyenCareSheetUI = (function () {
         }
 
         setStatus('⏳ Đang điền...', 'info');
+        addExtensionStep('Bắt đầu điền ' + Object.keys(valuesToFill).length + ' mục cơ bản...', 'loading');
 
         const result = QuyenCareSheetFiller.fillCustomValues(valuesToFill);
 
@@ -922,21 +1016,32 @@ const QuyenCareSheetUI = (function () {
 
             // ★ Tự động copy Section 4 "Cơ quan bệnh" + cân nặng từ phiếu cũ
             try {
-                const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious();
-                function showSec4Result(r) {
-                     if (r && r.success) {
-                        let msg = '📋 Phiếu cũ #' + (r.phieuId || '?') + ' → ' + r.filledCount + ' ô';
-                        if (r.sec17Count) msg += ' + Sec17: ' + r.sec17Count + ' mục';
-                        if (r.patientName) msg += ' (BN: ' + r.patientName + ')';
-                        if (r.weight) msg += ' | Cân nặng: ' + r.weight + 'kg';
-                        setStatus('✅ Đã điền ' + result.filledCount + ' mục + ' + msg, 'success');
-                        if (typeof QuyenUI !== 'undefined') QuyenUI.showToast(msg);
-                    }
-                }
-                if (sec4Result && sec4Result.then) {
-                    sec4Result.then(showSec4Result);
+                // ★ BUG-14: Kiểm tra lại PatientLock trước khi copy Section 4 từ phiếu cũ
+                const lockCheck2 = (typeof HIS !== 'undefined' && HIS.PatientLock) ? HIS.PatientLock.verifyCurrentForm() : { ok: true };
+                if (!lockCheck2.ok) {
+                    QuyenLog.warn('⚠️ Skip fillSection4FromPrevious — BN đã thay đổi:', lockCheck2.details);
+                    addExtensionStep('Bỏ qua copy phiếu cũ: BN thay đổi', 'error');
                 } else {
-                    showSec4Result(sec4Result);
+                    addExtensionStep('Đang copy dữ liệu phiếu cũ...', 'loading');
+                    const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious();
+                    function showSec4Result(r) {
+                         if (r && r.success) {
+                            let msg = '📋 Phiếu cũ #' + (r.phieuId || '?') + ' → ' + r.filledCount + ' ô';
+                            if (r.sec17Count) msg += ' + Sec17: ' + r.sec17Count + ' mục';
+                            if (r.patientName) msg += ' (BN: ' + r.patientName + ')';
+                            if (r.weight) msg += ' | Cân nặng: ' + r.weight + 'kg';
+                            setStatus('✅ Đã điền ' + result.filledCount + ' mục + ' + msg, 'success');
+                            addExtensionStep('Hoàn tất copy phiếu cũ (' + r.filledCount + ' ô)', 'done');
+                            if (typeof QuyenUI !== 'undefined') QuyenUI.showToast(msg);
+                        } else {
+                            addExtensionStep('Không có dữ liệu phiếu cũ để copy', 'done');
+                        }
+                    }
+                    if (sec4Result && sec4Result.then) {
+                        sec4Result.then(showSec4Result);
+                    } else {
+                        showSec4Result(sec4Result);
+                    }
                 }
             } catch (e) {
                 QuyenLog.warn('⚠️ Không thể copy Section 4:', e);
@@ -976,6 +1081,50 @@ const QuyenCareSheetUI = (function () {
         el.textContent = message;
         el.className = `quyen-cs-status quyen-cs-status-${type || 'info'}`;
         el.style.display = message ? 'block' : 'none';
+    }
+
+    // ==========================================
+    // EXTENSION STEPS TRACKER
+    // ==========================================
+    function addExtensionStep(message, status = 'done') {
+        const container = document.getElementById('quyen-cs-steps-container');
+        const list = document.getElementById('quyen-cs-steps-list');
+        if (!container || !list) return;
+
+        container.style.display = 'block';
+
+        const li = document.createElement('li');
+        li.className = 'quyen-step-item';
+        
+        let iconHtml = '<span class="quyen-step-icon" style="color:#4caf50;">✅</span>';
+        if (status === 'loading') {
+            iconHtml = '<span class="quyen-step-icon" style="color:#2196f3; animation: quyen-spin 1s linear infinite;">⏳</span>';
+        } else if (status === 'error') {
+            iconHtml = '<span class="quyen-step-icon" style="color:#f44336;">❌</span>';
+        }
+
+        li.innerHTML = iconHtml + ' <span>' + escapeAttr(message) + '</span>';
+        list.appendChild(li);
+
+        // Giữ lại tối đa 4 thao tác gần nhất cho gọn
+        while (list.children.length > 4) {
+            list.removeChild(list.firstChild);
+        }
+        
+        // Thêm keyframes spin nếu chưa có
+        if (!document.getElementById('quyen-spin-style')) {
+            const style = document.createElement('style');
+            style.id = 'quyen-spin-style';
+            style.textContent = '@keyframes quyen-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+        }
+    }
+
+    function clearExtensionSteps() {
+        const container = document.getElementById('quyen-cs-steps-container');
+        const list = document.getElementById('quyen-cs-steps-list');
+        if (list) list.innerHTML = '';
+        if (container) container.style.display = 'none';
     }
 
     // ==========================================

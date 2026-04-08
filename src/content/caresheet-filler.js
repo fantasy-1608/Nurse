@@ -32,7 +32,7 @@ const QuyenCareSheetFiller = (function () {
             const isVisible = iframe.offsetParent !== null;
             formIframes.push({ elm: iframe, isVisible: isVisible });
         }
-        
+
         // Sắp xếp: visible iframes được check trước
         formIframes.sort((a, b) => (a.isVisible === b.isVisible) ? 0 : a.isVisible ? -1 : 1);
 
@@ -56,14 +56,14 @@ const QuyenCareSheetFiller = (function () {
                     QuyenLog.info(`  📄 Tìm thấy iframe form CS (visible=${item.isVisible}) qua tcChiTietPhieu: #${iframe.id || '(no-id)'}`);
                     return iframeDoc;
                 }
-                
+
                 // Backup check fallback cho các src quen thuộc nếu DOM chưa load xong
                 if (iframe.id && iframe.id.includes('ThemPhieu') || (iframe.src && (iframe.src.includes('ThemPhieu') || iframe.src.includes('NTU02D204')))) {
                     // Nếu là iframe ThemPhieu nhưng không tìm thấy data-ct-form-id, có thể do DOM chưa tải kịp
                     // nhưng nếu nó VISIBLE, nó RẤT ĐÁNG để dùng
                     if (item.isVisible) {
-                         QuyenLog.info(`  📄 Fallback: Tìm thấy iframe (visible) theo src/id: #${iframe.id || '(no-id)'} nhưng DOM có thể rỗng.`);
-                         return iframeDoc;
+                        QuyenLog.info(`  📄 Fallback: Tìm thấy iframe (visible) theo src/id: #${iframe.id || '(no-id)'} nhưng DOM có thể rỗng.`);
+                        return iframeDoc;
                     }
                 }
             } catch (e) {
@@ -340,11 +340,32 @@ const QuyenCareSheetFiller = (function () {
     let _cachedPhieuId = '';
     let _cachedVitalsFromPrev = null; // ★ Sinh hiệu từ phiếu cũ (dữ liệu thật)
 
+    // ★ SAFETY v2: Track BN hiện tại để validate incoming data
+    let _currentPatientSeq = 0;
+    let _currentKhambenhId = '';
+
     // Lắng nghe dữ liệu Section 4 từ Bridge
     window.addEventListener('message', function (event) {
         if (!event.data || event.data.type !== 'QUYEN_CARESHEET_SEC4_DATA') return;
         // ★ SPRINT C: Origin validation
         if (typeof HIS !== 'undefined' && HIS.Message && !HIS.Message.isValid(event)) return;
+
+        // ★ SAFETY v2: Validate seq + khambenhId — drop nếu nhầm BN
+        const msgSeq = event.data.seq;
+        const msgKB = event.data.khambenhId || '';
+        if (_currentPatientSeq > 0 && msgSeq === undefined) {
+            QuyenLog.warn('📋 Filler: DROPPED SEC4 data — thiếu seq');
+            return;
+        }
+        if (msgSeq !== undefined && msgSeq !== _currentPatientSeq) {
+            QuyenLog.warn('📋 Filler: DROPPED SEC4 data — seq stale (' + msgSeq + ' != ' + _currentPatientSeq + ')');
+            return;
+        }
+        if (msgKB && _currentKhambenhId && msgKB !== _currentKhambenhId) {
+            QuyenLog.warn('📋 Filler: DROPPED SEC4 data — KB mismatch (' + msgKB + ' != ' + _currentKhambenhId + ')');
+            return;
+        }
+
         if (event.data.data && Object.keys(event.data.data).length > 0) {
             _cachedSec4Data = event.data.data;
         }
@@ -362,7 +383,7 @@ const QuyenCareSheetFiller = (function () {
 
         const phieuId = event.data.phieuId || '';
         const vitalCount = _cachedVitalsFromPrev ? Object.keys(_cachedVitalsFromPrev).length : 0;
-        QuyenLog.info('📋 Nhận từ phiếu cũ #' + phieuId + ': Sec4=' + JSON.stringify(_cachedSec4Data) + ', Sec17=' + JSON.stringify(_cachedSec17Data) + ', CN=' + _cachedWeight + 'kg, CC=' + _cachedHeight + 'cm, Vitals=' + vitalCount + ' mục');
+        QuyenLog.info('📋 Nhận từ phiếu cũ #' + phieuId + ' (seq=' + msgSeq + '): Sec4=' + JSON.stringify(_cachedSec4Data) + ', CN=' + _cachedWeight + 'kg, Vitals=' + vitalCount + ' mục');
     });
 
     // Lắng nghe Vitals từ patient selection + API NT.006
@@ -371,6 +392,11 @@ const QuyenCareSheetFiller = (function () {
         let v = null;
         if (event.data.type === 'QUYEN_VITALS_RESULT') v = event.data.vitals;
         if (event.data.type === 'QUYEN_PATIENT_SELECTED') {
+            // ★ SAFETY v2: Cập nhật patient tracking
+            _currentPatientSeq = event.data.seq || 0;
+            _currentKhambenhId = (event.data.patient && event.data.patient.khambenhId) || '';
+            QuyenLog.info('📋 Filler: BN mới — seq=' + _currentPatientSeq + ', KB=' + _currentKhambenhId);
+
             // ★ FIX Bug1: Reset caches khi chuyển BN mới
             _cachedSec4Data = null;
             _cachedSec17Data = null;
@@ -401,19 +427,42 @@ const QuyenCareSheetFiller = (function () {
         }
 
         // ★ Chỉ dùng cache nếu ĐÃ CÓ sec4 hoặc sec17 (không dựa vào weight)
-        if (_cachedSec4Data || _cachedSec17Data) {
+        const hasCachedSec4 = !!(_cachedSec4Data && Object.keys(_cachedSec4Data).length > 0);
+        const hasCachedSec17 = !!(_cachedSec17Data && Object.keys(_cachedSec17Data).length > 0);
+        if (hasCachedSec4 || hasCachedSec17) {
             return _doFillSection4(formDoc, _cachedSec4Data || {}, _cachedWeight, _cachedSec17Data || {});
         }
 
         // Chưa có cache → request Bridge
-        QuyenLog.info('📋 Yêu cầu Bridge gửi Section 4...');
-        window.postMessage({ type: 'QUYEN_REQ_CARESHEET_SEC4' }, location.origin);
+        const reqId = 'cs4_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
+        QuyenLog.info('📋 Yêu cầu Bridge gửi Section 4... reqId=' + reqId);
+        window.postMessage({
+            type: 'QUYEN_REQ_CARESHEET_SEC4',
+            requestId: reqId,
+            seq: _currentPatientSeq,
+            khambenhId: _currentKhambenhId
+        }, location.origin);
 
         // Chờ response (tối đa 3 giây)
         return new Promise(function (resolve) {
             let resolved = false;
             function onMessage(ev) {
-                if (ev.data && ev.data.type === 'QUYEN_CARESHEET_SEC4_DATA' && !resolved) {
+                if (!ev.data || ev.data.type !== 'QUYEN_CARESHEET_SEC4_DATA' || resolved) return;
+                if (typeof HIS !== 'undefined' && HIS.Message && !HIS.Message.isValid(ev)) return;
+
+                // Correlation chặt: chỉ nhận đúng response cho request hiện tại
+                if (ev.data.requestId !== reqId) return;
+
+                if (ev.data.seq !== undefined && ev.data.seq !== _currentPatientSeq) {
+                    QuyenLog.warn('📋 Promise DROPPED SEC4 data — seq stale (' + ev.data.seq + ' != ' + _currentPatientSeq + ')');
+                    return;
+                }
+                if (ev.data.khambenhId && _currentKhambenhId && ev.data.khambenhId !== _currentKhambenhId) {
+                    QuyenLog.warn('📋 Promise DROPPED SEC4 data — KB mismatch (' + ev.data.khambenhId + ' != ' + _currentKhambenhId + ')');
+                    return;
+                }
+
+                if (!resolved) {
                     resolved = true;
                     window.removeEventListener('message', onMessage);
                     _cachedSec4Data = ev.data.data || {};
@@ -587,4 +636,3 @@ const QuyenCareSheetFiller = (function () {
         getCachedHeight: function () { return _cachedHeight; }
     };
 })();
-

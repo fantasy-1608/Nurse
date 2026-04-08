@@ -147,11 +147,29 @@ HIS.Audit = (function () {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             var obj = {};
             obj[STORAGE_KEY] = entries;
-            chrome.storage.local.set(obj);
+            chrome.storage.local.set(obj, function () {
+                // ★ BUG-17: Handle quota exceeded — trim oldest 20% and retry
+                if (chrome.runtime.lastError) {
+                    var trimCount = Math.max(1, Math.floor(entries.length * 0.2));
+                    var trimmed = entries.slice(trimCount);
+                    if (HIS.Logger) HIS.Logger.warn('Audit', 'Quota exceeded, trimming ' + trimCount + ' oldest entries');
+                    var obj2 = {};
+                    obj2[STORAGE_KEY] = trimmed;
+                    chrome.storage.local.set(obj2);
+                }
+            });
         } else {
             try {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-            } catch (e) { /* quota exceeded */ }
+            } catch (e) {
+                // ★ BUG-17: LocalStorage quota exceeded — trim and retry
+                try {
+                    var trimCount = Math.max(1, Math.floor(entries.length * 0.2));
+                    var trimmed = entries.slice(trimCount);
+                    if (HIS.Logger) HIS.Logger.warn('Audit', 'LocalStorage quota exceeded, trimming ' + trimCount + ' oldest entries');
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+                } catch (e2) { /* truly out of space */ }
+            }
         }
     }
 

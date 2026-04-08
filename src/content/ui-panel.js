@@ -448,7 +448,9 @@ const QuyenUI = (function () {
         const todayStr = ('0' + today.getDate()).slice(-2) + '/' + ('0' + (today.getMonth() + 1)).slice(-2) + '/' + today.getFullYear();
         const todayDrugs = ivDrugs.filter(function (drug) {
             if (!drug.prescriptionDate) return true; // Giữ nếu không có ngày
-            return drug.prescriptionDate === todayStr;
+            // ★ BUG-12: Normalize format — chấp nhận DD/MM/YYYY hoặc YYYY-MM-DD
+            const pDate = drug.prescriptionDate.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+            return pDate === todayStr;
         });
 
         if (todayDrugs.length === 0) {
@@ -841,7 +843,11 @@ const QuyenUI = (function () {
     // ==========================================
     // UTILITY
     // ==========================================
+    // ★ BUG-22: Dùng HIS.Utils.escapeHtml nếu có, fallback nếu không
     function escapeHtml(text) {
+        if (typeof HIS !== 'undefined' && HIS.Utils && HIS.Utils.escapeHtml) {
+            return HIS.Utils.escapeHtml(text);
+        }
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
@@ -906,7 +912,7 @@ const QuyenUI = (function () {
                 setTimeout(hideFillProgress, 3000);
             } else if (state === S.TIMEOUT) {
                 showFillProgress('⏰ Quá thời gian!', false);
-                showToast('⏰ Fill quá 15s — có thể bị kẹt. Kiểm tra form!', 'error');
+                showToast('⏰ Fill quá 30s — có thể bị kẹt. Kiểm tra form!', 'error');
             } else if (state === S.CANCELLED) {
                 showFillProgress('❌ Đã hủy', false);
                 setTimeout(hideFillProgress, 2000);
