@@ -64,8 +64,40 @@ const QuyenCareSheetUI = (function () {
                 </div>
                 <style>
                     @keyframes quyen-fade-in-up { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
-                    .quyen-step-item { animation: quyen-fade-in-up 0.3s ease; display: flex; align-items: flex-start; line-height: 1.3; }
-                    .quyen-step-icon { margin-right: 5px; flex-shrink: 0; }
+                    .quyen-step-item { 
+                        animation: quyen-fade-in-up 0.3s ease; 
+                        display: flex; 
+                        align-items: flex-start; 
+                        line-height: 1.4;
+                        position: relative;
+                        padding-bottom: 8px;
+                    }
+                    /* Vertical line connecting steps */
+                    .quyen-step-item:not(:last-child)::before {
+                        content: '';
+                        position: absolute;
+                        top: 18px;
+                        left: 7px;
+                        bottom: -2px;
+                        width: 2px;
+                        background: #e0e0e0;
+                        border-radius: 1px;
+                        z-index: 1;
+                    }
+                    .quyen-step-icon { 
+                        margin-right: 8px; 
+                        flex-shrink: 0; 
+                        position: relative;
+                        z-index: 2;
+                        background: #fafafa;
+                        border-radius: 50%;
+                        width: 16px;
+                        height: 16px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 10px;
+                    }
                 </style>
 
                 <!-- Editable Fields -->

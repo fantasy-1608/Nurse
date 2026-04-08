@@ -100,6 +100,10 @@ const QuyenUI = (function () {
                 </div>
                 <div class="quyen-patient-vitals" id="quyen-patient-vitals" style="display:none"></div>
             </div>
+            
+            <!-- ★ Banner cảnh báo sai BN (ẩn mặc định, chỉ hiện khi có class theme-danger) -->
+            <div class="quyen-alert-banner">🚨 CẢNH BÁO: PHÁT HIỆN SAI BỆNH NHÂN!</div>
+            
             <div class="quyen-tab-bar" id="quyen-tab-bar">
                 <button class="quyen-tab quyen-tab-active" data-tab="infusion" id="quyen-tab-infusion">✏️ Truyền dịch</button>
                 <button class="quyen-tab" data-tab="caresheet" id="quyen-tab-caresheet">📋 Phiếu CS</button>
@@ -876,15 +880,20 @@ const QuyenUI = (function () {
                 indicator.textContent = '✓';
                 indicator.title = 'Xác nhận: BN khớp\n' + result.details;
                 indicator.style.cssText = baseStyle + 'color: #28a745;';
+                if (_panel) _panel.classList.remove('quyen-theme-danger');
             } else {
-                indicator.textContent = '⚠';
+                indicator.textContent = '❌';
                 indicator.title = 'Chưa khớp BN!\n' + result.details;
-                indicator.style.cssText = baseStyle + 'color: #e67e22;';
+                indicator.style.cssText = baseStyle + 'color: #f44336;';
+                // Kích hoạt theme cảnh báo đỏ
+                if (_panel) _panel.classList.add('quyen-theme-danger');
+                setFlowerState('fire');
             }
         } else {
             indicator.textContent = '○';
             indicator.title = 'Chưa chọn bệnh nhân';
             indicator.style.cssText = baseStyle + 'color: #999;';
+            if (_panel) _panel.classList.remove('quyen-theme-danger');
         }
 
         display.parentNode.insertBefore(indicator, display.nextSibling);
