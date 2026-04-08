@@ -1,12 +1,27 @@
 /**
- * __EXT_EMOJI__ __EXT_SHORT_NAME__ — Popup Script (minimal)
+ * __EXT_EMOJI__ __EXT_SHORT_NAME__ — Popup Script
  * 2 toggles: Bật/tắt extension + Debug mode
+ * + Auto-update notification
  */
 
 document.addEventListener('DOMContentLoaded', function () {
     loadEnabledState();
     loadDebugMode();
+    showCurrentVersion();
+    checkUpdateStatus();
+    setupUpdateButton();
 });
+
+// ==========================================
+// CURRENT VERSION
+// ==========================================
+function showCurrentVersion() {
+    const versionEl = document.getElementById('version-display');
+    if (versionEl) {
+        const manifest = chrome.runtime.getManifest();
+        versionEl.textContent = 'v' + manifest.version;
+    }
+}
 
 // ==========================================
 // EXTENSION ENABLED TOGGLE
@@ -51,4 +66,58 @@ function loadDebugMode() {
     });
 }
 
+// ==========================================
+// UPDATE NOTIFICATION
+// ==========================================
+function checkUpdateStatus() {
+    chrome.storage.local.get('quyen_update', function (data) {
+        const updateInfo = data.quyen_update;
+        if (!updateInfo || !updateInfo.hasUpdate) return;
 
+        showUpdateBanner(updateInfo);
+    });
+}
+
+function showUpdateBanner(info) {
+    const banner = document.getElementById('update-banner');
+    const desc = document.getElementById('update-desc');
+    const btn = document.getElementById('update-btn');
+    if (!banner || !desc || !btn) return;
+
+    desc.textContent = 'v' + info.currentVersion + ' → v' + info.latestVersion;
+    btn.href = info.releaseUrl || info.downloadUrl || '#';
+    banner.classList.add('show');
+}
+
+function setupUpdateButton() {
+    const checkBtn = document.getElementById('check-update-btn');
+    if (!checkBtn) return;
+
+    checkBtn.addEventListener('click', function () {
+        checkBtn.textContent = '⏳ Đang kiểm tra...';
+        checkBtn.style.pointerEvents = 'none';
+
+        chrome.runtime.sendMessage({ type: 'CHECK_UPDATE' }, function (response) {
+            if (chrome.runtime.lastError) {
+                checkBtn.textContent = '❌ Lỗi kết nối';
+                setTimeout(function () {
+                    checkBtn.textContent = '🔄 Kiểm tra cập nhật';
+                    checkBtn.style.pointerEvents = '';
+                }, 2000);
+                return;
+            }
+
+            if (response && response.hasUpdate) {
+                showUpdateBanner(response);
+                checkBtn.textContent = '🆕 Có bản mới!';
+            } else {
+                checkBtn.textContent = '✅ Đã là bản mới nhất';
+            }
+
+            setTimeout(function () {
+                checkBtn.textContent = '🔄 Kiểm tra cập nhật';
+                checkBtn.style.pointerEvents = '';
+            }, 3000);
+        });
+    });
+}

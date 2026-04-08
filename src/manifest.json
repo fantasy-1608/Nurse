@@ -6,8 +6,12 @@
     "author": "Huỳnh Trung Anh",
     "permissions": [
         "activeTab",
-        "storage"
+        "storage",
+        "alarms"
     ],
+    "background": {
+        "service_worker": "background/background.js"
+    },
     "host_permissions": [
         "*://*.vncare.vn/*"
     ],
