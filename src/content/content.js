@@ -99,8 +99,8 @@
     let _initialized = false;
 
     function bootIfActivated() {
-        chrome.storage.local.get('quyen_activated', function (data) {
-            if (data.quyen_activated === true) {
+        chrome.storage.local.get(['quyen_activated', 'quyen_enabled'], function (data) {
+            if (data.quyen_activated === true && data.quyen_enabled !== false) {
                 if (!_initialized) {
                     _initialized = true;
                     try {
@@ -109,13 +109,14 @@
                         QuyenLog.error('Lỗi khởi tạo:', err);
                     }
                 }
+            } else if (data.quyen_enabled === false) {
+                QuyenLog.info('🔒 Extension đã tắt. Mở popup để bật lại.');
             } else {
                 QuyenLog.info('🔐 Extension chưa kích hoạt. Mở popup để nhập mã.');
             }
         });
     }
 
-    // Lắng nghe kích hoạt từ popup (hot-enable không cần F5)
     chrome.runtime.onMessage.addListener(function (msg) {
         if (msg && msg.type === 'QUYEN_ACTIVATION_CHANGED' && msg.activated === true) {
             QuyenLog.info('🔓 Đã kích hoạt! Khởi động extension...');
@@ -127,6 +128,11 @@
                     QuyenLog.error('Lỗi khởi tạo:', err);
                 }
             }
+        }
+        // ★ v1.2.0 BugFix: Tắt thật sự khi toggle off — không chỉ ẩn UI
+        if (msg && msg.type === 'QUYEN_TOGGLE_EXTENSION' && msg.enabled === false) {
+            QuyenLog.info('🔒 Extension đã tắt bởi user. Dừng các module nền.');
+            _initialized = false; // Cho phép re-init khi bật lại
         }
     });
 

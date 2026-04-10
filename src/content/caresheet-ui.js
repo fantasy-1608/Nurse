@@ -52,8 +52,11 @@ const QuyenCareSheetUI = (function () {
 
                 <!-- Feedback Wrapper -->
                 <div class="quyen-cs-feedback-wrapper" style="margin-bottom: 8px;">
-                    <!-- Status Important Info -->
+                <!-- Status Important Info -->
                     <div class="quyen-cs-status" id="quyen-cs-status" style="display:none;"></div>
+                    
+                    <!-- ★ v1.2.0: Phiếu count info badge -->
+                    <div id="quyen-cs-sheet-info" style="display:none;margin-top:4px;padding:4px 8px;border-radius:6px;background:rgba(33,150,243,0.08);border:1px solid rgba(33,150,243,0.15);font-size:10px;color:#1976d2;line-height:1.5;"></div>
                     
                     <!-- Real-time Steps Log -->
                     <div class="quyen-cs-steps-container" id="quyen-cs-steps-container" style="display:none; margin-top:6px; padding: 6px 10px; background: rgba(0,0,0,0.02); border: 1px dashed #c0c0c0; border-radius: 6px;">
@@ -181,6 +184,14 @@ const QuyenCareSheetUI = (function () {
 
             clearExtensionSteps();
             addExtensionStep('Chọn BN: ' + (p.name || 'Mới') + (p.khambenhId ? ` (#${p.khambenhId})` : ''), 'done');
+
+            // ★ v1.2.0: Request caresheet list để hiện thông tin phiếu đã lập
+            requestCareSheetCount(p);
+        }
+
+        // ★ v1.2.0: Caresheet list result — hiển thị số phiếu đã lập hôm nay
+        if (event.data.type === 'QUYEN_CARESHEET_LIST_RESULT') {
+            updateSheetInfoBadge(event.data);
         }
 
         // Fallback: vitals result từ REQ_VITALS
@@ -1125,6 +1136,62 @@ const QuyenCareSheetUI = (function () {
     }
 
     // ==========================================
+    // ★ v1.2.0: CARESHEET COUNT INFO
+    // ==========================================
+    function requestCareSheetCount(patient) {
+        if (!patient || !patient.khambenhId) return;
+        // Hide old badge
+        const badge = document.getElementById('quyen-cs-sheet-info');
+        if (badge) { badge.style.display = 'none'; badge.innerHTML = ''; }
+
+        window.postMessage({
+            type: 'QUYEN_REQ_CARESHEET_LIST',
+            khambenhId: patient.khambenhId,
+            hosobenhanid: patient.hosobenhanid || '',
+            requestId: 'cscount_' + Date.now()
+        }, location.origin);
+    }
+
+    function updateSheetInfoBadge(data) {
+        const badge = document.getElementById('quyen-cs-sheet-info');
+        if (!badge) return;
+
+        const todayCount = data.todayCount || 0;
+        const totalCount = data.totalCount || 0;
+        const todaySheets = data.todaySheets || [];
+
+        if (totalCount === 0 && todayCount === 0) {
+            badge.style.display = 'none';
+            return;
+        }
+
+        let html = '📋 ';
+        if (todayCount > 0) {
+            html += '<b>' + todayCount + '</b> phiếu hôm nay';
+            // Hiện thời gian tạo từng phiếu
+            const times = [];
+            for (let i = 0; i < todaySheets.length && i < 5; i++) {
+                const dt = todaySheets[i].ngayTao || '';
+                // Extract time from "dd/mm/yyyy hh:mm:ss" → "hh:mm"
+                const tm = dt.match(/(\d{1,2}:\d{2})/);
+                if (tm) times.push(tm[1]);
+            }
+            if (times.length > 0) {
+                html += ' <span style="color:#666;font-size:9px;">(' + times.join(', ') + ')</span>';
+            }
+        } else {
+            html += 'Chưa có phiếu hôm nay';
+        }
+
+        if (totalCount > todayCount) {
+            html += ' · <span style="color:#999;">' + totalCount + ' tổng</span>';
+        }
+
+        badge.innerHTML = html;
+        badge.style.display = 'block';
+    }
+
+    // ==========================================
     // UTILITY
     // ==========================================
     function escapeAttr(str) {
@@ -1141,7 +1208,7 @@ const QuyenCareSheetUI = (function () {
         const rect = fillBtn.getBoundingClientRect();
         const el = document.createElement('div');
         el.className = 'quyen-merit-float';
-        el.textContent = '+1 công đức cho __EXT_SHORT_NAME__ __EXT_EMOJI__';
+        el.textContent = '+1 chỉ vàng ✨';
         el.style.left = rect.left + rect.width / 2 + 'px';
         el.style.top = rect.top + 'px';
         document.body.appendChild(el);
@@ -1153,6 +1220,11 @@ const QuyenCareSheetUI = (function () {
 
         // Cleanup
         setTimeout(() => el.remove(), 3000);
+        
+        // ★ TRIGGER THE GOLD FLASH IN THE CENTER
+        if (typeof QuyenUI !== 'undefined' && QuyenUI.triggerGoldFlash) {
+            QuyenUI.triggerGoldFlash();
+        }
     }
     // ==========================================
     // PUBLIC API

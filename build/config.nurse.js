@@ -3,7 +3,7 @@ module.exports = {
     target: 'nurse',
     extName: '🌸 Cảm ơn chị Quyên',
     extShortName: 'Chị Quyên',
-    extDesc: '🌸 Cảm ơn chị Quyên v1.1.1 — Tự động lập phiếu truyền dịch từ y lệnh bác sĩ trên VNPT HIS',
+    extDesc: '🌸 Cảm ơn chị Quyên v1.2.0 — Tự động lập phiếu truyền dịch từ y lệnh bác sĩ trên VNPT HIS',
     extEmoji: '🌸',
     extPrefix: '🌸 Chị Quyên',
     extFooterText: '🌸 Cảm ơn chị Quyên — luôn tận tâm vì bệnh nhân ❤️',

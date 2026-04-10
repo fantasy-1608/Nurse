@@ -1378,7 +1378,7 @@ const QuyenInfusionFiller = (function () {
             const rect = fillBtn.getBoundingClientRect();
             const merit = document.createElement('div');
             merit.className = 'quyen-merit-float';
-            merit.textContent = '+1 công đức cho __EXT_SHORT_NAME__ __EXT_EMOJI__';
+            merit.textContent = '+1 chỉ vàng ✨';
             merit.style.left = rect.left + rect.width / 2 + 'px';
             merit.style.top = rect.top + 'px';
             document.body.appendChild(merit);
@@ -1386,6 +1386,11 @@ const QuyenInfusionFiller = (function () {
                 merit.classList.add('quyen-merit-animate');
             });
             setTimeout(function () { merit.remove(); }, 3000);
+            
+            // ★ TRIGGER THE GOLD FLASH IN THE CENTER
+            if (typeof QuyenUI !== 'undefined' && QuyenUI.triggerGoldFlash) {
+                QuyenUI.triggerGoldFlash();
+            }
         }
     }
 

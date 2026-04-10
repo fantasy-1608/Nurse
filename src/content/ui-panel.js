@@ -20,12 +20,12 @@ const QuyenUI = (function () {
 
     // Merit tier config
     const TIER_CONFIG = [
-        { min: 50, cls: 'quyen-tier-legendary', icon: '🌈' },
+        { min: 50, cls: 'quyen-tier-legendary', icon: '✨👑✨' },
         { min: 40, cls: 'quyen-tier-diamond',   icon: '💎' },
-        { min: 30, cls: 'quyen-tier-gold',      icon: '🥇' },
-        { min: 20, cls: 'quyen-tier-silver',     icon: '🥈' },
-        { min: 10, cls: 'quyen-tier-bronze',     icon: '🥉' },
-        { min: 0,  cls: 'quyen-tier-basic',      icon: '🌱' },
+        { min: 30, cls: 'quyen-tier-gold',      icon: '🏆' },
+        { min: 20, cls: 'quyen-tier-silver',     icon: '💰' },
+        { min: 10, cls: 'quyen-tier-bronze',     icon: '🥇' },
+        { min: 0,  cls: 'quyen-tier-basic',      icon: '🪙' },
     ];
 
     // ==========================================
@@ -82,7 +82,7 @@ const QuyenUI = (function () {
                     <span class="quyen-stats quyen-tier-basic" id="quyen-stats">
                         <span class="quyen-merit-icon">🌱</span>
                         <span class="quyen-merit-count">0</span>
-                        <span class="quyen-merit-label">công đức</span>
+                        <span class="quyen-merit-label">chỉ vàng</span>
                     </span>
                 </div>
                 <button class="quyen-btn-minimize" id="quyen-btn-minimize" title="Thu nhỏ">—</button>
@@ -156,6 +156,8 @@ const QuyenUI = (function () {
         if (csContainer && typeof QuyenCareSheetUI !== 'undefined') {
             QuyenCareSheetUI.init(csContainer);
         }
+
+
         // ★ Fast JS tooltip (instant, viewport-clamped)
         const _tipEl = document.createElement('div');
         _tipEl.id = 'quyen-custom-tip';
@@ -689,7 +691,7 @@ const QuyenUI = (function () {
         _statsEl.innerHTML =
             `<span class="quyen-merit-icon">${tier.icon}</span>` +
             `<span class="quyen-merit-count">${_filledToday}</span>` +
-            `<span class="quyen-merit-label">công đức</span>`;
+            `<span class="quyen-merit-label">chỉ vàng</span>`;
     }
 
     // ==========================================
@@ -844,6 +846,7 @@ const QuyenUI = (function () {
 
 
 
+
     // ==========================================
     // UTILITY
     // ==========================================
@@ -969,6 +972,26 @@ const QuyenUI = (function () {
     }
 
     // ==========================================
+    // ★ EPIC GOLD FLASH EFFECT
+    // ==========================================
+    function triggerGoldFlash() {
+        const flash = document.createElement('div');
+        flash.className = 'quyen-epic-gold-flash';
+        flash.innerHTML = `
+            <div class="quyen-gold-ring"></div>
+            <div class="quyen-gold-particle quyen-gp-1">✨</div>
+            <div class="quyen-gold-particle quyen-gp-2">💰</div>
+            <div class="quyen-gold-particle quyen-gp-3">✨</div>
+            <div class="quyen-gold-particle quyen-gp-4">🪙</div>
+            <div class="quyen-gold-particle quyen-gp-5">✨</div>
+        `;
+        document.body.appendChild(flash);
+        setTimeout(function() {
+            if (flash.parentNode) flash.parentNode.removeChild(flash);
+        }, 2000);
+    }
+
+    // ==========================================
     // PUBLIC API
     // ==========================================
     return {
@@ -977,6 +1000,7 @@ const QuyenUI = (function () {
         showToast,
         incrementFilledCount,
         switchTab,
-        setFlowerState
+        setFlowerState,
+        triggerGoldFlash
     };
 })();

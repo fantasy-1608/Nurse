@@ -42,9 +42,11 @@ HIS.Selectors = {
     // ==========================================
     // BUTTONS (common)
     // ==========================================
-    SAVE_BTN: 'button:contains("Lưu"), input[value*="Lưu"]',
-    ADD_NEW_BTN: 'button:contains("Thêm"), input[value*="Thêm"]',
-    CLOSE_BTN: 'button:contains("Đóng"), input[value*="Đóng"]',
+    // ★ v1.2.0 BugFix: Removed :contains() — not valid for querySelector.
+    //   Use HIS.Selectors.findByText('button', 'Lưu') for text-based matching.
+    SAVE_BTN: 'button[title*="Lưu"], input[value*="Lưu"], button.btn-save',
+    ADD_NEW_BTN: 'button[title*="Thêm"], input[value*="Thêm"], button.btn-add',
+    CLOSE_BTN: 'button[title*="Đóng"], input[value*="Đóng"], button.btn-close',
 
     // ==========================================
     // INFUSION-SPECIFIC (Truyền dịch)

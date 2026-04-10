@@ -3,8 +3,10 @@
  * __EXT_EMOJI__ __EXT_NAME__ — HIS Bridge (Injected Script)
  * Chạy trong page context để access jsonrpc, jQuery, jqGrid
  * 
- * v1.2: Đọc thuốc qua API NTU02D007.05 + AJAX interception
- * (Không parse DOM nữa — dùng API trực tiếp!)
+ * v1.2.0: 3 tính năng mới:
+ *   - Vitals Fallback bậc thang (CC/Ngoại trú/Khám bệnh)
+ *   - Caresheet List API (NTU02D204.01) — đếm phiếu đã lập
+ *   - Patient List API (NTU01H001.EV01) — DS bệnh nhân nhanh
  */
 (function () {
     'use strict';
@@ -41,7 +43,7 @@
         }, 500);
     }
 
-    log.debug('HIS Bridge v1.2 — __EXT_NAME__! __EXT_EMOJI__');
+    log.debug('HIS Bridge v1.2.0 — __EXT_NAME__! __EXT_EMOJI__');
 
     /**
      * ★ TÌM ELEMENT CÓ MARKER XUYÊN QUA MỌI IFRAME ★
@@ -323,6 +325,48 @@
                     }
                 }
             } catch (e) { log.warn('📏 NT.006.HSBA.HIS error:', e.message); }
+        }
+
+        // ★ v1.2.0 Fallback 3: Vitals Cascade — lùng sục qua CC / Ngoại trú / Khám bệnh
+        const hasAllVitals = vitals.weight && vitals.height && vitals.pulse && vitals.temp;
+        if (!hasAllVitals && khambenhId && _jsonrpc) {
+            const FALLBACK_QUERIES = ['NT.006.HSBA', 'NT.006.HSBA.CC', 'NT.006.HSBA.NGOAITRU', 'NT.006.HSBA.NGT', 'Khambenh', 'NT.Khambenh'];
+            const benhnhanId = rowData.BENHNHANID || rowData.BenhNhanID || rowData.BENH_NHAN_ID || '';
+            log.debug('🔍 Vitals fallback cascade — thiếu:', (!vitals.weight?'CN ':''), (!vitals.height?'CC ':''), (!vitals.pulse?'Mạch ':''), (!vitals.temp?'NĐ':''));
+            for (let fb = 0; fb < FALLBACK_QUERIES.length; fb++) {
+                if (vitals.weight && vitals.height && vitals.pulse && vitals.temp) break;
+                try {
+                    var fbQuery = FALLBACK_QUERIES[fb];
+                    var fbUuid = _jsonrpc.AjaxJson.uuid || '';
+                    var fbParams = { func: 'ajaxExecuteQueryPaging', uuid: fbUuid, params: [fbQuery], options: [{ name: '[0]', value: String(khambenhId) }, { name: '[1]', value: String(benhnhanId || khambenhId) }] };
+                    var fbUrl = '/vnpthis/RestService?postData=' + encodeURIComponent(JSON.stringify(fbParams)) + '&_search=false&rows=10&page=1&sidx=&sord=asc';
+                    var fbXhr = new XMLHttpRequest();
+                    fbXhr.open('GET', fbUrl, false); // sync
+                    fbXhr.send();
+                    if (fbXhr.status === 200 && fbXhr.responseText) {
+                        var fbData = JSON.parse(fbXhr.responseText);
+                        var fbRows = fbData.rows || (Array.isArray(fbData) ? fbData : []);
+                        for (var fri = 0; fri < fbRows.length; fri++) {
+                            var frec = fbRows[fri];
+                            if (!frec) continue;
+                            for (var fk in frec) {
+                                if (!frec.hasOwnProperty(fk)) continue;
+                                var fv = frec[fk];
+                                if (!fv || fv === '0' || String(fv).trim() === '') continue;
+                                var fuk = fk.toUpperCase();
+                                if (!vitals.weight && (fuk === 'KHAMBENH_CANNANG' || fuk === 'CANNANG' || fuk === 'CAN_NANG')) vitals.weight = String(fv);
+                                if (!vitals.height && (fuk === 'KHAMBENH_CHIEUCAO' || fuk === 'CHIEUCAO' || fuk === 'CHIEU_CAO')) vitals.height = String(fv);
+                                if (!vitals.pulse && (fuk === 'KHAMBENH_MACH' || fuk === 'MACH')) vitals.pulse = String(fv);
+                                if (!vitals.temp && (fuk === 'KHAMBENH_NHIETDO' || fuk === 'NHIETDO')) vitals.temp = String(fv);
+                                if (!vitals.bp && (fuk === 'KHAMBENH_HUYETAP' || fuk === 'HUYETAP')) vitals.bp = String(fv);
+                            }
+                        }
+                        if (vitals.weight || vitals.height || vitals.pulse || vitals.temp) {
+                            log.debug('🔍 Vitals fallback HIT từ ' + fbQuery + ': CN=' + (vitals.weight||'') + ' CC=' + (vitals.height||'') + ' M=' + (vitals.pulse||'') + ' NĐ=' + (vitals.temp||''));
+                        }
+                    }
+                } catch (fbE) { log.debug('🔍 Fallback ' + FALLBACK_QUERIES[fb] + ' error:', fbE.message); }
+            }
         }
 
         // ⚠️ SAFETY: Không log chi tiết vitals
@@ -1099,6 +1143,10 @@
             case 'QUYEN_FILL_COMBOGRID':
                 handleFillComboGrid(event.data.tasks);
                 break;
+            // ★ v1.2.0: Caresheet List
+            case 'QUYEN_REQ_CARESHEET_LIST':
+                handleCareSheetListRequest(event.data);
+                break;
         }
     });
 
@@ -1163,6 +1211,114 @@
         }
 
         log.debug('🏥 ✅ Section 17 hoàn tất!');
+    }
+
+    // ==========================================
+    // ★ v1.2.0: CARESHEET LIST — Đếm phiếu CS đã lập trong ngày (NTU02D204.01)
+    // ==========================================
+    function handleCareSheetListRequest(data) {
+        var reqId = data.requestId || '';
+        var kb = data.khambenhId || _currentKhambenhId;
+        var hsba = data.hosobenhanid || _currentHosobenhanid;
+        if (!kb || !hsba) {
+            window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: 'missing IDs' }, location.origin);
+            return;
+        }
+
+        // Lấy thêm thông tin cần thiết từ grid
+        var tiepnhanId = '', benhnhanId = '', khoaId = '', phongId = '';
+        try {
+            if (_$) {
+                var selRow = _$('#grdBenhNhan').jqGrid('getGridParam', 'selrow');
+                if (selRow) {
+                    var rd = _$('#grdBenhNhan').jqGrid('getRowData', selRow);
+                    tiepnhanId = rd.TIEPNHANID || rd.TiepNhanID || '';
+                    benhnhanId = rd.BENHNHANID || rd.BenhNhanID || '';
+                    khoaId = rd.KHOAID || rd.KhoaID || '';
+                    phongId = rd.PHONGID || rd.PhongID || '';
+                }
+            }
+        } catch (e) { }
+
+        try {
+            var csIframeWin = getCareSheetIframeWindow();
+            var csUuid = '';
+            if (csIframeWin && csIframeWin.uuid) csUuid = csIframeWin.uuid;
+            if (!csUuid && _jsonrpc) csUuid = _jsonrpc.AjaxJson.uuid || '';
+            if (!csUuid) {
+                window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: 'no UUID' }, location.origin);
+                return;
+            }
+
+            var filterJson = JSON.stringify({
+                HOSOBENHANID: String(hsba),
+                TIEPNHANID: String(tiepnhanId || '-1'),
+                KHAMBENHID: String(kb),
+                MAHOSOBENHAN: '-1',
+                BENHNHANID: String(benhnhanId || '-1'),
+                KHOAID: String(khoaId || '-1'),
+                PHONGID: String(phongId || '-1'),
+                LOAI_PHIEU: 'NTU_HANHCHINH',
+                LOAICHAMSOC: 'CHAMSOCCAPHAIBA',
+                glbDeptId: String(khoaId || '-1'),
+                glbSubDeptId: String(phongId || '-1'),
+                FORM_ID: '64',
+                PHIEUIDCHA: '-1'
+            });
+
+            var apiParams = { func: 'ajaxExecuteQueryPaging', uuid: csUuid, params: ['NTU02D204.01'], options: [{ name: '[0]', value: filterJson }] };
+            var apiUrl = '/vnpthis/RestService?postData=' + encodeURIComponent(JSON.stringify(apiParams)) + '&_search=false&rows=50&page=1&sidx=&sord=desc';
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', apiUrl, true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState !== 4) return;
+                if (xhr.status === 200 && xhr.responseText) {
+                    try {
+                        var resp = JSON.parse(xhr.responseText);
+                        var rows = resp.rows || [];
+                        // Lọc chỉ phiếu ngày hôm nay
+                        var today = new Date();
+                        var todayStr = ('0' + today.getDate()).slice(-2) + '/' + ('0' + (today.getMonth() + 1)).slice(-2) + '/' + today.getFullYear();
+                        var todaySheets = [];
+                        var allSheets = [];
+                        for (var si = 0; si < rows.length; si++) {
+                            var sheet = rows[si];
+                            var sheetDate = sheet.NGAYTAO || sheet.NGAYSUA || sheet.THOIGIANCHAMSOC || '';
+                            var sheetInfo = {
+                                phieuId: sheet.PHIEUID || sheet.ID || '',
+                                ngayTao: sheetDate,
+                                loaiPhieu: sheet.LOAICHAMSOC || sheet.LOAI_PHIEU || '',
+                                trangThai: sheet.TRANGTHAI || '',
+                                nguoiTao: sheet.NGUOITAO || sheet.TENNGUOITAO || ''
+                            };
+                            allSheets.push(sheetInfo);
+                            if (sheetDate && sheetDate.indexOf(todayStr) >= 0) {
+                                todaySheets.push(sheetInfo);
+                            }
+                        }
+                        log.debug('📋 CareSheet list: ' + allSheets.length + ' tổng, ' + todaySheets.length + ' hôm nay');
+                        window.postMessage({
+                            type: 'QUYEN_CARESHEET_LIST_RESULT',
+                            requestId: reqId,
+                            sheets: allSheets,
+                            todaySheets: todaySheets,
+                            totalCount: allSheets.length,
+                            todayCount: todaySheets.length
+                        }, location.origin);
+                    } catch (e) {
+                        log.warn('📋 CareSheet list parse error:', e.message);
+                        window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: e.message }, location.origin);
+                    }
+                } else {
+                    window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: 'HTTP ' + xhr.status }, location.origin);
+                }
+            };
+            xhr.send();
+        } catch (e) {
+            log.error('📋 CareSheet list error:', e.message);
+            window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: e.message }, location.origin);
+        }
     }
 
     // ==========================================

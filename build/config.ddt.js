@@ -3,7 +3,7 @@ module.exports = {
     target: 'ddt',
     extName: 'Điều Dưỡng',
     extShortName: 'Điều Dưỡng',
-    extDesc: 'Điều Dưỡng v1.1.1 — Tự động lập phiếu truyền dịch từ y lệnh bác sĩ trên VNPT HIS',
+    extDesc: 'Điều Dưỡng v1.2.0 — Tự động lập phiếu truyền dịch từ y lệnh bác sĩ trên VNPT HIS',
     extEmoji: '💉',
     extPrefix: '💉 Điều Dưỡng',
     extFooterText: '💉 Điều Dưỡng — Trợ lý VNPT HIS ❤️',
