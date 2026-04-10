@@ -191,7 +191,7 @@ const QuyenCareSheetUI = (function () {
             addExtensionStep('Tải xong sinh hiệu & cân nặng (NT.006)', 'done');
         }
 
-        // ★ Auto-prefill Section 4 + 17 vào panel khi nhận từ bridge
+        // ★ Auto-prefill từ phiếu cũ (KHÔNG bao gồm Section 4 — Cơ quan bệnh luôn để trống)
         if (event.data.type === 'QUYEN_CARESHEET_SEC4_DATA') {
             // ★ SAFETY v2: Validate seq + khambenhId trước khi prefill
             const msgSeq = event.data.seq;
@@ -209,7 +209,15 @@ const QuyenCareSheetUI = (function () {
                 return;
             }
 
-            prefillSection4ToPanel(event.data);
+            // ★ KHÔNG prefill Section 4 (Cơ quan bệnh) nữa — chỉ lấy cân nặng
+            if (event.data.weight) {
+                _customValues.canNang = event.data.weight;
+                const weightInput = document.querySelector('#quyen-cs-fields input[data-field-key="canNang"]');
+                if (weightInput) {
+                    weightInput.value = event.data.weight;
+                    highlightInput(weightInput);
+                }
+            }
 
             // ★ Prefill sinh hiệu từ phiếu cũ vào panel (dữ liệu thật)
             if (event.data.vitalsFromPrev) {
@@ -217,10 +225,9 @@ const QuyenCareSheetUI = (function () {
             }
             
             const fetchedItems = [];
-            if (event.data.data && Object.keys(event.data.data).length > 0) fetchedItems.push('Cơ quan bệnh');
             if (event.data.weight) fetchedItems.push('Cân nặng');
             if (event.data.vitalsFromPrev && Object.keys(event.data.vitalsFromPrev).length > 0) fetchedItems.push('Sinh hiệu');
-            if (event.data.sec17 && Object.keys(event.data.sec17).length > 0) fetchedItems.push('Can thiệp ĐD');
+            // Section 4 (Cơ quan bệnh) + Section 17 (Can thiệp ĐD) — KHÔNG copy (tránh nhầm BN)
             
             addExtensionStep('Nạp phiếu cũ: ' + (fetchedItems.length > 0 ? fetchedItems.join(', ') : 'Không có dữ liệu mới'), 'done');
         }
@@ -938,18 +945,8 @@ const QuyenCareSheetUI = (function () {
             }
         }
 
-        // ─── Section 4: Cơ quan bệnh từ phiếu cũ ───
-        const SEC4_KEYS = ['coQuanBenh1', 'coQuanBenh2', 'coQuanBenh3', 'coQuanBenh4'];
-        for (let s4i = 0; s4i < SEC4_KEYS.length; s4i++) {
-            const s4k = SEC4_KEYS[s4i];
-            if (!_customValues[s4k]) {
-                const s4Input = document.querySelector('#quyen-cs-fields input[data-field-key="' + s4k + '"]');
-                if (s4Input && s4Input.value && s4Input.value.trim()) {
-                    _customValues[s4k] = s4Input.value.trim();
-                    QuyenLog.info('🏥 Last-chance ' + s4k + ' từ input panel: ' + _customValues[s4k]);
-                }
-            }
-        }
+        // ─── Section 4: Cơ quan bệnh — LUÔN ĐỂ TRỐNG (ĐD tự nhập) ───
+        // Không tự động copy từ phiếu cũ để tránh nhầm BN
 
         // ─── Cân nặng ───
         if (!_customValues.canNang) {
@@ -1048,22 +1045,29 @@ const QuyenCareSheetUI = (function () {
             }
 
 
-            // ★ Tự động copy Section 4 "Cơ quan bệnh" + cân nặng từ phiếu cũ
+            // ★ Copy cân nặng + sinh hiệu + Section 17 từ phiếu cũ (KHÔNG copy Section 4)
             try {
-                // ★ BUG-14: Kiểm tra lại PatientLock trước khi copy Section 4 từ phiếu cũ
                 const lockCheck2 = (typeof HIS !== 'undefined' && HIS.PatientLock) ? HIS.PatientLock.verifyCurrentForm() : { ok: true };
                 if (!lockCheck2.ok) {
                     QuyenLog.warn('⚠️ Skip fillSection4FromPrevious — BN đã thay đổi:', lockCheck2.details);
                     addExtensionStep('Bỏ qua copy phiếu cũ: BN thay đổi', 'error');
                 } else {
                     addExtensionStep('Đang copy dữ liệu phiếu cũ...', 'loading');
-                    // ★ Pass allowedSections để chỉ copy đúng những phần được tick trong mục Tùy chọn
-                    const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious(allowedSections);
+                    // ★ Loại bỏ Section 4 (index 4) + Section 17 (index 16 trong filler) — tránh nhầm BN
+                    // Chỉ copy: cân nặng, sinh hiệu từ phiếu cũ
+                    let sec4Allowed = allowedSections;
+                    if (sec4Allowed === null) {
+                        // Chế độ đầy đủ → cho phép tất cả TRỪ section 4 (index 4)
+                        sec4Allowed = CARESHEET_CONFIG.SECTIONS.map(function(_, i) { return i; }).filter(function(i) { return i !== 4; });
+                    } else {
+                        // Chế độ đơn giản/tùy chọn → loại bỏ section 4 nếu có
+                        sec4Allowed = sec4Allowed.filter(function(i) { return i !== 4; });
+                    }
+                    const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious(sec4Allowed);
                     function showSec4Result(r) {
                          if (r && r.success) {
                             let msg = '📋 Phiếu cũ #' + (r.phieuId || '?') + ' → ' + r.filledCount + ' ô';
                             if (r.sec17Count) msg += ' + Sec17: ' + r.sec17Count + ' mục';
-                            if (r.patientName) msg += ' (BN: ' + r.patientName + ')';
                             if (r.weight) msg += ' | Cân nặng: ' + r.weight + 'kg';
                             setStatus('✅ Đã điền ' + result.filledCount + ' mục + ' + msg, 'success');
                             addExtensionStep('Hoàn tất copy phiếu cũ (' + r.filledCount + ' ô)', 'done');
@@ -1079,7 +1083,7 @@ const QuyenCareSheetUI = (function () {
                     }
                 }
             } catch (e) {
-                QuyenLog.warn('⚠️ Không thể copy Section 4:', e);
+                QuyenLog.warn('⚠️ Không thể copy dữ liệu phiếu cũ:', e);
             }
         } else {
             const errorCount = result.errors ? result.errors.length : 0;

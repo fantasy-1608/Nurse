@@ -10,7 +10,7 @@
 
 const GITHUB_OWNER = 'fantasy-1608';
 const GITHUB_REPO = 'Nurse';
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 giờ
+// Check interval: 6 giờ (cấu hình trong chrome.alarms bên dưới)
 
 // ==========================================
 // CHECK FOR UPDATE

@@ -494,7 +494,7 @@ const QuyenCareSheetFiller = (function () {
         const idToKey = { '1169': 'coQuanBenh1', '1170': 'coQuanBenh2', '1171': 'coQuanBenh3', '1232': 'coQuanBenh4' };
         let filledCount = 0;
 
-        // ═══ Section 4: Cơ quan bệnh ═══
+        // ═══ Section 4: Cơ quan bệnh (index 4 trong SECTIONS) ═══
         if (!allowedSections || allowedSections.includes(4)) {
             console.groupCollapsed('__EXT_EMOJI__ 4. Cơ quan bệnh (từ phiếu cũ)');
             for (const ctId in sec4Data) {

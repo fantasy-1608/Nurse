@@ -359,7 +359,8 @@ HIS.PatientLock = (function () {
         for (let d = 0; d < docs.length; d++) {
             try {
                 const doc = docs[d];
-                let careName = '', careDob = '', careGender = '';
+                let careName = '', careDob = '';
+                const careGender = '';
                 let infName = '', infDob = '', infHsba = '';
 
                 // Pattern 1 & 2: Quét text nodes — CHỈ lấy từ elements đang visible
