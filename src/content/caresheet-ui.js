@@ -422,57 +422,6 @@ const QuyenCareSheetUI = (function () {
         }
     }
 
-    /** ★ Pre-fill Section 4 "Cơ quan bệnh" vào panel khi nhận từ bridge */
-    function prefillSection4ToPanel(data) {
-        if (!data) return;
-
-        const sec4 = data.data || {};
-        const sec17 = data.sec17 || {};
-        const phieuId = data.phieuId || '?';
-
-        // Map CT_FORM_ID → field key
-        const sec4Map = {
-            '1169': 'coQuanBenh1',
-            '1170': 'coQuanBenh2',
-            '1171': 'coQuanBenh3',
-            '1232': 'coQuanBenh4'
-        };
-
-        // Điền Section 4
-        for (const ctId in sec4Map) {
-            if (!Object.prototype.hasOwnProperty.call(sec4Map, ctId)) continue;
-            const fieldKey = sec4Map[ctId];
-            const value = sec4[ctId] || '';
-            const input = document.querySelector('#quyen-cs-fields input[data-field-key="' + fieldKey + '"]');
-            if (input && value) {
-                input.value = value;
-                _customValues[fieldKey] = value;
-                highlightInput(input);
-            }
-        }
-
-        // ★ FIX: Luôn lưu cân nặng vào _customValues TRƯỚC — dù DOM chưa sẵn sàng
-        if (data.weight) {
-            _customValues.canNang = data.weight;
-            const weightInput = document.querySelector('#quyen-cs-fields input[data-field-key="canNang"]');
-            if (weightInput) {
-                weightInput.value = data.weight;
-                highlightInput(weightInput);
-            }
-        }
-
-        const sec4Count = Object.keys(sec4).length;
-        const sec17Count = Object.keys(sec17).length;
-
-        if (sec4Count > 0 || sec17Count > 0) {
-            let msg = '📋 Đã điền ' + sec4Count + ' mục + ';
-            if (data.weight) msg += 'Cân nặng: ' + data.weight + 'kg';
-            msg += ' | Phiếu cũ #' + phieuId;
-            if (sec17Count > 0) msg += ' → ' + sec17Count + ' ô';
-            setStatus(msg, 'success');
-            QuyenLog.info('📋 Auto-prefill panel: Sec4=' + sec4Count + ', Sec17=' + sec17Count + ', CN=' + (data.weight || 'N/A'));
-        }
-    }
 
     /** Reset Section 4 fields trong panel (khi chuyển BN) */
     function resetSection4InPanel() {
