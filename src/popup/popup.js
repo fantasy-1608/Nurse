@@ -38,6 +38,11 @@ function showActivationScreen() {
     const input = document.getElementById('activation-input');
     const btn = document.getElementById('activation-btn');
     const error = document.getElementById('activation-error');
+    const eulaCheckbox = document.getElementById('eula-checkbox');
+
+    eulaCheckbox.addEventListener('change', function () {
+        btn.disabled = !this.checked;
+    });
 
     btn.addEventListener('click', function () { tryActivate(); });
     input.addEventListener('keydown', function (e) {

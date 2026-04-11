@@ -199,6 +199,13 @@
             font-size: 9px;
             color: #ccc;
         }
+        
+        /* ★ EULA Box */
+        .eula-container { margin: 12px 0; text-align: left; }
+        .eula-box { height: 75px; overflow-y: auto; padding: 8px; background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 10px; color: #555; line-height: 1.5; margin-bottom: 8px; }
+        .eula-label { font-size: 10px; color: #333; display: flex; align-items: flex-start; gap: 6px; cursor: pointer; font-weight: 600; }
+        .eula-label input { margin-top: 1px; }
+        .activation-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; transform: none; }
     </style>
 </head>
 <body>
@@ -208,7 +215,21 @@
         <div class="lock-title">Kích hoạt Extension</div>
         <div class="lock-desc">Nhập mã kích hoạt để sử dụng.<br>Liên hệ quản lý để nhận mã.</div>
         <input type="password" class="activation-input" id="activation-input" placeholder="Nhập mã kích hoạt" autocomplete="off">
-        <button class="activation-btn" id="activation-btn">🔓 Kích hoạt</button>
+        
+        <div class="eula-container">
+            <div class="eula-box">
+                <b>Thỏa thuận Sử dụng (Disclaimer):</b><br>
+                1. Đây là tiện ích mở rộng hỗ trợ tự động hóa các thao tác trên công cụ HIS.<br>
+                2. Điều dưỡng/Bác sĩ <b>BẮT BUỘC</b> phải tự rà soát, kiểm tra lại toàn bộ số đo sinh hiệu và đánh giá lâm sàng trên phiếu trước khi nhấn nút "Lưu".<br>
+                3. Nhóm phát triển <b>KHÔNG</b> chịu trách nhiệm pháp lý đối với bất kỳ sai lệch dữ liệu hay sự cố y khoa nào liên đới trong quá trình sử dụng phần mềm.
+            </div>
+            <label class="eula-label">
+                <input type="checkbox" id="eula-checkbox">
+                <span>Tôi đã đọc, hiểu và cam kết tự chịu trách nhiệm rà soát dữ liệu y khoa.</span>
+            </label>
+        </div>
+
+        <button class="activation-btn" id="activation-btn" disabled>🔓 Kích hoạt</button>
         <div class="activation-error" id="activation-error">❌ Mã không đúng. Vui lòng thử lại.</div>
         <div class="activation-footer">__EXT_EMOJI__ __EXT_SHORT_NAME__</div>
     </div>
