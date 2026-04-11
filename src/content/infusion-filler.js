@@ -9,7 +9,7 @@
  * - Iframe-aware: dùng _formDoc cho tất cả DOM queries
  */
 
-/* global QuyenLog, MouseEvent */
+/* global QuyenLog, MouseEvent, QuyenUI */
 /* exported QuyenInfusionFiller */
 
 const QuyenInfusionFiller = (function () {
@@ -1388,8 +1388,8 @@ const QuyenInfusionFiller = (function () {
             setTimeout(function () { merit.remove(); }, 3000);
             
             // ★ TRIGGER THE GOLD FLASH IN THE CENTER
-            if (typeof window !== 'undefined' && window.QuyenUI && typeof window.QuyenUI.triggerGoldFlash === 'function') {
-                window.QuyenUI.triggerGoldFlash();
+            if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.triggerGoldFlash === 'function') {
+                QuyenUI.triggerGoldFlash();
             }
         }
     }
