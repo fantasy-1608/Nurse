@@ -329,66 +329,90 @@
 
         // ★ v1.2.0 Fallback 3: Vitals Cascade — lùng sục qua CC / Ngoại trú / Khám bệnh
         const hasAllVitals = vitals.weight && vitals.height && vitals.pulse && vitals.temp;
-        if (!hasAllVitals && khambenhId && _jsonrpc) {
+        
+        function finishVitals() {
+            if (thisSeq !== _patientSeq) return;
+            // ⚠️ SAFETY: Không log chi tiết vitals
+            log.debug('👤 Vitals loaded:', Object.keys(vitals).length, 'fields');
+
+            // Broadcast to content script (kèm seq để validate)
+            window.postMessage({
+                type: 'QUYEN_PATIENT_SELECTED',
+                seq: thisSeq,
+                patient: {
+                    name: hoTen,
+                    dob: ngaySinh,
+                    gender: gioiTinh,
+                    khambenhId: khambenhId,
+                    hosobenhanid: hosobenhanid
+                },
+                vitals: vitals
+            }, window.location.origin);
+
+            // ★ SAFETY v2: Auto-fetch Section 4+17 — polling thay vì fixed timeout
+            // Đợi iframe care sheet reload xong (check mỗi 500ms, tối đa 5s)
+            pollForCareSheetReady(thisSeq, 0);
+        }
+
+        if (!hasAllVitals && khambenhId && typeof _jsonrpc !== 'undefined' && _jsonrpc) {
             const FALLBACK_QUERIES = ['NT.006.HSBA', 'NT.006.HSBA.CC', 'NT.006.HSBA.NGOAITRU', 'NT.006.HSBA.NGT', 'Khambenh', 'NT.Khambenh'];
             const benhnhanId = rowData.BENHNHANID || rowData.BenhNhanID || rowData.BENH_NHAN_ID || '';
             log.debug('🔍 Vitals fallback cascade — thiếu:', (!vitals.weight?'CN ':''), (!vitals.height?'CC ':''), (!vitals.pulse?'Mạch ':''), (!vitals.temp?'NĐ':''));
-            for (let fb = 0; fb < FALLBACK_QUERIES.length; fb++) {
-                if (vitals.weight && vitals.height && vitals.pulse && vitals.temp) break;
+            
+            function fetchVitalsAsync(fbIndex) {
+                if (thisSeq !== _patientSeq) return;
+                const doneMissing = vitals.weight && vitals.height && vitals.pulse && vitals.temp;
+                if (doneMissing || fbIndex >= FALLBACK_QUERIES.length) {
+                    finishVitals();
+                    return;
+                }
+                
                 try {
-                    var fbQuery = FALLBACK_QUERIES[fb];
-                    var fbUuid = _jsonrpc.AjaxJson.uuid || '';
-                    var fbParams = { func: 'ajaxExecuteQueryPaging', uuid: fbUuid, params: [fbQuery], options: [{ name: '[0]', value: String(khambenhId) }, { name: '[1]', value: String(benhnhanId || khambenhId) }] };
-                    var fbUrl = '/vnpthis/RestService?postData=' + encodeURIComponent(JSON.stringify(fbParams)) + '&_search=false&rows=10&page=1&sidx=&sord=asc';
-                    var fbXhr = new XMLHttpRequest();
-                    fbXhr.open('GET', fbUrl, false); // sync
-                    fbXhr.send();
-                    if (fbXhr.status === 200 && fbXhr.responseText) {
-                        var fbData = JSON.parse(fbXhr.responseText);
-                        var fbRows = fbData.rows || (Array.isArray(fbData) ? fbData : []);
-                        for (var fri = 0; fri < fbRows.length; fri++) {
-                            var frec = fbRows[fri];
-                            if (!frec) continue;
-                            for (var fk in frec) {
-                                if (!frec.hasOwnProperty(fk)) continue;
-                                var fv = frec[fk];
-                                if (!fv || fv === '0' || String(fv).trim() === '') continue;
-                                var fuk = fk.toUpperCase();
-                                if (!vitals.weight && (fuk === 'KHAMBENH_CANNANG' || fuk === 'CANNANG' || fuk === 'CAN_NANG')) vitals.weight = String(fv);
-                                if (!vitals.height && (fuk === 'KHAMBENH_CHIEUCAO' || fuk === 'CHIEUCAO' || fuk === 'CHIEU_CAO')) vitals.height = String(fv);
-                                if (!vitals.pulse && (fuk === 'KHAMBENH_MACH' || fuk === 'MACH')) vitals.pulse = String(fv);
-                                if (!vitals.temp && (fuk === 'KHAMBENH_NHIETDO' || fuk === 'NHIETDO')) vitals.temp = String(fv);
-                                if (!vitals.bp && (fuk === 'KHAMBENH_HUYETAP' || fuk === 'HUYETAP')) vitals.bp = String(fv);
+                    const fbQuery = FALLBACK_QUERIES[fbIndex];
+                    const fbUuid = _jsonrpc.AjaxJson.uuid || '';
+                    const fbParams = { func: 'ajaxExecuteQueryPaging', uuid: fbUuid, params: [fbQuery], options: [{ name: '[0]', value: String(khambenhId) }, { name: '[1]', value: String(benhnhanId || khambenhId) }] };
+                    const fbUrl = '/vnpthis/RestService?postData=' + encodeURIComponent(JSON.stringify(fbParams)) + '&_search=false&rows=10&page=1&sidx=&sord=asc';
+                    
+                    const fbXhr = new XMLHttpRequest();
+                    fbXhr.open('GET', fbUrl, true); // ASYNC
+                    fbXhr.onreadystatechange = function() {
+                        if (fbXhr.readyState === 4) {
+                            if (thisSeq !== _patientSeq) return;
+                            if (fbXhr.status === 200 && fbXhr.responseText) {
+                                try {
+                                    const fbData = JSON.parse(fbXhr.responseText);
+                                    const fbRows = fbData.rows || (Array.isArray(fbData) ? fbData : []);
+                                    for (let fri = 0; fri < fbRows.length; fri++) {
+                                        const frec = fbRows[fri];
+                                        if (!frec) continue;
+                                        for (const fk in frec) {
+                                            if (!frec.hasOwnProperty(fk)) continue;
+                                            const fv = frec[fk];
+                                            if (!fv || fv === '0' || String(fv).trim() === '') continue;
+                                            const fuk = fk.toUpperCase();
+                                            if (!vitals.weight && (fuk === 'KHAMBENH_CANNANG' || fuk === 'CANNANG' || fuk === 'CAN_NANG')) vitals.weight = String(fv);
+                                            if (!vitals.height && (fuk === 'KHAMBENH_CHIEUCAO' || fuk === 'CHIEUCAO' || fuk === 'CHIEU_CAO')) vitals.height = String(fv);
+                                            if (!vitals.pulse && (fuk === 'KHAMBENH_MACH' || fuk === 'MACH')) vitals.pulse = String(fv);
+                                            if (!vitals.temp && (fuk === 'KHAMBENH_NHIETDO' || fuk === 'NHIETDO')) vitals.temp = String(fv);
+                                            if (!vitals.bp && (fuk === 'KHAMBENH_HUYETAP' || fuk === 'HUYETAP')) vitals.bp = String(fv);
+                                        }
+                                    }
+                                } catch (eParse) {}
                             }
+                            fetchVitalsAsync(fbIndex + 1);
                         }
-                        if (vitals.weight || vitals.height || vitals.pulse || vitals.temp) {
-                            log.debug('🔍 Vitals fallback HIT từ ' + fbQuery + ': CN=' + (vitals.weight||'') + ' CC=' + (vitals.height||'') + ' M=' + (vitals.pulse||'') + ' NĐ=' + (vitals.temp||''));
-                        }
-                    }
-                } catch (fbE) { log.debug('🔍 Fallback ' + FALLBACK_QUERIES[fb] + ' error:', fbE.message); }
+                    };
+                    fbXhr.send();
+                } catch (fbE) {
+                    log.debug('🔍 Fallback ' + FALLBACK_QUERIES[fbIndex] + ' error:', fbE.message);
+                    fetchVitalsAsync(fbIndex + 1);
+                }
             }
+            
+            fetchVitalsAsync(0);
+        } else {
+            finishVitals();
         }
-
-        // ⚠️ SAFETY: Không log chi tiết vitals
-        log.debug('👤 Vitals loaded:', Object.keys(vitals).length, 'fields');
-
-        // Broadcast to content script (kèm seq để validate)
-        window.postMessage({
-            type: 'QUYEN_PATIENT_SELECTED',
-            seq: thisSeq,
-            patient: {
-                name: hoTen,
-                dob: ngaySinh,
-                gender: gioiTinh,
-                khambenhId: khambenhId,
-                hosobenhanid: hosobenhanid
-            },
-            vitals: vitals
-        }, '*');
-
-        // ★ SAFETY v2: Auto-fetch Section 4+17 — polling thay vì fixed timeout
-        // Đợi iframe care sheet reload xong (check mỗi 500ms, tối đa 5s)
-        pollForCareSheetReady(thisSeq, 0);
     }
 
     /**
@@ -552,7 +576,6 @@
             // ★ Auto-switch panel tab → phiếu chăm sóc
             window.postMessage({ type: 'QUYEN_FORM_FOCUSED', tab: 'caresheet' }, location.origin);
 
-            // Gửi đầy đủ cho content script (kèm seq + khambenhId)
             window.postMessage({
                 type: 'QUYEN_CARESHEET_SEC4_DATA',
                 seq: snoopSeq,
@@ -562,7 +585,7 @@
                 weight: weight,
                 height: height,
                 vitalsFromPrev: vitalsFromPrev
-            }, '*');
+            }, window.location.origin);
         }
     }
 
@@ -584,7 +607,7 @@
             }
 
             if (rows.length > 0) {
-                _capturedDrugs = rows.map(parseDrugFromAPI);
+                _capturedDrugs = rows.map(parseDrugFromAPI).filter(Boolean);
                 log.debug('💉 Đã bắt được', _capturedDrugs.length, 'thuốc:', _capturedDrugs);
 
                 // ★ Auto-switch panel tab → dịch truyền
@@ -996,6 +1019,23 @@
         }
 
         try {
+            // ★ FIX: Option A - Bypass CSP bằng cách gọi trực tiếp _jsonrpc (không qua script tag inline)
+            if (csIframeWin._jsonrpc && csIframeWin._jsonrpc.AjaxJson && typeof csIframeWin._jsonrpc.AjaxJson.ajaxCALL_SP_O === 'function') {
+                const rawResult = csIframeWin._jsonrpc.AjaxJson.ajaxCALL_SP_O('NTU02D204.06', String(phieuId), 0);
+                let parsed = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
+                if (parsed && parsed.result) {
+                    parsed = typeof parsed.result === 'string' ? JSON.parse(parsed.result) : parsed.result;
+                }
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            } else {
+                log.warn('📋 Option A: Không lấy được _jsonrpc từ iframe');
+            }
+        } catch (e) {
+            log.warn('📋 Option A fetchCareSheetItems lỗi:', e.message);
+        }
+
+        try {
+            // Fallback (Trường hợp CSP nhẹ nhưng không có _jsonrpc)
             const resultVarName = '_quyenResult_' + phieuId;
             const iframeUuid = csIframeWin.uuid || '';
             if (!iframeUuid) {
@@ -1219,8 +1259,10 @@
     function handleCareSheetListRequest(data) {
         var reqId = data.requestId || '';
         var kb = data.khambenhId || _currentKhambenhId;
-        var hsba = data.hosobenhanid || _currentHosobenhanid;
-        if (!kb || !hsba) {
+        if (!kb) kb = findCurrentKhamBenhId();
+        var hsba = data.hosobenhanid || _currentHosobenhanid || '-1';
+        
+        if (!kb) {
             window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: 'missing IDs' }, location.origin);
             return;
         }
@@ -1259,7 +1301,7 @@
                 KHOAID: String(khoaId || '-1'),
                 PHONGID: String(phongId || '-1'),
                 LOAI_PHIEU: 'NTU_HANHCHINH',
-                LOAICHAMSOC: 'CHAMSOCCAPHAIBA',
+                LOAICHAMSOC: '',
                 glbDeptId: String(khoaId || '-1'),
                 glbSubDeptId: String(phongId || '-1'),
                 FORM_ID: '64',
@@ -1267,10 +1309,10 @@
             });
 
             var apiParams = { func: 'ajaxExecuteQueryPaging', uuid: csUuid, params: ['NTU02D204.01'], options: [{ name: '[0]', value: filterJson }] };
-            var apiUrl = '/vnpthis/RestService?postData=' + encodeURIComponent(JSON.stringify(apiParams)) + '&_search=false&rows=50&page=1&sidx=&sord=desc';
-
+            
             var xhr = new XMLHttpRequest();
-            xhr.open('GET', apiUrl, true);
+            xhr.open('POST', '/vnpthis/RestService?_search=false&rows=50&page=1&sidx=&sord=desc', true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
             xhr.onreadystatechange = function () {
                 if (xhr.readyState !== 4) return;
                 if (xhr.status === 200 && xhr.responseText) {
@@ -1314,7 +1356,7 @@
                     window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: 'HTTP ' + xhr.status }, location.origin);
                 }
             };
-            xhr.send();
+            xhr.send('postData=' + encodeURIComponent(JSON.stringify(apiParams)));
         } catch (e) {
             log.error('📋 CareSheet list error:', e.message);
             window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: e.message }, location.origin);
@@ -1493,8 +1535,7 @@
                         const data = JSON.parse(xhr.responseText);
                         const rows = data.rows || [];
                         log.debug('API NTU02D007.05 trả về', rows.length, 'dòng');
-
-                        const allDrugs = rows.map(parseDrugFromAPI);
+                        const allDrugs = rows.map(parseDrugFromAPI).filter(Boolean);
 
                         // Lọc chỉ giữ thuốc trong 3 ngày gần nhất
                         const recentDrugs = filterRecentDrugs(allDrugs, 3);
@@ -1596,6 +1637,11 @@
     // PARSE DRUG FROM API RESPONSE
     // ==========================================
     function parseDrugFromAPI(row) {
+        if (!row || typeof row !== 'object') {
+            log.warn('parseDrugFromAPI: invalid row', row);
+            return null;
+        }
+
         // Log tất cả keys để debug
         log.debug('Drug row keys:', Object.keys(row).join(', '));
 

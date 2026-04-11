@@ -1194,7 +1194,7 @@ const QuyenInfusionFiller = (function () {
         try {
             // Ưu tiên gửi lên top window (nơi bridge chạy)
             if (window.top && window.top !== window) {
-                window.top.postMessage(msg, '*');
+                window.top.postMessage(msg, window.location.origin);
                 return;
             }
         } catch (e) {
@@ -1388,8 +1388,8 @@ const QuyenInfusionFiller = (function () {
             setTimeout(function () { merit.remove(); }, 3000);
             
             // ★ TRIGGER THE GOLD FLASH IN THE CENTER
-            if (typeof QuyenUI !== 'undefined' && QuyenUI.triggerGoldFlash) {
-                QuyenUI.triggerGoldFlash();
+            if (typeof window !== 'undefined' && window.QuyenUI && typeof window.QuyenUI.triggerGoldFlash === 'function') {
+                window.QuyenUI.triggerGoldFlash();
             }
         }
     }

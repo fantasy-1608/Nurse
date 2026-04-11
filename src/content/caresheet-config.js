@@ -45,7 +45,7 @@ const CARESHEET_CONFIG = {
             bung: ['Mềm'],
             dauBung: [],
             phanUngThanhBung: ['(-)'],
-            vetMo: ['Khô'],
+            vetMo: [],
             sondeDaDay: '',
             dlVetMo: '',
             // 7. Dinh dưỡng

@@ -1139,7 +1139,7 @@ const QuyenCareSheetUI = (function () {
     // ★ v1.2.0: CARESHEET COUNT INFO
     // ==========================================
     function requestCareSheetCount(patient) {
-        if (!patient || !patient.khambenhId) return;
+        if (!patient) return;
         // Hide old badge
         const badge = document.getElementById('quyen-cs-sheet-info');
         if (badge) { badge.style.display = 'none'; badge.innerHTML = ''; }
@@ -1160,8 +1160,15 @@ const QuyenCareSheetUI = (function () {
         const totalCount = data.totalCount || 0;
         const todaySheets = data.todaySheets || [];
 
+        if (data.error) {
+            badge.innerHTML = '📋 <span style="color:#f44336">Lỗi tải DS phiếu</span>';
+            badge.style.display = 'block';
+            return;
+        }
+
         if (totalCount === 0 && todayCount === 0) {
-            badge.style.display = 'none';
+            badge.innerHTML = '📋 <b>0</b> phiếu hôm nay';
+            badge.style.display = 'block';
             return;
         }
 
