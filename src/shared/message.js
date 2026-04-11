@@ -47,9 +47,7 @@ HIS.Message = (function () {
         'QUYEN_FILL_ERROR',
         'QUYEN_FORM_PATIENT_CONTEXT',
         'QUYEN_FORM_FOCUSED',
-        'QUYEN_FORM_CLOSED',
-        'QUYEN_REQ_CARESHEET_LIST',
-        'QUYEN_CARESHEET_LIST_RESULT'
+        'QUYEN_FORM_CLOSED'
     ];
 
     // Set for O(1) lookup
@@ -124,7 +122,7 @@ HIS.Message = (function () {
             if (!matched) return;
 
             // 4. Call
-            try { callback(event.data, event); } catch (e) { /* ignore */ }
+            try { callback(event.data, event); } catch (e) { console.error('[HIS.Message] Listener error for type=' + event.data.type + ':', e); }
         }
 
         window.addEventListener('message', handler);

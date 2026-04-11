@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "__EXT_NAME__",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "__EXT_DESC__",
     "author": "Huỳnh Trung Anh",
     "permissions": [
@@ -13,7 +13,9 @@
         "service_worker": "background/background.js"
     },
     "host_permissions": [
-        "*://*.vncare.vn/*",
+        "*://*.vncare.vn/*"
+    ],
+    "optional_host_permissions": [
         "https://api.github.com/*",
         "https://github.com/*"
     ],
@@ -61,7 +63,7 @@
                 "styles/nurse-panel.css"
             ],
             "run_at": "document_end",
-            "all_frames": true
+            "all_frames": false
         }
     ],
     "web_accessible_resources": [

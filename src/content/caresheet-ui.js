@@ -56,7 +56,7 @@ const QuyenCareSheetUI = (function () {
                     <div class="quyen-cs-status" id="quyen-cs-status" style="display:none;"></div>
                     
                     <!-- ★ v1.2.0: Phiếu count info badge -->
-                    <div id="quyen-cs-sheet-info" style="display:none;margin-top:4px;padding:4px 8px;border-radius:6px;background:rgba(33,150,243,0.08);border:1px solid rgba(33,150,243,0.15);font-size:10px;color:#1976d2;line-height:1.5;"></div>
+
                     
                     <!-- Real-time Steps Log -->
                     <div class="quyen-cs-steps-container" id="quyen-cs-steps-container" style="display:none; margin-top:6px; padding: 6px 10px; background: rgba(0,0,0,0.02); border: 1px dashed #c0c0c0; border-radius: 6px;">
@@ -185,13 +185,6 @@ const QuyenCareSheetUI = (function () {
             clearExtensionSteps();
             addExtensionStep('Chọn BN: ' + (p.name || 'Mới') + (p.khambenhId ? ` (#${p.khambenhId})` : ''), 'done');
 
-            // ★ v1.2.0: Request caresheet list để hiện thông tin phiếu đã lập
-            requestCareSheetCount(p);
-        }
-
-        // ★ v1.2.0: Caresheet list result — hiển thị số phiếu đã lập hôm nay
-        if (event.data.type === 'QUYEN_CARESHEET_LIST_RESULT') {
-            updateSheetInfoBadge(event.data);
         }
 
         // Fallback: vitals result từ REQ_VITALS
@@ -475,9 +468,9 @@ const QuyenCareSheetUI = (function () {
             try {
                 const iframes = document.querySelectorAll('iframe');
                 for (let i = 0; i < iframes.length; i++) {
-                    try { if (iframes[i].contentDocument) docs.push(iframes[i].contentDocument); } catch (e) { /* ignore */ }
+                    try { if (iframes[i].contentDocument) docs.push(iframes[i].contentDocument); } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
                 }
-            } catch (e) { /* ignore */ }
+            } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
 
             for (let d = 0; d < docs.length; d++) {
                 try {
@@ -496,7 +489,7 @@ const QuyenCareSheetUI = (function () {
                             return fromDOM;
                         }
                     }
-                } catch (e) { /* ignore */ }
+                } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
             }
 
             // Infusion page: header text split across DOM nodes → dùng innerText
@@ -515,7 +508,7 @@ const QuyenCareSheetUI = (function () {
                         }
                         return infDisplay;
                     }
-                } catch (e) { /* ignore */ }
+                } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
             }
 
             // Fallback: dùng cache từ Bridge
@@ -578,7 +571,7 @@ const QuyenCareSheetUI = (function () {
             }
         }, 2000);
 
-        // MutationObserver: chỉ chạy khi DOM thay đổi (iframe mới, title mới)
+        // MutationObserver: chỉ childList (iframe/dialog mới), bỏ characterData (quá noisy)
         let _updateTimer = null;
         function debouncedUpdate() {
             if (_updateTimer) clearTimeout(_updateTimer);
@@ -588,25 +581,44 @@ const QuyenCareSheetUI = (function () {
         _detectObserver = new MutationObserver(function (mutations) {
             for (let i = 0; i < mutations.length; i++) {
                 const m = mutations[i];
-                // Iframe mới thêm vào hoặc text thay đổi
+                // ★ AUDIT FIX: Chỉ react khi có node mới (iframe/dialog), bỏ characterData
                 if (m.type === 'childList' && m.addedNodes.length > 0) {
-                    debouncedUpdate();
-                    return;
-                }
-                if (m.type === 'characterData') {
-                    debouncedUpdate();
-                    return;
+                    // ★ Lọc thêm: chỉ care về iframe hoặc div (dialog container)
+                    for (let j = 0; j < m.addedNodes.length; j++) {
+                        const node = m.addedNodes[j];
+                        if (node.nodeType === 1) { // ELEMENT_NODE
+                            const tag = node.tagName;
+                            if (tag === 'IFRAME' || tag === 'DIV' || tag === 'DIALOG') {
+                                debouncedUpdate();
+                                return;
+                            }
+                        }
+                    }
                 }
             }
         });
         _detectObserver.observe(document.body, {
             childList: true,
-            subtree: true,
-            characterData: true
+            subtree: true
+            // ★ AUDIT FIX: Bỏ characterData: true — gây trigger mỗi keystroke trên HIS
         });
 
-        // Safety net: kiểm tra rất thưa (15s) phòng trường hợp MutationObserver miss
+        // Safety net: kiểm tra rất thưa (15s) nhưng tạm dừng khi tab ẩn
         _detectInterval = setInterval(update, 15000);
+
+        // ★ AUDIT FIX: Pause interval khi tab ẩn để tiết kiệm CPU/pin
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                if (_detectInterval) { clearInterval(_detectInterval); _detectInterval = null; }
+                if (_detectObserver) { _detectObserver.disconnect(); }
+            } else {
+                if (!_detectInterval) _detectInterval = setInterval(update, 15000);
+                if (_detectObserver && document.body) {
+                    _detectObserver.observe(document.body, { childList: true, subtree: true });
+                }
+                update(); // Immediate check khi quay lại tab
+            }
+        });
     }
 
 
@@ -1135,68 +1147,7 @@ const QuyenCareSheetUI = (function () {
         if (container) container.style.display = 'none';
     }
 
-    // ==========================================
-    // ★ v1.2.0: CARESHEET COUNT INFO
-    // ==========================================
-    function requestCareSheetCount(patient) {
-        if (!patient) return;
-        // Hide old badge
-        const badge = document.getElementById('quyen-cs-sheet-info');
-        if (badge) { badge.style.display = 'none'; badge.innerHTML = ''; }
 
-        window.postMessage({
-            type: 'QUYEN_REQ_CARESHEET_LIST',
-            khambenhId: patient.khambenhId,
-            hosobenhanid: patient.hosobenhanid || '',
-            requestId: 'cscount_' + Date.now()
-        }, location.origin);
-    }
-
-    function updateSheetInfoBadge(data) {
-        const badge = document.getElementById('quyen-cs-sheet-info');
-        if (!badge) return;
-
-        const todayCount = data.todayCount || 0;
-        const totalCount = data.totalCount || 0;
-        const todaySheets = data.todaySheets || [];
-
-        if (data.error) {
-            badge.innerHTML = '📋 <span style="color:#f44336">Lỗi tải DS phiếu</span>';
-            badge.style.display = 'block';
-            return;
-        }
-
-        if (totalCount === 0 && todayCount === 0) {
-            badge.innerHTML = '📋 <b>0</b> phiếu hôm nay';
-            badge.style.display = 'block';
-            return;
-        }
-
-        let html = '📋 ';
-        if (todayCount > 0) {
-            html += '<b>' + todayCount + '</b> phiếu hôm nay';
-            // Hiện thời gian tạo từng phiếu
-            const times = [];
-            for (let i = 0; i < todaySheets.length && i < 5; i++) {
-                const dt = todaySheets[i].ngayTao || '';
-                // Extract time from "dd/mm/yyyy hh:mm:ss" → "hh:mm"
-                const tm = dt.match(/(\d{1,2}:\d{2})/);
-                if (tm) times.push(tm[1]);
-            }
-            if (times.length > 0) {
-                html += ' <span style="color:#666;font-size:9px;">(' + times.join(', ') + ')</span>';
-            }
-        } else {
-            html += 'Chưa có phiếu hôm nay';
-        }
-
-        if (totalCount > todayCount) {
-            html += ' · <span style="color:#999;">' + totalCount + ' tổng</span>';
-        }
-
-        badge.innerHTML = html;
-        badge.style.display = 'block';
-    }
 
     // ==========================================
     // UTILITY

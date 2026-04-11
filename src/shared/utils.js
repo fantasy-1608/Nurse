@@ -93,6 +93,21 @@ HIS.Utils = {
     },
 
     /**
+     * ★ AUDIT FIX: Safe innerHTML helper — auto-escape interpolated values
+     * Usage: HIS.Utils.safeHTML`<b>${userName}</b> đã chọn`
+     */
+    safeHTML(strings, ...values) {
+        let result = '';
+        for (let i = 0; i < strings.length; i++) {
+            result += strings[i];
+            if (i < values.length) {
+                result += HIS.Utils.escapeHtml(String(values[i]));
+            }
+        }
+        return result;
+    },
+
+    /**
      * Check trang hiện tại có phải VNPT HIS không
      */
     isHisPage() {

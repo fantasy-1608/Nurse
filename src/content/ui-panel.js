@@ -348,7 +348,7 @@ const QuyenUI = (function () {
                 const docsToScan = [document];
                 const allIframes = document.querySelectorAll('iframe');
                 for (let fi = 0; fi < allIframes.length; fi++) {
-                    try { if (allIframes[fi].contentDocument) docsToScan.push(allIframes[fi].contentDocument); } catch (e) { /* ignore */ }
+                    try { if (allIframes[fi].contentDocument) docsToScan.push(allIframes[fi].contentDocument); } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
                 }
                 for (let di = 0; di < docsToScan.length; di++) {
                     try {
@@ -370,7 +370,7 @@ const QuyenUI = (function () {
                             }
                         }
                         if (name) break;
-                    } catch (e) { /* ignore */ }
+                    } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
                 }
             } catch (e) { QuyenLog.warn('👤 Fallback name scan error:', e); }
         }
@@ -668,7 +668,7 @@ const QuyenUI = (function () {
                 }
             }
             updateStatsUI();
-        } catch (e) { /* ignore */ }
+        } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
     }
 
     function incrementFilledCount() {
@@ -679,7 +679,7 @@ const QuyenUI = (function () {
                 date: new Date().toDateString(),
                 count: _filledToday
             }));
-        } catch (e) { /* ignore */ }
+        } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
     }
 
     function updateStatsUI() {

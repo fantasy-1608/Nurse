@@ -54,4 +54,16 @@ HIS.PAGE_PATTERNS = {
     PHARMACY: ['NhaThuoc', 'KhoDuoc']
 };
 
+// ★ AUDIT FIX: Centralized timeouts — dễ điều chỉnh theo network condition
+HIS.TIMEOUTS = {
+    CARESHEET_SEC4: 6000,        // fillSection4FromPrevious wait
+    FILL_TRACKER: 30000,         // FillTracker max duration
+    CARESHEET_POLL: 5000,        // pollForCareSheetReady max (500ms × 10)
+    GRID_HOOK: 30000,            // setupPatientGridHook max wait
+    PATIENT_INFO_RETRY: 2000,    // detectPatientInfo retry interval
+    PATIENT_INFO_POLL: 15000,    // detectPatientInfo safety poll
+    JQUERY_RETRY: 10000,         // jQuery detection timeout
+    TOAST_DURATION: 3000,        // Toast auto-dismiss
+};
+
 console.log('[HIS] 🏥 Shared constants loaded');

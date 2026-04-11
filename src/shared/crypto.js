@@ -14,7 +14,8 @@ window.HIS = window.HIS || {};
 HIS.Crypto = (function () {
     'use strict';
 
-    const ITERATIONS = 100000;
+    // ★ AUDIT FIX: Tăng từ 100,000 lên 600,000 theo OWASP 2025 recommendation
+    const ITERATIONS = 600000;
     const KEY_LENGTH = 256;
 
     function generateSalt() {

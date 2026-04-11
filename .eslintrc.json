@@ -16,8 +16,8 @@
     "QuyenLog": "readonly"
   },
   "rules": {
-    "no-var": "off",
-    "prefer-const": "off",
+    "no-var": "warn",
+    "prefer-const": "warn",
     "no-empty": "warn",
     "no-useless-escape": "warn",
     "no-prototype-builtins": "warn",

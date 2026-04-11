@@ -10,6 +10,28 @@
 (function () {
     'use strict';
 
+    // ★ AUDIT FIX: Global error boundary — catch unhandled errors
+    window.addEventListener('error', function (event) {
+        try {
+            if (typeof QuyenLog !== 'undefined') {
+                QuyenLog.error('❌ [GlobalError]', event.message, '| File:', event.filename, '| Line:', event.lineno);
+            } else {
+                console.error('[__EXT_EMOJI__ GlobalError]', event.message, event.filename, event.lineno);
+            }
+        } catch (e) { /* prevent infinite loop */ }
+    });
+
+    window.addEventListener('unhandledrejection', function (event) {
+        try {
+            const reason = event.reason ? (event.reason.message || String(event.reason)) : 'Unknown';
+            if (typeof QuyenLog !== 'undefined') {
+                QuyenLog.error('❌ [UnhandledPromise]', reason);
+            } else {
+                console.error('[__EXT_EMOJI__ UnhandledPromise]', reason);
+            }
+        } catch (e) { /* prevent infinite loop */ }
+    });
+
     // Chỉ chạy ở top frame
     if (window !== window.top) return;
 

@@ -288,7 +288,7 @@ HIS.PatientLock = (function () {
 
     function _fireChange() {
         for (let i = 0; i < _onChangeCallbacks.length; i++) {
-            try { _onChangeCallbacks[i](_source, _lockActive); } catch (e) { /* ignore */ }
+            try { _onChangeCallbacks[i](_source, _lockActive); } catch (e) { console.debug("[HIS] catch:", e.message || e); }
         }
     }
 
@@ -322,7 +322,7 @@ HIS.PatientLock = (function () {
                     if (cs.display === 'none' || cs.visibility === 'hidden') {
                         return false;
                     }
-                } catch (e) { /* ignore */ }
+                } catch (e) { console.debug("[HIS] catch:", e.message || e); }
                 el = el.parentElement;
                 depth++;
             }

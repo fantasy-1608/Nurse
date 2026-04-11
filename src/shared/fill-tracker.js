@@ -169,7 +169,7 @@ HIS.FillTracker = (function () {
 
     function _notifyListeners(state, detail) {
         for (let i = 0; i < _listeners.length; i++) {
-            try { _listeners[i](state, detail, getStatus()); } catch (e) { /* ignore */ }
+            try { _listeners[i](state, detail, getStatus()); } catch (e) { console.debug("[HIS] catch:", e.message || e); }
         }
     }
 

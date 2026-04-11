@@ -1,4 +1,4 @@
-/* eslint-disable no-empty, no-prototype-builtins, no-undef, no-unused-vars, no-var, no-redeclare, prefer-const */
+/* eslint-disable no-prototype-builtins, no-undef, no-unused-vars, no-var, no-redeclare, prefer-const */
 /**
  * __EXT_EMOJI__ __EXT_NAME__ — HIS Bridge (Injected Script)
  * Chạy trong page context để access jsonrpc, jQuery, jqGrid
@@ -43,7 +43,7 @@
         }, 500);
     }
 
-    log.debug('HIS Bridge v1.2.0 — __EXT_NAME__! __EXT_EMOJI__');
+    log.debug('HIS Bridge v1.2.1 — __EXT_NAME__! __EXT_EMOJI__');
 
     /**
      * ★ TÌM ELEMENT CÓ MARKER XUYÊN QUA MỌI IFRAME ★
@@ -71,9 +71,9 @@
                         if (!jDoc) continue;
                         el = jDoc.querySelector(selector);
                         if (el) return el;
-                    } catch (e2) { /* cross-origin */ }
+                    } catch (e2) { /* cross-origin — expected */ }
                 }
-            } catch (e) { /* cross-origin */ }
+            } catch (e) { /* cross-origin — expected for sandboxed iframes */ }
         }
         return null;
     }
@@ -126,13 +126,13 @@
                     grid.on('jqGridSelectRow', function (_e, rowId) {
                         if (rowId) onPatientSelected(rowId);
                     });
-                } catch (e) { }
+                } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
 
                 // Check if a row is already selected
                 try {
                     const selRow = grid.jqGrid('getGridParam', 'selrow');
                     if (selRow) onPatientSelected(selRow);
-                } catch (e) { }
+                } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
             }
         }, 1000);
         setTimeout(function () { clearInterval(checkGrid); }, 30000);
@@ -202,11 +202,9 @@
             } catch (e) { log.warn('👤 DOM fallback error:', e.message); }
         }
 
-        // Strip HTML tags nếu jqGrid trả về HTML thay vì text
+        // ★ AUDIT FIX: Strip HTML tags safely (không dùng innerHTML để tránh script execution)
         if (hoTen && hoTen.indexOf('<') >= 0) {
-            const tmp = document.createElement('div');
-            tmp.innerHTML = hoTen;
-            hoTen = (tmp.textContent || tmp.innerText || '').trim();
+            hoTen = hoTen.replace(/<[^>]*>/g, '').trim();
         }
 
         const ngaySinh = rowData.NGAYSINH || rowData.NgaySinh || rowData.ngaysinh
@@ -254,164 +252,189 @@
         // ⚠️ SAFETY: Không log tên BN, chỉ log ID
         log.debug('👤 BN selected | KB:', khambenhId, '| HSBA:', hosobenhanid);
 
-        // Fetch vitals
+        // ★ AUDIT FIX: Fetch vitals ASYNC (tránh block UI thread)
         const vitals = {};
-        if (khambenhId) {
+        let _nt006Done = false;
+        if (khambenhId && typeof _jsonrpc !== 'undefined' && _jsonrpc && _jsonrpc.AjaxJson) {
             try {
-                const params = JSON.stringify({ KHAMBENHID: khambenhId });
-                const result = _jsonrpc.AjaxJson.ajaxCALL_SP_O('NT.006', params, 0);
-                if (result) {
-                    const data = (typeof result === 'string' && result.trim() !== '') ? JSON.parse(result) : result;
-                    const records = Array.isArray(data) ? data : [data];
-                    // Debug: log raw keys để tìm chiều cao
-                    if (records[0]) {
-                        var allKeys = Object.keys(records[0]);
-                        log.debug('⚖️ NT.006 raw keys:', allKeys.join(', '));
-                        const heightRelated = {};
-                        for (let dk = 0; dk < allKeys.length; dk++) {
-                            const dkey = allKeys[dk].toUpperCase();
-                            if (dkey.indexOf('CHIEU') >= 0 || dkey.indexOf('CAO') >= 0 || dkey.indexOf('HEIGHT') >= 0 || dkey.indexOf('BMI') >= 0) {
-                                heightRelated[allKeys[dk]] = records[0][allKeys[dk]];
+                // Dùng async wrapper thay vì sync ajaxCALL_SP_O
+                const nt006Url = '/vnpthis/RestService?postData=' + encodeURIComponent(JSON.stringify({
+                    func: 'ajaxCALL_SP_O',
+                    params: ['NT.006', JSON.stringify({ KHAMBENHID: khambenhId }), 0]
+                }));
+                const nt006Xhr = new XMLHttpRequest();
+                nt006Xhr.open('GET', nt006Url, true); // ASYNC — không block UI
+                nt006Xhr.onreadystatechange = function () {
+                    if (nt006Xhr.readyState !== 4) return;
+                    if (thisSeq !== _patientSeq) return; // BN đã đổi
+                    _nt006Done = true;
+                    if (nt006Xhr.status === 200 && nt006Xhr.responseText) {
+                        try {
+                            const rawResult = nt006Xhr.responseText;
+                            const data = (typeof rawResult === 'string' && rawResult.trim() !== '') ? JSON.parse(rawResult) : rawResult;
+                            const records = Array.isArray(data) ? data : [data];
+                            if (records[0]) {
+                                log.debug('⚖️ NT.006 keys:', Object.keys(records[0]).join(', '));
+                            }
+                            for (let i = 0; i < records.length; i++) {
+                                const rec = records[i];
+                                if (!rec) continue;
+                                for (const k in rec) {
+                                    if (!rec.hasOwnProperty(k)) continue;
+                                    var val = rec[k];
+                                    if (!val || val === '0' || String(val).trim() === '') continue;
+                                    const uk = k.toUpperCase();
+                                    if (!vitals.weight && (uk === 'KHAMBENH_CANNANG' || uk === 'CANNANG' || uk === 'CAN_NANG')) vitals.weight = String(val);
+                                    if (!vitals.height && (uk === 'KHAMBENH_CHIEUCAO' || uk === 'CHIEUCAO' || uk === 'CHIEU_CAO')) vitals.height = String(val);
+                                    if (!vitals.pulse && (uk === 'KHAMBENH_MACH' || uk === 'MACH')) vitals.pulse = String(val);
+                                    if (!vitals.temp && (uk === 'KHAMBENH_NHIETDO' || uk === 'NHIETDO')) vitals.temp = String(val);
+                                }
+                            }
+                        } catch (parseErr) { log.warn('⚖️ NT.006 parse error:', parseErr.message); }
+                    }
+                    // Tiếp tục flow: grid fallback + cascade
+                    continueVitalsFlow();
+                };
+                nt006Xhr.onerror = function () {
+                    _nt006Done = true;
+                    log.warn('⚖️ NT.006 network error');
+                    continueVitalsFlow();
+                };
+                nt006Xhr.send();
+            } catch (e) { 
+                _nt006Done = true;
+                log.warn('⚖️ NT.006 setup error:', e.message);
+            }
+        }
+
+        // ★ AUDIT FIX: continueVitalsFlow — called after async NT.006 or immediately if no async
+        function continueVitalsFlow() {
+            if (thisSeq !== _patientSeq) return;
+
+            // Fallback: lấy từ grid rowData (Scanner v3 style)
+            if (!vitals.height) {
+                const gridH = rowData.CHIEUCAO || rowData.ChieuCao || rowData.KHAMBENH_CHIEUCAO || '';
+                if (gridH && gridH !== '0') vitals.height = String(gridH);
+            }
+            if (!vitals.weight) {
+                const gridW = rowData.CANNANG || rowData.CanNang || rowData.KHAMBENH_CANNANG || '';
+                if (gridW && gridW !== '0') vitals.weight = String(gridW);
+            }
+
+            // Fallback 2: Scan lần khám cũ (Scanner v3 style) nếu chưa có chiều cao
+            if (!vitals.height && hosobenhanid && _jsonrpc) {
+                try {
+                    log.debug('📏 Scan HSBA cũ để tìm chiều cao...');
+                    const hsbaParams = JSON.stringify({ HOSOBENHANID: hosobenhanid });
+                    const hsbaResult = _jsonrpc.AjaxJson.ajaxCALL_SP_O('NT.006.HSBA.HIS', hsbaParams, 0);
+                    if (hsbaResult) {
+                        const hsbaData = (typeof hsbaResult === 'string' && hsbaResult.trim() !== '') ? JSON.parse(hsbaResult) : hsbaResult;
+                        const hsbaRecords = Array.isArray(hsbaData) ? hsbaData : [hsbaData];
+                        for (let hi = hsbaRecords.length - 1; hi >= 0; hi--) {
+                            const hrec = hsbaRecords[hi];
+                            if (!hrec) continue;
+                            const hcc = hrec.KHAMBENH_CHIEUCAO || hrec.CHIEUCAO || '';
+                            if (hcc && hcc !== '0' && String(hcc).trim() !== '') {
+                                vitals.height = String(hcc);
+                                log.debug('📏 Tìm thấy chiều cao từ HSBA cũ: ' + hcc + 'cm');
+                                break;
                             }
                         }
-                        log.debug('⚖️ Height-related fields:', JSON.stringify(heightRelated));
                     }
-                    for (let i = 0; i < records.length; i++) {
-                        const rec = records[i];
-                        if (!rec) continue;
-                        for (const k in rec) {
-                            if (!rec.hasOwnProperty(k)) continue;
-                            var val = rec[k];
-                            if (!val || val === '0' || String(val).trim() === '') continue;
-                            const uk = k.toUpperCase();
-                            if (!vitals.weight && (uk === 'KHAMBENH_CANNANG' || uk === 'CANNANG' || uk === 'CAN_NANG')) vitals.weight = String(val);
-                            if (!vitals.height && (uk === 'KHAMBENH_CHIEUCAO' || uk === 'CHIEUCAO' || uk === 'CHIEU_CAO')) vitals.height = String(val);
-                            if (!vitals.pulse && (uk === 'KHAMBENH_MACH' || uk === 'MACH')) vitals.pulse = String(val);
-                            if (!vitals.temp && (uk === 'KHAMBENH_NHIETDO' || uk === 'NHIETDO')) vitals.temp = String(val);
-                        }
-                    }
-                }
-            } catch (e) { log.warn('⚖️ NT.006 error:', e.message); }
-        }
+                } catch (e) { log.warn('📏 NT.006.HSBA.HIS error:', e.message); }
+            }
 
-        // Fallback: lấy từ grid rowData (Scanner v3 style)
-        if (!vitals.height) {
-            const gridH = rowData.CHIEUCAO || rowData.ChieuCao || rowData.KHAMBENH_CHIEUCAO || '';
-            if (gridH && gridH !== '0') vitals.height = String(gridH);
-        }
-        if (!vitals.weight) {
-            const gridW = rowData.CANNANG || rowData.CanNang || rowData.KHAMBENH_CANNANG || '';
-            if (gridW && gridW !== '0') vitals.weight = String(gridW);
-        }
-
-        // Fallback 2: Scan lần khám cũ (Scanner v3 style) nếu chưa có chiều cao
-        if (!vitals.height && hosobenhanid && _jsonrpc) {
-            try {
-                log.debug('📏 Scan HSBA cũ để tìm chiều cao...');
-                const hsbaParams = JSON.stringify({ HOSOBENHANID: hosobenhanid });
-                const hsbaResult = _jsonrpc.AjaxJson.ajaxCALL_SP_O('NT.006.HSBA.HIS', hsbaParams, 0);
-                if (hsbaResult) {
-                    const hsbaData = (typeof hsbaResult === 'string' && hsbaResult.trim() !== '') ? JSON.parse(hsbaResult) : hsbaResult;
-                    const hsbaRecords = Array.isArray(hsbaData) ? hsbaData : [hsbaData];
-                    for (let hi = hsbaRecords.length - 1; hi >= 0; hi--) {
-                        const hrec = hsbaRecords[hi];
-                        if (!hrec) continue;
-                        const hcc = hrec.KHAMBENH_CHIEUCAO || hrec.CHIEUCAO || '';
-                        if (hcc && hcc !== '0' && String(hcc).trim() !== '') {
-                            vitals.height = String(hcc);
-                            log.debug('📏 Tìm thấy chiều cao từ HSBA cũ: ' + hcc + 'cm');
-                            break;
-                        }
-                    }
-                }
-            } catch (e) { log.warn('📏 NT.006.HSBA.HIS error:', e.message); }
-        }
-
-        // ★ v1.2.0 Fallback 3: Vitals Cascade — lùng sục qua CC / Ngoại trú / Khám bệnh
-        const hasAllVitals = vitals.weight && vitals.height && vitals.pulse && vitals.temp;
-        
-        function finishVitals() {
-            if (thisSeq !== _patientSeq) return;
-            // ⚠️ SAFETY: Không log chi tiết vitals
-            log.debug('👤 Vitals loaded:', Object.keys(vitals).length, 'fields');
-
-            // Broadcast to content script (kèm seq để validate)
-            window.postMessage({
-                type: 'QUYEN_PATIENT_SELECTED',
-                seq: thisSeq,
-                patient: {
-                    name: hoTen,
-                    dob: ngaySinh,
-                    gender: gioiTinh,
-                    khambenhId: khambenhId,
-                    hosobenhanid: hosobenhanid
-                },
-                vitals: vitals
-            }, window.location.origin);
-
-            // ★ SAFETY v2: Auto-fetch Section 4+17 — polling thay vì fixed timeout
-            // Đợi iframe care sheet reload xong (check mỗi 500ms, tối đa 5s)
-            pollForCareSheetReady(thisSeq, 0);
-        }
-
-        if (!hasAllVitals && khambenhId && typeof _jsonrpc !== 'undefined' && _jsonrpc) {
-            const FALLBACK_QUERIES = ['NT.006.HSBA', 'NT.006.HSBA.CC', 'NT.006.HSBA.NGOAITRU', 'NT.006.HSBA.NGT', 'Khambenh', 'NT.Khambenh'];
-            const benhnhanId = rowData.BENHNHANID || rowData.BenhNhanID || rowData.BENH_NHAN_ID || '';
-            log.debug('🔍 Vitals fallback cascade — thiếu:', (!vitals.weight?'CN ':''), (!vitals.height?'CC ':''), (!vitals.pulse?'Mạch ':''), (!vitals.temp?'NĐ':''));
+            // ★ v1.2.0 Fallback 3: Vitals Cascade — lùng sục qua CC / Ngoại trú / Khám bệnh
+            const hasAllVitals = vitals.weight && vitals.height && vitals.pulse && vitals.temp;
             
-            function fetchVitalsAsync(fbIndex) {
+            function finishVitals() {
                 if (thisSeq !== _patientSeq) return;
-                const doneMissing = vitals.weight && vitals.height && vitals.pulse && vitals.temp;
-                if (doneMissing || fbIndex >= FALLBACK_QUERIES.length) {
-                    finishVitals();
-                    return;
+                // ⚠️ SAFETY: Không log chi tiết vitals
+                log.debug('👤 Vitals loaded:', Object.keys(vitals).length, 'fields');
+
+                // Broadcast to content script (kèm seq để validate)
+                window.postMessage({
+                    type: 'QUYEN_PATIENT_SELECTED',
+                    seq: thisSeq,
+                    patient: {
+                        name: hoTen,
+                        dob: ngaySinh,
+                        gender: gioiTinh,
+                        khambenhId: khambenhId,
+                        hosobenhanid: hosobenhanid
+                    },
+                    vitals: vitals
+                }, window.location.origin);
+
+                // ★ SAFETY v2: Auto-fetch Section 4+17 — polling thay vì fixed timeout
+                // Đợi iframe care sheet reload xong (check mỗi 500ms, tối đa 5s)
+                pollForCareSheetReady(thisSeq, 0);
+            }
+
+            if (!hasAllVitals && khambenhId && typeof _jsonrpc !== 'undefined' && _jsonrpc) {
+                const FALLBACK_QUERIES = ['NT.006.HSBA', 'NT.006.HSBA.CC', 'NT.006.HSBA.NGOAITRU', 'NT.006.HSBA.NGT', 'Khambenh', 'NT.Khambenh'];
+                const benhnhanId = rowData.BENHNHANID || rowData.BenhNhanID || rowData.BENH_NHAN_ID || '';
+                log.debug('🔍 Vitals fallback cascade — thiếu:', (!vitals.weight?'CN ':''), (!vitals.height?'CC ':''), (!vitals.pulse?'Mạch ':''), (!vitals.temp?'NĐ':''));
+                
+                function fetchVitalsAsync(fbIndex) {
+                    if (thisSeq !== _patientSeq) return;
+                    const doneMissing = vitals.weight && vitals.height && vitals.pulse && vitals.temp;
+                    if (doneMissing || fbIndex >= FALLBACK_QUERIES.length) {
+                        finishVitals();
+                        return;
+                    }
+                    
+                    try {
+                        const fbQuery = FALLBACK_QUERIES[fbIndex];
+                        const fbUuid = _jsonrpc.AjaxJson.uuid || '';
+                        const fbParams = { func: 'ajaxExecuteQueryPaging', uuid: fbUuid, params: [fbQuery], options: [{ name: '[0]', value: String(khambenhId) }, { name: '[1]', value: String(benhnhanId || khambenhId) }] };
+                        const fbUrl = '/vnpthis/RestService?postData=' + encodeURIComponent(JSON.stringify(fbParams)) + '&_search=false&rows=10&page=1&sidx=&sord=asc';
+                        
+                        const fbXhr = new XMLHttpRequest();
+                        fbXhr.open('GET', fbUrl, true); // ASYNC
+                        fbXhr.onreadystatechange = function() {
+                            if (fbXhr.readyState === 4) {
+                                if (thisSeq !== _patientSeq) return;
+                                if (fbXhr.status === 200 && fbXhr.responseText) {
+                                    try {
+                                        const fbData = JSON.parse(fbXhr.responseText);
+                                        const fbRows = fbData.rows || (Array.isArray(fbData) ? fbData : []);
+                                        for (let fri = 0; fri < fbRows.length; fri++) {
+                                            const frec = fbRows[fri];
+                                            if (!frec) continue;
+                                            for (const fk in frec) {
+                                                if (!frec.hasOwnProperty(fk)) continue;
+                                                const fv = frec[fk];
+                                                if (!fv || fv === '0' || String(fv).trim() === '') continue;
+                                                const fuk = fk.toUpperCase();
+                                                if (!vitals.weight && (fuk === 'KHAMBENH_CANNANG' || fuk === 'CANNANG' || fuk === 'CAN_NANG')) vitals.weight = String(fv);
+                                                if (!vitals.height && (fuk === 'KHAMBENH_CHIEUCAO' || fuk === 'CHIEUCAO' || fuk === 'CHIEU_CAO')) vitals.height = String(fv);
+                                                if (!vitals.pulse && (fuk === 'KHAMBENH_MACH' || fuk === 'MACH')) vitals.pulse = String(fv);
+                                                if (!vitals.temp && (fuk === 'KHAMBENH_NHIETDO' || fuk === 'NHIETDO')) vitals.temp = String(fv);
+                                                if (!vitals.bp && (fuk === 'KHAMBENH_HUYETAP' || fuk === 'HUYETAP')) vitals.bp = String(fv);
+                                            }
+                                        }
+                                    } catch (eParse) { console.debug("[Bridge] parse:", eParse.message); }
+                                }
+                                fetchVitalsAsync(fbIndex + 1);
+                            }
+                        };
+                        fbXhr.send();
+                    } catch (fbE) {
+                        log.debug('🔍 Fallback ' + FALLBACK_QUERIES[fbIndex] + ' error:', fbE.message);
+                        fetchVitalsAsync(fbIndex + 1);
+                    }
                 }
                 
-                try {
-                    const fbQuery = FALLBACK_QUERIES[fbIndex];
-                    const fbUuid = _jsonrpc.AjaxJson.uuid || '';
-                    const fbParams = { func: 'ajaxExecuteQueryPaging', uuid: fbUuid, params: [fbQuery], options: [{ name: '[0]', value: String(khambenhId) }, { name: '[1]', value: String(benhnhanId || khambenhId) }] };
-                    const fbUrl = '/vnpthis/RestService?postData=' + encodeURIComponent(JSON.stringify(fbParams)) + '&_search=false&rows=10&page=1&sidx=&sord=asc';
-                    
-                    const fbXhr = new XMLHttpRequest();
-                    fbXhr.open('GET', fbUrl, true); // ASYNC
-                    fbXhr.onreadystatechange = function() {
-                        if (fbXhr.readyState === 4) {
-                            if (thisSeq !== _patientSeq) return;
-                            if (fbXhr.status === 200 && fbXhr.responseText) {
-                                try {
-                                    const fbData = JSON.parse(fbXhr.responseText);
-                                    const fbRows = fbData.rows || (Array.isArray(fbData) ? fbData : []);
-                                    for (let fri = 0; fri < fbRows.length; fri++) {
-                                        const frec = fbRows[fri];
-                                        if (!frec) continue;
-                                        for (const fk in frec) {
-                                            if (!frec.hasOwnProperty(fk)) continue;
-                                            const fv = frec[fk];
-                                            if (!fv || fv === '0' || String(fv).trim() === '') continue;
-                                            const fuk = fk.toUpperCase();
-                                            if (!vitals.weight && (fuk === 'KHAMBENH_CANNANG' || fuk === 'CANNANG' || fuk === 'CAN_NANG')) vitals.weight = String(fv);
-                                            if (!vitals.height && (fuk === 'KHAMBENH_CHIEUCAO' || fuk === 'CHIEUCAO' || fuk === 'CHIEU_CAO')) vitals.height = String(fv);
-                                            if (!vitals.pulse && (fuk === 'KHAMBENH_MACH' || fuk === 'MACH')) vitals.pulse = String(fv);
-                                            if (!vitals.temp && (fuk === 'KHAMBENH_NHIETDO' || fuk === 'NHIETDO')) vitals.temp = String(fv);
-                                            if (!vitals.bp && (fuk === 'KHAMBENH_HUYETAP' || fuk === 'HUYETAP')) vitals.bp = String(fv);
-                                        }
-                                    }
-                                } catch (eParse) {}
-                            }
-                            fetchVitalsAsync(fbIndex + 1);
-                        }
-                    };
-                    fbXhr.send();
-                } catch (fbE) {
-                    log.debug('🔍 Fallback ' + FALLBACK_QUERIES[fbIndex] + ' error:', fbE.message);
-                    fetchVitalsAsync(fbIndex + 1);
-                }
+                fetchVitalsAsync(0);
+            } else {
+                finishVitals();
             }
-            
-            fetchVitalsAsync(0);
-        } else {
-            finishVitals();
+        }
+
+        // ★ AUDIT FIX: Gọi continueVitalsFlow ngay nếu NT.006 không start (không có KB / jsonrpc)
+        if (_nt006Done || !khambenhId || !_jsonrpc || !_jsonrpc.AjaxJson) {
+            continueVitalsFlow();
         }
     }
 
@@ -446,9 +469,9 @@
                         }
                         break;
                     }
-                } catch (e) { }
+                } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
             }
-        } catch (e) { }
+        } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
 
         if (hasGrid) {
             log.debug('📋 pollForCareSheetReady: grid ready after ' + (attempt * 500) + 'ms');
@@ -473,7 +496,7 @@
                     checkForDrugData(options, data);
                     // Kiểm tra xem response có phải từ API phiếu chăm sóc không
                     checkForCareSheetData(options, data);
-                } catch (e) { }
+                } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
 
                 // Gọi callback gốc
                 if (originalSuccess) originalSuccess.apply(this, arguments);
@@ -603,7 +626,7 @@
             if (data && data.rows) rows = data.rows;
             else if (Array.isArray(data)) rows = data;
             else if (data && typeof data === 'string') {
-                try { rows = JSON.parse(data).rows || []; } catch (e) { }
+                try { rows = JSON.parse(data).rows || []; } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
             }
 
             if (rows.length > 0) {
@@ -822,9 +845,9 @@
                         if (m) { patientName = m[1].trim(); break; }
                     }
                     if (patientName) break;
-                } catch (e) { }
+                } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
             }
-        } catch (e) { }
+        } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
 
         log.debug('📋 Tổng hợp xong: seq=' + aggSeq + ' | KB=' + _currentKhambenhId + ' | Sec4=' + Object.keys(mergedSec4).length + ' ô, Sec17=' + Object.keys(mergedSec17).length + ' mục, từ ' + recentDates.length + ' ngày');
 
@@ -886,17 +909,17 @@
                     if (!win) continue;
 
                     let iUrl = '';
-                    try { iUrl = win.location.href || ''; } catch (e) { }
+                    try { iUrl = win.location.href || ''; } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
                     if (iUrl.indexOf('NTU02D204') < 0 && iUrl.indexOf('ThemPhieu') < 0) continue;
 
                     let hasGrid = false;
-                    try { hasGrid = !!(win.document && win.document.querySelector && win.document.querySelector('#grdDanhSach')); } catch (e2) { }
+                    try { hasGrid = !!(win.document && win.document.querySelector && win.document.querySelector('#grdDanhSach')); } catch (e2) { if (e2 && e2.message) console.debug("[Bridge] catch:", e2.message); }
                     const isVisible = frm.offsetParent !== null;
                     const score = (hasGrid ? 100 : 0) + (isVisible ? 10 : 0);
                     candidates.push({ win: win, score: score, idx: i });
-                } catch (e3) { }
+                } catch (e3) { if (e3 && e3.message) console.debug("[Bridge] catch:", e3.message); }
             }
-        } catch (e4) { }
+        } catch (e4) { if (e4 && e4.message) console.debug("[Bridge] catch:", e4.message); }
 
         if (candidates.length === 0) return null;
         candidates.sort(function (a, b) { return b.score - a.score; });
@@ -996,12 +1019,12 @@
                             try {
                                 const sDoc = subIframes[j].contentDocument || subIframes[j].contentWindow.document;
                                 if (sDoc) docs.push(sDoc);
-                            } catch (e) { }
+                            } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
                         }
                     }
-                } catch (e) { }
+                } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
             }
-        } catch (e) { }
+        } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
         return docs;
     }
 
@@ -1073,12 +1096,12 @@
             // Parse result
             let parsed = rawResult;
             if (typeof parsed === 'string') {
-                try { parsed = JSON.parse(parsed); } catch (e) { }
+                try { parsed = JSON.parse(parsed); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
             }
             if (parsed && parsed.result !== undefined) {
                 parsed = parsed.result;
                 if (typeof parsed === 'string') {
-                    try { parsed = JSON.parse(parsed); } catch (e) { }
+                    try { parsed = JSON.parse(parsed); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
                 }
             }
 
@@ -1183,10 +1206,7 @@
             case 'QUYEN_FILL_COMBOGRID':
                 handleFillComboGrid(event.data.tasks);
                 break;
-            // ★ v1.2.0: Caresheet List
-            case 'QUYEN_REQ_CARESHEET_LIST':
-                handleCareSheetListRequest(event.data);
-                break;
+
         }
     });
 
@@ -1253,115 +1273,7 @@
         log.debug('🏥 ✅ Section 17 hoàn tất!');
     }
 
-    // ==========================================
-    // ★ v1.2.0: CARESHEET LIST — Đếm phiếu CS đã lập trong ngày (NTU02D204.01)
-    // ==========================================
-    function handleCareSheetListRequest(data) {
-        var reqId = data.requestId || '';
-        var kb = data.khambenhId || _currentKhambenhId;
-        if (!kb) kb = findCurrentKhamBenhId();
-        var hsba = data.hosobenhanid || _currentHosobenhanid || '-1';
-        
-        if (!kb) {
-            window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: 'missing IDs' }, location.origin);
-            return;
-        }
 
-        // Lấy thêm thông tin cần thiết từ grid
-        var tiepnhanId = '', benhnhanId = '', khoaId = '', phongId = '';
-        try {
-            if (_$) {
-                var selRow = _$('#grdBenhNhan').jqGrid('getGridParam', 'selrow');
-                if (selRow) {
-                    var rd = _$('#grdBenhNhan').jqGrid('getRowData', selRow);
-                    tiepnhanId = rd.TIEPNHANID || rd.TiepNhanID || '';
-                    benhnhanId = rd.BENHNHANID || rd.BenhNhanID || '';
-                    khoaId = rd.KHOAID || rd.KhoaID || '';
-                    phongId = rd.PHONGID || rd.PhongID || '';
-                }
-            }
-        } catch (e) { }
-
-        try {
-            var csIframeWin = getCareSheetIframeWindow();
-            var csUuid = '';
-            if (csIframeWin && csIframeWin.uuid) csUuid = csIframeWin.uuid;
-            if (!csUuid && _jsonrpc) csUuid = _jsonrpc.AjaxJson.uuid || '';
-            if (!csUuid) {
-                window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: 'no UUID' }, location.origin);
-                return;
-            }
-
-            var filterJson = JSON.stringify({
-                HOSOBENHANID: String(hsba),
-                TIEPNHANID: String(tiepnhanId || '-1'),
-                KHAMBENHID: String(kb),
-                MAHOSOBENHAN: '-1',
-                BENHNHANID: String(benhnhanId || '-1'),
-                KHOAID: String(khoaId || '-1'),
-                PHONGID: String(phongId || '-1'),
-                LOAI_PHIEU: 'NTU_HANHCHINH',
-                LOAICHAMSOC: '',
-                glbDeptId: String(khoaId || '-1'),
-                glbSubDeptId: String(phongId || '-1'),
-                FORM_ID: '64',
-                PHIEUIDCHA: '-1'
-            });
-
-            var apiParams = { func: 'ajaxExecuteQueryPaging', uuid: csUuid, params: ['NTU02D204.01'], options: [{ name: '[0]', value: filterJson }] };
-            
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', '/vnpthis/RestService?_search=false&rows=50&page=1&sidx=&sord=desc', true);
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-            xhr.onreadystatechange = function () {
-                if (xhr.readyState !== 4) return;
-                if (xhr.status === 200 && xhr.responseText) {
-                    try {
-                        var resp = JSON.parse(xhr.responseText);
-                        var rows = resp.rows || [];
-                        // Lọc chỉ phiếu ngày hôm nay
-                        var today = new Date();
-                        var todayStr = ('0' + today.getDate()).slice(-2) + '/' + ('0' + (today.getMonth() + 1)).slice(-2) + '/' + today.getFullYear();
-                        var todaySheets = [];
-                        var allSheets = [];
-                        for (var si = 0; si < rows.length; si++) {
-                            var sheet = rows[si];
-                            var sheetDate = sheet.NGAYTAO || sheet.NGAYSUA || sheet.THOIGIANCHAMSOC || '';
-                            var sheetInfo = {
-                                phieuId: sheet.PHIEUID || sheet.ID || '',
-                                ngayTao: sheetDate,
-                                loaiPhieu: sheet.LOAICHAMSOC || sheet.LOAI_PHIEU || '',
-                                trangThai: sheet.TRANGTHAI || '',
-                                nguoiTao: sheet.NGUOITAO || sheet.TENNGUOITAO || ''
-                            };
-                            allSheets.push(sheetInfo);
-                            if (sheetDate && sheetDate.indexOf(todayStr) >= 0) {
-                                todaySheets.push(sheetInfo);
-                            }
-                        }
-                        log.debug('📋 CareSheet list: ' + allSheets.length + ' tổng, ' + todaySheets.length + ' hôm nay');
-                        window.postMessage({
-                            type: 'QUYEN_CARESHEET_LIST_RESULT',
-                            requestId: reqId,
-                            sheets: allSheets,
-                            todaySheets: todaySheets,
-                            totalCount: allSheets.length,
-                            todayCount: todaySheets.length
-                        }, location.origin);
-                    } catch (e) {
-                        log.warn('📋 CareSheet list parse error:', e.message);
-                        window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: e.message }, location.origin);
-                    }
-                } else {
-                    window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: 'HTTP ' + xhr.status }, location.origin);
-                }
-            };
-            xhr.send('postData=' + encodeURIComponent(JSON.stringify(apiParams)));
-        } catch (e) {
-            log.error('📋 CareSheet list error:', e.message);
-            window.postMessage({ type: 'QUYEN_CARESHEET_LIST_RESULT', requestId: reqId, sheets: [], error: e.message }, location.origin);
-        }
-    }
 
     // ==========================================
     // VITALS FETCH — Lấy cân nặng/chiều cao từ HIS (NT.006)
@@ -1422,7 +1334,7 @@
                 const url = docs[d].defaultView ? docs[d].defaultView.location.href : '';
                 const m = url.match(/KHAMBENHID[=:](\d+)/i);
                 if (m) return m[1];
-            } catch (e) { }
+            } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
         }
 
         // Cách 2: Từ global vars trong iframes
@@ -1431,7 +1343,7 @@
                 const win = docs[d2].defaultView;
                 if (win && win.KHAMBENHID) return String(win.KHAMBENHID);
                 if (win && win.khambenhId) return String(win.khambenhId);
-            } catch (e) { }
+            } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
         }
 
         // Cách 3: Từ hidden input
@@ -1442,7 +1354,7 @@
                     const name = (inputs[h].name || inputs[h].id || '').toUpperCase();
                     if (name.indexOf('KHAMBENHID') >= 0 && inputs[h].value) return inputs[h].value;
                 }
-            } catch (e) { }
+            } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
         }
 
         // Cách 4: Từ jqGrid patient list
@@ -1456,7 +1368,7 @@
                         return rowData.KHAMBENHID || rowData.KhamBenhID || '';
                     }
                 }
-            } catch (e) { }
+            } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
         }
 
         return null;
@@ -1815,17 +1727,17 @@
             // Tìm trong tất cả documents (main, parent, top, iframes)
             function findDropdownItems() {
                 const allDocs = [];
-                try { allDocs.push(document); } catch (e) { }
-                try { if (window.parent && window.parent.document !== document) allDocs.push(window.parent.document); } catch (e) { }
-                try { if (window.top && window.top.document !== document && window.top.document !== (window.parent && window.parent.document)) allDocs.push(window.top.document); } catch (e) { }
+                try { allDocs.push(document); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
+                try { if (window.parent && window.parent.document !== document) allDocs.push(window.parent.document); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
+                try { if (window.top && window.top.document !== document && window.top.document !== (window.parent && window.parent.document)) allDocs.push(window.top.document); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
                 // Tìm trong iframes
                 for (let di = 0; di < allDocs.length; di++) {
                     try {
                         const ifs = allDocs[di].querySelectorAll('iframe');
                         for (let fi = 0; fi < ifs.length; fi++) {
-                            try { if (ifs[fi].contentDocument) allDocs.push(ifs[fi].contentDocument); } catch (e) { }
+                            try { if (ifs[fi].contentDocument) allDocs.push(ifs[fi].contentDocument); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
                         }
-                    } catch (e) { }
+                    } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
                 }
 
                 const items = [];
@@ -1835,7 +1747,7 @@
                         if (found.length > 0) {
                             for (let j = 0; j < found.length; j++) items.push(found[j]);
                         }
-                    } catch (e) { }
+                    } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
                 }
                 return items;
             }
@@ -2079,7 +1991,7 @@
             const paramStr = (typeof params === 'object') ? JSON.stringify(params) : params;
             const result = _jsonrpc.AjaxJson.ajaxCALL_SP_O(spName, paramStr, 0);
             let finalResult = result;
-            try { if (typeof result === 'string') finalResult = JSON.parse(result); } catch (e) { }
+            try { if (typeof result === 'string') finalResult = JSON.parse(result); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
             sendResult('QUYEN_SP_RESULT', { result: finalResult, spName }, requestId);
         } catch (e) {
             sendResult('QUYEN_SP_RESULT', { error: e.message, spName }, requestId);
@@ -2128,9 +2040,9 @@
                                 }
                                 return;
                             }
-                        } catch (e) { }
+                        } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
                     }
-                } catch (e) { }
+                } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
             }
             // Không còn form → thu gọn (chỉ fire khi vừa chuyển từ có → không)
             if (_lastTab !== null) {
@@ -2143,5 +2055,6 @@
         setTimeout(function () { setInterval(scanForms, 1500); }, 3000);
     })();
 
-    window.postMessage({ type: 'QUYEN_BRIDGE_READY', status: 'ready' }, window.location.origin);
+    // ★ AUDIT FIX: Thêm bridgeVersion để content script có thể kiểm tra compatibility
+    window.postMessage({ type: 'QUYEN_BRIDGE_READY', status: 'ready', bridgeVersion: '1.2.1' }, window.location.origin);
 })();
