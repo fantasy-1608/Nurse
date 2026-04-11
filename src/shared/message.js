@@ -47,7 +47,9 @@ HIS.Message = (function () {
         'QUYEN_FILL_ERROR',
         'QUYEN_FORM_PATIENT_CONTEXT',
         'QUYEN_FORM_FOCUSED',
-        'QUYEN_FORM_CLOSED'
+        'QUYEN_FORM_CLOSED',
+        'QUYEN_REQ_CARESHEET_LIST',
+        'QUYEN_CARESHEET_LIST_RESULT'
     ];
 
     // Set for O(1) lookup
