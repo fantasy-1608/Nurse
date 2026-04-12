@@ -206,6 +206,6 @@ Quy trình: `npm version patch` → `git push` → `npm run release`
 
 ---
 
-**Được phát triển bằng cả trái tim ❤️ bởi Huỳnh Trung Anh**
+Được phát triển bằng cả trái tim ❤️ bởi Huỳnh Trung Anh.
 
 *Vì một môi trường y tế hiện đại, giảm tải gánh nặng thủ tục hành chính, trọn tâm với người bệnh.*
