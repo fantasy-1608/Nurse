@@ -14,7 +14,7 @@ const QuyenUI = (function () {
     let _isMinimized = false;
     let _filledToday = 0;
     let _currentPatientName = '';
-    let _activeTab = 'infusion'; // 'infusion' | 'caresheet'
+    let _activeTab = 'infusion'; // 'infusion' | 'caresheet' | 'vattu'
     let _savedLeft = null, _savedTop = null;
     let _fillTrackerUnsub = null;  // ★ Fix: cleanup function cho FillTracker listener
 
@@ -107,6 +107,7 @@ const QuyenUI = (function () {
             <div class="quyen-tab-bar" id="quyen-tab-bar">
                 <button class="quyen-tab quyen-tab-active" data-tab="infusion" id="quyen-tab-infusion">✏️ Truyền dịch</button>
                 <button class="quyen-tab" data-tab="caresheet" id="quyen-tab-caresheet">📋 Phiếu CS</button>
+                <button class="quyen-tab" data-tab="vattu" id="quyen-tab-vattu">🧰 VT <span class="quyen-beta-badge">BETA</span></button>
             </div>
             <div class="quyen-panel-body" id="quyen-panel-body">
                 <div class="quyen-tab-content quyen-tab-content-active" id="quyen-tab-content-infusion">
@@ -122,6 +123,9 @@ const QuyenUI = (function () {
                 </div>
                 <div class="quyen-tab-content" id="quyen-tab-content-caresheet">
                     <!-- CareSheet UI sẽ render vào đây -->
+                </div>
+                <div class="quyen-tab-content" id="quyen-tab-content-vattu">
+                    <!-- VatTuUI sẽ render vào đây -->
                 </div>
             </div>
             <div class="quyen-footer">
@@ -155,6 +159,12 @@ const QuyenUI = (function () {
         const csContainer = document.getElementById('quyen-tab-content-caresheet');
         if (csContainer && typeof QuyenCareSheetUI !== 'undefined') {
             QuyenCareSheetUI.init(csContainer);
+        }
+
+        // Init VatTu UI vào tab container
+        const vtContainer = document.getElementById('quyen-tab-content-vattu');
+        if (vtContainer && typeof QuyenVatTuUI !== 'undefined') {
+            QuyenVatTuUI.init(vtContainer);
         }
 
 

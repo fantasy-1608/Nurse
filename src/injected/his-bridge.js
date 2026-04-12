@@ -105,6 +105,7 @@
     let _patientSeq = 0;              // Tăng mỗi khi chọn BN mới
     let _currentKhambenhId = '';      // KHAMBENHID của BN đang chọn
     let _currentHosobenhanid = '';    // HOSOBENHANID của BN đang chọn
+    let _currentBenhnhanId = '';      // BENHNHANID của BN đang chọn
 
     // CT_FORM_IDs cho Section 4 - Cơ quan bệnh + Cân nặng
     const SECTION4_IDS = ['1169', '1170', '1171', '1232'];
@@ -224,6 +225,7 @@
             || '';
         const khambenhId = rowData.KHAMBENHID || rowData.KhamBenhID || rowData.KHAM_BENH_ID || '';
         const hosobenhanid = rowData.HOSOBENHANID || rowData.HoSoBenhAnID || rowData.HOSO_BENHAN_ID || '';
+        const benhnhanId = rowData.BENHNHANID || rowData.BenhNhanID || rowData.BENH_NHAN_ID || '';
 
         // ★ DEDUP 2-tầng:
         //   - rowId khác → LUÔN xử lý (click row khác)
@@ -247,6 +249,7 @@
         _patientSeq++;
         _currentKhambenhId = khambenhId;
         _currentHosobenhanid = hosobenhanid;
+        _currentBenhnhanId = benhnhanId;
         const thisSeq = _patientSeq;
         log.debug('👤 Patient selected:', rowId, '| seq:', thisSeq, '| KB:', khambenhId, '| name:', hoTen ? '(found)' : '(EMPTY!)');
 
@@ -369,6 +372,7 @@
                         dob: ngaySinh,
                         gender: gioiTinh,
                         khambenhId: khambenhId,
+                        benhnhanId: benhnhanId,
                         hosobenhanid: hosobenhanid
                     },
                     vitals: vitals
@@ -1211,6 +1215,13 @@
             case 'QUYEN_REQ_VITALS':
                 fetchVitalsFromHIS();
                 break;
+            case 'QUYEN_REQ_VATTU_DATA':
+                fetchVatTuData(
+                    event.data.khambenhId   || _currentKhambenhId,
+                    event.data.benhnhanId   || _currentBenhnhanId,
+                    event.data.hosobenhanid || _currentHosobenhanid
+                );
+                break;
             case 'QUYEN_FILL_COMBOGRID':
                 handleFillComboGrid(event.data.tasks);
                 break;
@@ -1380,6 +1391,163 @@
         }
 
         return null;
+    }
+
+    // ==========================================
+    // VATTU DATA FETCH — NT.024.DSTHUOCVT + NT.034.1
+    // Lấy danh sách thuốc (type '7;') và VT đã có (type 8) rồi
+    // dispatch QUYEN_VATTU_DATA_RESULT về content script
+    // ==========================================
+    function fetchVatTuData(khambenhId, benhnhanId, hosobenhanid) {
+        if (!khambenhId) {
+            log.warn('🧰 fetchVatTuData: thiếu khambenhId');
+            window.postMessage({ type: 'QUYEN_VATTU_DATA_RESULT', drugs: [], existingVT: [] }, location.origin);
+            return;
+        }
+
+        log.debug('🧰 fetchVatTuData: BaoBaoId=', khambenhId, 'BN=', benhnhanId);
+
+        // Helper: tạo URL gọi RestService
+        function makeUrl(spName, options) {
+            const uuid = (_jsonrpc && _jsonrpc.AjaxJson && _jsonrpc.AjaxJson.uuid) ? _jsonrpc.AjaxJson.uuid : '';
+            const postData = JSON.stringify({
+                func: 'ajaxExecuteQueryPaging',
+                uuid: uuid,
+                params: [spName],
+                options: options
+            });
+            return '/vnpthis/RestService?postData=' + encodeURIComponent(postData) + '&_search=false&rows=200&page=1&sidx=&sord=asc';
+        }
+
+        // Helper: parse response → rows array
+        function parseRows(text) {
+            if (!text || !text.trim()) return [];
+            try {
+                const data = JSON.parse(text);
+                return Array.isArray(data) ? data : (data.rows || []);
+            } catch (e) {
+                return [];
+            }
+        }
+
+        // Helper: fetch một phiếu và lấy danh sách items (NT.034.1)
+        function fetchPhieuItems(idPhieu, callback) {
+            const url = makeUrl('NT.034.1', [
+                { name: '[1]', value: String(idPhieu) }
+            ]);
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', url, true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState !== 4) return;
+                callback(xhr.status === 200 ? parseRows(xhr.responseText) : []);
+            };
+            xhr.send();
+        }
+
+        // Step 1: Lấy danh sách phiếu thuốc (type '7;')
+        const drugPhieuUrl = makeUrl('NT.024.DSTHUOCVT', [
+            { name: '[0]', value: String(khambenhId) },
+            { name: '[1]', value: String(benhnhanId || '') },
+            { name: '[2]', value: '7;' },
+            { name: '[3]', value: String(hosobenhanid || '') }
+        ]);
+
+        // Step 2: Lấy danh sách phiếu VT (type 8)
+        const vtPhieuUrl = makeUrl('NT.024.DSTHUOCVT', [
+            { name: '[0]', value: String(khambenhId) },
+            { name: '[1]', value: String(benhnhanId || '') },
+            { name: '[2]', value: '8' },
+            { name: '[3]', value: String(hosobenhanid || '') }
+        ]);
+
+        let drugPhieuRows = [];
+        let vtPhieuRows   = [];
+        let step1Done = false;
+        let step2Done = false;
+
+        function onBothDone() {
+            if (!step1Done || !step2Done) return;
+
+            const allDrugs    = [];
+            const allExistVT  = [];
+            let   pending     = 0;
+
+            // Fetch items cho từng phiếu thuốc
+            for (let i = 0; i < drugPhieuRows.length; i++) {
+                const row = drugPhieuRows[i];
+                const phieuId = row.IDPHIEU || row.MAUBENHPHAMID || '';
+                if (!phieuId) continue;
+                pending++;
+                fetchPhieuItems(phieuId, function (items) {
+                    for (let k = 0; k < items.length; k++) {
+                        const it = items[k];
+                        allDrugs.push({
+                            ma:   it.MADICHVU  || '',
+                            ten:  it.TENDICHVU || '',
+                            duong: it.TENDUONGDUNG || it.DUONGDUNG || it.NDHL || ''
+                        });
+                    }
+                    pending--;
+                    if (pending === 0) finalize();
+                });
+            }
+
+            // Fetch items cho từng phiếu VT
+            for (let j = 0; j < vtPhieuRows.length; j++) {
+                const row = vtPhieuRows[j];
+                const phieuId = row.IDPHIEU || row.MAUBENHPHAMID || '';
+                if (!phieuId) continue;
+                pending++;
+                fetchPhieuItems(phieuId, function (items) {
+                    for (let k = 0; k < items.length; k++) {
+                        const it = items[k];
+                        allExistVT.push({
+                            ma:   it.MADICHVU  || '',
+                            ten:  it.TENDICHVU || '',
+                            sl:   it.SOLUONG   || it.SO_LUONG_KE || 1,
+                            dvt:  it.DVT || it.DONVI_TINH_QD || '',
+                        });
+                    }
+                    pending--;
+                    if (pending === 0) finalize();
+                });
+            }
+
+            // Nếu không có phiếu nào → finalize ngay
+            if (pending === 0) finalize();
+
+            function finalize() {
+                log.debug('🧰 VT data ready: drugs=' + allDrugs.length + ' existingVT=' + allExistVT.length);
+                window.postMessage({
+                    type:       'QUYEN_VATTU_DATA_RESULT',
+                    drugs:      allDrugs,
+                    existingVT: allExistVT
+                }, location.origin);
+            }
+        }
+
+        // Gửi 2 request song song
+        const xhr1 = new XMLHttpRequest();
+        xhr1.open('GET', drugPhieuUrl, true);
+        xhr1.onreadystatechange = function () {
+            if (xhr1.readyState !== 4) return;
+            drugPhieuRows = (xhr1.status === 200) ? parseRows(xhr1.responseText) : [];
+            log.debug('🧰 Drug phiếu:', drugPhieuRows.length);
+            step1Done = true;
+            onBothDone();
+        };
+        xhr1.send();
+
+        const xhr2 = new XMLHttpRequest();
+        xhr2.open('GET', vtPhieuUrl, true);
+        xhr2.onreadystatechange = function () {
+            if (xhr2.readyState !== 4) return;
+            vtPhieuRows = (xhr2.status === 200) ? parseRows(xhr2.responseText) : [];
+            log.debug('🧰 VT phiếu:', vtPhieuRows.length);
+            step2Done = true;
+            onBothDone();
+        };
+        xhr2.send();
     }
 
     // ==========================================

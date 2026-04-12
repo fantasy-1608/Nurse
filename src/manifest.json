@@ -55,6 +55,8 @@
                 "content/caresheet-config.js",
                 "content/caresheet-filler.js",
                 "content/caresheet-ui.js",
+                "content/vattu-engine.js",
+                "content/vattu-ui.js",
                 "content/ui-panel.js",
                 "content/content.js"
             ],
