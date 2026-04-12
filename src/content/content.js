@@ -116,6 +116,19 @@
     }
 
     // ==========================================
+    // LẮNG NGHE BLOCK ROLE TỪ CẦU NỐI BRIDGE
+    // ==========================================
+    window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'QUYEN_ROLE_BLOCK') {
+            QuyenLog.error('⛔️ TỪ CHỐI TRUY CẬP: Tiện ích chỉ dành cho Điều dưỡng (GROUP 5). Account: ' + event.data.name + ' - Nhóm: ' + event.data.role);
+            
+            // Xóa UI panel (ID thực của giao diện là quyen-panel)
+            const panel = document.getElementById('quyen-panel');
+            if (panel) panel.remove();
+        }
+    });
+
+    // ==========================================
     // ★ ACTIVATION GATE — Chỉ chạy khi đã kích hoạt
     // ==========================================
     let _initialized = false;

@@ -420,6 +420,8 @@ const QuyenUI = (function () {
         const bar = document.getElementById('quyen-patient-loading');
         const fill = document.getElementById('quyen-loading-fill');
         const label = document.getElementById('quyen-loading-text');
+        const flower = document.getElementById('quyen-mini-icon');
+
         if (!bar || !fill || !label) return;
 
         bar.style.display = 'flex';
@@ -428,6 +430,19 @@ const QuyenUI = (function () {
 
         fill.classList.toggle('quyen-loading-done', !!done);
         label.classList.toggle('quyen-loading-done', !!done);
+
+        // ★ Nhảy số % chỗ bông hoa
+        if (flower) {
+            if (!done) {
+                flower.textContent = percent + '%';
+                flower.style.fontSize = '12px';
+                flower.style.fontWeight = 'bold';
+            } else {
+                flower.textContent = '__EXT_EMOJI__';
+                flower.style.fontSize = '';
+                flower.style.fontWeight = '';
+            }
+        }
     }
 
     function hideLoading() {

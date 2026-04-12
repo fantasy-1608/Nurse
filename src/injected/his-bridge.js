@@ -45,6 +45,14 @@
 
     log.debug('HIS Bridge v1.2.1 — __EXT_NAME__! __EXT_EMOJI__');
 
+    // ★ AUDIT FIX: Chỉ cho phép Điều dưỡng dùng (USER_GROUP_ID == "5")
+    if (window.userInfo && window.userInfo.USER_GROUP_ID && window.userInfo.USER_GROUP_ID !== "5") {
+        log.warn('⛔️ TỪ CHỐI TRUY CẬP: Nurse Extension chỉ được phép sử dụng bởi Điều Dưỡng (Group: 5). Account: ' + window.userInfo.FULL_NAME + ' - Group: ' + window.userInfo.USER_GROUP_ID);
+        window.postMessage({ type: 'QUYEN_ROLE_BLOCK', role: window.userInfo.USER_GROUP_ID, name: window.userInfo.FULL_NAME }, window.location.origin);
+        return; // Dừng toàn bộ hoạt động của bridge
+    }
+
+
     /**
      * ★ TÌM ELEMENT CÓ MARKER XUYÊN QUA MỌI IFRAME ★
      * Bridge chạy ở TOP window, nhưng form inputs nằm trong iframe lồng nhau.
@@ -681,7 +689,7 @@
         // 2. Tìm PHIEUIDs từ care sheet grid
         const phieuIds = findPhieuIdsFromCareSheetGrid();
         if (phieuIds.length === 0) {
-            log.warn('📋 Không tìm thấy PHIEUID nào trong care sheet grid');
+            log.debug('📋 Không tìm thấy PHIEUID nào trong care sheet grid');
             window.postMessage({ type: 'QUYEN_CARESHEET_SEC4_DATA', seq: reqSeq, requestId: requestId, khambenhId: _currentKhambenhId, data: {} }, location.origin);
             return;
         }
@@ -938,7 +946,7 @@
         const csIframeWin = getCareSheetIframeWindow();
 
         if (!csIframeWin) {
-            log.warn('📋 Không tìm thấy iframe NTU02D204!');
+            log.debug('📋 Không tìm thấy iframe NTU02D204 (chưa mở form)');
             return phieuIds;
         }
 
@@ -993,7 +1001,7 @@
             }
         } catch (e) { log.debug('📋 Strategy 2 error: ' + e.message); }
 
-        log.warn('📋 ❌ Không tìm được PHIEUIDs!');
+        log.debug('📋 ❌ Không tìm được PHIEUIDs!');
         return phieuIds;
     }
 
