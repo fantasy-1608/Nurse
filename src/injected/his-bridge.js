@@ -1652,28 +1652,47 @@
             retries++;
             var popupRow = null;
 
-            // Tìm jqgrow visible — check bằng getBoundingClientRect (chính xác hơn offsetParent)
-            // HIS combogrid dùng absolute positioning nên offsetParent có thể là null dù đang hiện
-            var jqRows = vtDoc.querySelectorAll('tr.jqgrow');
-            for (var jri = 0; jri < jqRows.length; jri++) {
-                var jrow = jqRows[jri];
+            // Priority 1: HIS combogrid — div.cg-comboItem.cg-menu-item
+            // (cấu trúc thực tế từ DevTools: div.combogrid > div.cg-comboItem.cg-menu-item > div.cg-ColItem > div.cg-DivItem)
+            var cgItems = vtDoc.querySelectorAll('div.cg-comboItem, div.cg-menu-item');
+            for (var cgi = 0; cgi < cgItems.length; cgi++) {
+                var cgItem = cgItems[cgi];
                 try {
-                    var rect = jrow.getBoundingClientRect();
-                    if (rect.height === 0 || rect.width === 0) continue; // thực sự ẩn
-                } catch(e) {
-                    if (jrow.offsetHeight === 0) continue; // fallback
+                    var cgRect = cgItem.getBoundingClientRect();
+                    if (cgRect.height === 0 || cgRect.width === 0) continue;
+                } catch(ex) {
+                    if (cgItem.offsetHeight === 0) continue;
                 }
-                // Row phải chứa tên hoặc mã của VT đang tìm
-                var rowText = (jrow.textContent || '').toLowerCase();
-                var matchName = nameWords.length > 0 && rowText.indexOf(nameWords[0].toLowerCase()) >= 0;
-                var matchCode = ma && rowText.indexOf(ma.toLowerCase()) >= 0;
-                if (matchName || matchCode) {
-                    popupRow = jrow;
+                var cgText = (cgItem.textContent || '').toLowerCase();
+                var cgMatchName = nameWords.length > 0 && cgText.indexOf(nameWords[0].toLowerCase()) >= 0;
+                var cgMatchCode = ma && cgText.indexOf(ma.toLowerCase()) >= 0;
+                if (cgMatchName || cgMatchCode) {
+                    popupRow = cgItem;
                     break;
                 }
             }
 
-            // Fallback: li trong jQuery UI autocomplete
+            // Fallback: tr.jqgrow (cho HIS dùng jqGrid popup)
+            if (!popupRow) {
+                var jqRows = vtDoc.querySelectorAll('tr.jqgrow');
+                for (var jri = 0; jri < jqRows.length; jri++) {
+                    var jrow = jqRows[jri];
+                    try {
+                        var jRect = jrow.getBoundingClientRect();
+                        if (jRect.height === 0 || jRect.width === 0) continue;
+                    } catch(ex2) {
+                        if (jrow.offsetHeight === 0) continue;
+                    }
+                    var jText = (jrow.textContent || '').toLowerCase();
+                    if ((nameWords.length > 0 && jText.indexOf(nameWords[0].toLowerCase()) >= 0) ||
+                        (ma && jText.indexOf(ma.toLowerCase()) >= 0)) {
+                        popupRow = jrow;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback: jQuery UI autocomplete list
             if (!popupRow) {
                 var liItems = vtDoc.querySelectorAll('ul.ui-autocomplete li.ui-menu-item');
                 for (var li2 = 0; li2 < liItems.length; li2++) {
@@ -1688,11 +1707,15 @@
 
             if (popupRow) {
                 clearInterval(checkTimer);
-                log.debug('🧰 Combogrid tìm thấy, đang click...');
+                log.debug('🧰 Combogrid tìm thấy item, đang chọn...');
 
+                // Kích hoạt đầy đủ event chain cho jQuery UI combogrid widget
+                popupRow.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                popupRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                popupRow.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
                 popupRow.click();
                 if (vtWin && vtWin.$) {
-                    vtWin.$(popupRow).trigger('click');
+                    vtWin.$(popupRow).trigger('mouseover').trigger('mousedown').trigger('mouseup').trigger('click');
                 }
 
                 // ─── 5. Điền Đường dùng, SL, Cách dùng sau khi chọn ─────
