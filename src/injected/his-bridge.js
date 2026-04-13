@@ -1689,23 +1689,33 @@
 
             if (popupRow) {
                 clearInterval(checkTimer);
-                log.debug('🧰 Combogrid tìm thấy item, đang chọn bằng ArrowDown + Enter...');
+                // Click với đầy đủ mouse event chain (Giống logic Truyền Dịch)
+                var innerDivs = popupRow.querySelectorAll('.cg-DivItem');
+                var clickTarget = popupRow;
+                for (var ci = 0; ci < innerDivs.length; ci++) {
+                    if (innerDivs[ci].offsetWidth > 0 && innerDivs[ci].style.display !== 'none') {
+                        clickTarget = innerDivs[ci];
+                        break;
+                    }
+                }
 
-                vtInput.focus();
+                log.debug('🧰 Target click tìm thấy:', clickTarget.className);
+
+                // 1. Native JS click trên inner div và cả row
+                clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                clickTarget.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+                clickTarget.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+                
+                popupRow.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                popupRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                popupRow.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+                popupRow.click();
+
+                // 2. jQuery click
                 if (vtWin && vtWin.$) {
-                    var $in = vtWin.$(vtInput);
-                    $in.trigger(vtWin.$.Event('keydown', { keyCode: 40, which: 40, key: 'ArrowDown' }));
-                    $in.trigger(vtWin.$.Event('keyup',   { keyCode: 40, which: 40, key: 'ArrowDown' }));
-                    setTimeout(function() {
-                        $in.trigger(vtWin.$.Event('keydown',  { keyCode: 13, which: 13, key: 'Enter' }));
-                        $in.trigger(vtWin.$.Event('keypress', { keyCode: 13, which: 13, key: 'Enter' }));
-                        $in.trigger(vtWin.$.Event('keyup',    { keyCode: 13, which: 13, key: 'Enter' }));
-                    }, 50);
-                } else {
-                    vtInput.dispatchEvent(new KeyboardEvent('keydown', { bubbles:true, cancelable:true, keyCode:40, which:40, key:'ArrowDown' }));
-                    setTimeout(function() {
-                        vtInput.dispatchEvent(new KeyboardEvent('keydown', { bubbles:true, cancelable:true, keyCode:13, which:13, key:'Enter' }));
-                    }, 50);
+                    vtWin.$(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
+                    vtWin.$(popupRow).trigger('mousedown').trigger('mouseup').trigger('click');
                 }
 
                 // ─── 5. Điền Đường dùng, SL, Cách dùng ─────────────────
