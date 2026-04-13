@@ -1627,47 +1627,35 @@
             }
         }
 
-        // ─── 3. Gõ TÊN VT (3 từ đầu) vào #txtDS_THUOC chậm rãi ───────────────
+        // ─── 3. Gõ TÊN VT (3 từ đầu) vào #txtDS_THUOC ──────────────────
         var nameWords  = (ten || '').split(' ').filter(function(w) { return w.length > 0; });
         var searchTerm = nameWords.slice(0, 3).join(' ') || ma;
 
         vtInput.focus();
         if (vtWin && vtWin.$) {
-            vtWin.$(vtInput).val('').trigger('focus').trigger('input');
-        } else {
-            vtInput.value = '';
-            vtInput.dispatchEvent(new Event('focus', { bubbles: true }));
-        }
-
-        var typeIdx = 0;
-        function typeNextChar() {
-            if (typeIdx >= searchTerm.length) {
-                log.debug('🧰 Tìm VT bằng tên: "' + searchTerm + '", chờ combogrid...');
-                startPolling();
-                return;
-            }
-            var c = searchTerm[typeIdx];
-            vtInput.value = vtInput.value + c; // append
-
-            if (vtWin && vtWin.$) {
+            vtWin.$(vtInput).val('').trigger('focus');
+            for (var ci = 0; ci < searchTerm.length; ci++) {
+                var c = searchTerm[ci];
+                vtInput.value += c;
                 vtWin.$(vtInput).trigger(vtWin.$.Event('keydown',  { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
                 vtWin.$(vtInput).trigger(vtWin.$.Event('keypress', { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
                 vtWin.$(vtInput).trigger('input');
                 vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',    { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
-            } else {
+            }
+        } else {
+            vtInput.value = '';
+            vtInput.dispatchEvent(new Event('focus', { bubbles: true }));
+            for (var ci2 = 0; ci2 < searchTerm.length; ci2++) {
+                vtInput.value += searchTerm[ci2];
                 vtInput.dispatchEvent(new Event('input', { bubbles: true }));
                 vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
             }
-            typeIdx++;
-            setTimeout(typeNextChar, 20); // 20ms delay per char like human
         }
+        log.debug('🧰 Tìm VT bằng tên: "' + searchTerm + '", chờ combogrid...');
 
-        typeNextChar();
-
-        // ─── 4. Polling combogrid popup (500ms × 12 = 6s max) sau khi gõ xong
-        function startPolling() {
-            var retries = 0, maxRetries = 15; // Tăng lên 7.5s chờ
-            var checkTimer = setInterval(function () {
+        // ─── 4. Polling combogrid popup (500ms × 12 = 6s max) ───────────
+        var retries = 0, maxRetries = 15;
+        var checkTimer = setInterval(function () {
                 retries++;
                 var popupRow = null;
 
