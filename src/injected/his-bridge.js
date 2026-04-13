@@ -45,6 +45,25 @@
 
     log.debug('HIS Bridge v1.2.1 — __EXT_NAME__! __EXT_EMOJI__');
 
+    // ★ 3.2: HIS Version Detection — ghi nhận version HIS đang chạy
+    (function detectHISVersion() {
+        try {
+            const sysInfo = window.systemInfo || window.SYSTEM_INFO || {};
+            const hisVersion = sysInfo.VERSION || sysInfo.version ||
+                (document.querySelector('meta[name="his-version"]') || {}).content ||
+                'unknown';
+            const jqVersion = (window.jQuery && window.jQuery.fn && window.jQuery.fn.jquery) || 'n/a';
+            log.debug('HIS Version:', hisVersion, '| jQuery:', jqVersion);
+
+            window.postMessage({
+                type: 'QUYEN_HIS_ENV',
+                hisVersion: hisVersion,
+                jqVersion: jqVersion,
+                userAgent: navigator.userAgent.substring(0, 100),
+            }, location.origin);
+        } catch (e) { log.warn('HIS version detection failed:', e.message); }
+    })();
+
     // ★ AUDIT FIX: Chỉ cho phép Điều dưỡng dùng (USER_GROUP_ID == "5")
     if (window.userInfo && window.userInfo.USER_GROUP_ID && window.userInfo.USER_GROUP_ID !== "5") {
         log.warn('⛔️ TỪ CHỐI TRUY CẬP: Nurse Extension chỉ được phép sử dụng bởi Điều Dưỡng (Group: 5). Account: ' + window.userInfo.FULL_NAME + ' - Group: ' + window.userInfo.USER_GROUP_ID);
@@ -1084,6 +1103,9 @@
                 uuid: iframeUuid
             });
 
+            // TODO(tech-debt): Sync XHR — cần thiết vì phải chạy trong iframe context
+            // và lấy kết quả trước khi script bị remove. Khi HIS hỗ trợ async API
+            // thì chuyển sang fetch() + postMessage callback pattern.
             const scriptCode = '(function(){try{' +
                 'var x=new XMLHttpRequest();' +
                 'x.open("POST","/vnpthis/RestService",false);' +

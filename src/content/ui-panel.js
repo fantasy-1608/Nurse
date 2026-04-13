@@ -1061,12 +1061,33 @@ const QuyenUI = (function () {
     // PUBLIC API
     // ==========================================
     return {
+        /** Khởi tạo UI panel, tạo DOM, wire events */
         init,
+        /**
+         * Cập nhật danh sách thuốc truyền dịch hiển thị trong tab Infusion
+         * @param {Array} allDrugs - Tất cả thuốc từ y lệnh
+         * @param {Array} ivDrugs - Chỉ thuốc truyền dịch (IV)
+         */
         updateDrugList,
+        /**
+         * Hiện toast notification
+         * @param {string} message - Nội dung thông báo
+         * @param {'success'|'error'|'warning'|'info'} [type='success'] - Loại toast
+         */
         showToast,
+        /** Tăng counter chỉ vàng +1, cập nhật tier badge */
         incrementFilledCount,
+        /**
+         * Chuyển tab trong panel
+         * @param {'infusion'|'caresheet'|'vattu'} tabName
+         */
         switchTab,
+        /**
+         * Đổi trạng thái bông hoa mini icon
+         * @param {'sad'|'happy'|'fire'} state
+         */
         setFlowerState,
+        /** Trigger hiệu ứng flash vàng khi đạt tier mới */
         triggerGoldFlash
     };
 })();

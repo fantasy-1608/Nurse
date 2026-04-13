@@ -109,6 +109,8 @@ function showMainUI() {
     showCurrentVersion();
     checkUpdateStatus();
     setupUpdateButton();
+    showErrorCount();
+    setupErrorExport();
 }
 
 // ==========================================
@@ -244,6 +246,54 @@ function setupUpdateButton() {
                 checkBtn.textContent = '🔄 Kiểm tra cập nhật';
                 checkBtn.style.pointerEvents = '';
             }, 3000);
+        });
+    });
+}
+
+// ==========================================
+// ★ ERROR LOG EXPORT
+// ==========================================
+function showErrorCount() {
+    chrome.storage.local.get('quyen_error_log', function (data) {
+        const errors = data.quyen_error_log || [];
+        const badge = document.getElementById('error-count-badge');
+        if (badge && errors.length > 0) {
+            badge.textContent = errors.length;
+            badge.style.display = 'inline';
+        }
+    });
+}
+
+function setupErrorExport() {
+    const btn = document.getElementById('export-errors-btn');
+    if (!btn) return;
+
+    btn.addEventListener('click', function () {
+        chrome.storage.local.get('quyen_error_log', function (data) {
+            const errors = data.quyen_error_log || [];
+            if (errors.length === 0) {
+                btn.textContent = '✅ Không có lỗi nào!';
+                setTimeout(function () { btn.innerHTML = '🐛 Xuất nhật ký lỗi'; }, 2000);
+                return;
+            }
+
+            const manifest = chrome.runtime.getManifest();
+            let text = '🐛 ERROR LOG — ' + manifest.name + ' v' + manifest.version + '\n';
+            text += 'Exported: ' + new Date().toLocaleString('vi-VN') + '\n';
+            text += '═'.repeat(50) + '\n\n';
+
+            for (let i = 0; i < errors.length; i++) {
+                const e = errors[i];
+                text += '[' + (e.ts || '') + '] ' + (e.type || '') + '\n';
+                text += '  ' + (e.msg || '') + '\n';
+                if (e.file) text += '  File: ' + e.file + (e.line ? ':' + e.line : '') + '\n';
+                text += '\n';
+            }
+
+            navigator.clipboard.writeText(text).then(function () {
+                btn.textContent = '✅ Đã copy ' + errors.length + ' lỗi!';
+                setTimeout(function () { btn.innerHTML = '🐛 Xuất nhật ký lỗi'; }, 2000);
+            });
         });
     });
 }

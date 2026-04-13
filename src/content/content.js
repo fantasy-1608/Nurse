@@ -10,6 +10,27 @@
 (function () {
     'use strict';
 
+    // ★ Error reporting: ghi lỗi vào chrome.storage để debug từ xa
+    function _persistError(type, msg, file, line) {
+        try {
+            if (typeof chrome === 'undefined' || !chrome.storage) return;
+            chrome.storage.local.get('quyen_error_log', function (data) {
+                const log = data.quyen_error_log || [];
+                log.push({
+                    ts: new Date().toISOString(),
+                    type: type,
+                    msg: String(msg || '').substring(0, 200),
+                    file: String(file || '').split('/').pop(),
+                    line: line || 0,
+                    url: location.href.substring(0, 100)
+                });
+                // Max 50 entries — auto rotate
+                const trimmed = log.length > 50 ? log.slice(-50) : log;
+                chrome.storage.local.set({ quyen_error_log: trimmed });
+            });
+        } catch (e) { /* silent */ }
+    }
+
     // ★ AUDIT FIX: Global error boundary — catch unhandled errors
     window.addEventListener('error', function (event) {
         try {
@@ -18,6 +39,7 @@
             } else {
                 console.error('[__EXT_EMOJI__ GlobalError]', event.message, event.filename, event.lineno);
             }
+            _persistError('ERROR', event.message, event.filename, event.lineno);
         } catch (e) { /* prevent infinite loop */ }
     });
 
@@ -29,6 +51,7 @@
             } else {
                 console.error('[__EXT_EMOJI__ UnhandledPromise]', reason);
             }
+            _persistError('PROMISE', reason);
         } catch (e) { /* prevent infinite loop */ }
     });
 
@@ -125,6 +148,22 @@
             // Xóa UI panel (ID thực của giao diện là quyen-panel)
             const panel = document.getElementById('quyen-panel');
             if (panel) panel.remove();
+        }
+
+        // ★ 3.2: Persist HIS environment info for debugging
+        if (event.data && event.data.type === 'QUYEN_HIS_ENV') {
+            try {
+                chrome.storage.local.set({
+                    quyen_his_env: {
+                        hisVersion: event.data.hisVersion,
+                        jqVersion: event.data.jqVersion,
+                        userAgent: event.data.userAgent,
+                        extVersion: chrome.runtime.getManifest().version,
+                        ts: new Date().toISOString()
+                    }
+                });
+                QuyenLog.info('🏥 HIS env:', event.data.hisVersion, '| jQuery:', event.data.jqVersion);
+            } catch (e) { /* silent */ }
         }
     });
 
