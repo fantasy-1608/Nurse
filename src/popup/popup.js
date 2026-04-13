@@ -104,6 +104,7 @@ function showMainUI() {
     document.getElementById('main-popup').style.display = 'block';
 
     loadEnabledState();
+    loadSafeMode();
     loadDebugMode();
     showCurrentVersion();
     checkUpdateStatus();
@@ -141,6 +142,33 @@ function loadEnabledState() {
                     chrome.tabs.sendMessage(tabs[i].id, {
                         type: 'QUYEN_TOGGLE_EXTENSION',
                         enabled: toggle.checked
+                    }).catch(function () { /* tab not ready */ });
+                }
+            });
+        });
+    });
+}
+
+// ==========================================
+// ★ SAFE MODE TOGGLE
+// Tắt auto-fill, chỉ hiện thông tin gợi ý
+// ==========================================
+function loadSafeMode() {
+    chrome.storage.local.get('quyen_safe_mode', function (data) {
+        const toggle = document.getElementById('safe-mode-toggle');
+        if (!toggle) return;
+
+        toggle.checked = data.quyen_safe_mode === true;
+
+        toggle.addEventListener('change', function () {
+            chrome.storage.local.set({ quyen_safe_mode: toggle.checked });
+
+            // Notify all HIS tabs
+            chrome.tabs.query({ url: '*://*.vncare.vn/*' }, function (tabs) {
+                for (let i = 0; i < tabs.length; i++) {
+                    chrome.tabs.sendMessage(tabs[i].id, {
+                        type: 'QUYEN_SAFE_MODE',
+                        safeMode: toggle.checked
                     }).catch(function () { /* tab not ready */ });
                 }
             });

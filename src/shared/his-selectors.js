@@ -71,6 +71,28 @@ HIS.Selectors = {
     },
 
     // ==========================================
+    // VATTU-SPECIFIC (Phiếu vật tư)
+    // ★ Centralized: his-bridge.js dùng IDs này cho handleFillVtItem
+    // ==========================================
+    VATTU: {
+        SEARCH_INPUT:   '#txtDS_THUOC',      // Combogrid search input
+        DUONG_DUNG:     '#cboDUONG_DUNG',     // Đường dùng (select)
+        SO_LUONG:       '#txtSOLUONG_TONG',   // Số lượng tổng
+        GHI_CHU:        '#txtGHICHU',          // Cách dùng / ghi chú
+        DUONG_DUNG_DEFAULT: '2445',            // "Dùng ngoài" value
+    },
+
+    // ==========================================
+    // COMBOGRID POPUP (Dropdown gợi ý)
+    // ★ HIS dùng div.cg-comboItem, KHÔNG phải tr.jqgrow
+    // ==========================================
+    COMBOGRID: {
+        ITEM:          'div.cg-comboItem, div.cg-menu-item',   // Priority 1
+        JQGROW:        'tr.jqgrow',                             // Fallback A
+        AUTOCOMPLETE:  'ul.ui-autocomplete li.ui-menu-item',    // Fallback B
+    },
+
+    // ==========================================
     // PRESCRIPTION-SPECIFIC (Đơn thuốc)
     // ==========================================
     PRESCRIPTION: {

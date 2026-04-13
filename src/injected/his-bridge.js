@@ -1171,6 +1171,7 @@
         if (event.origin !== window.location.origin) return;
         if (!event.data || !event.data.type) return;
 
+        try {
         switch (event.data.type) {
             case 'QUYEN_REQ_DRUG_LIST':
                 handleDrugListRequest(event.data.requestId, event.data.treatmentId);
@@ -1229,6 +1230,9 @@
                 handleFillComboGrid(event.data.tasks);
                 break;
 
+        }
+        } catch (msgError) {
+            log.error('❌ Message handler error [' + (event.data.type || '?') + ']:', msgError.message || msgError);
         }
     });
 

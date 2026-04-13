@@ -14,6 +14,13 @@ const QuyenVatTuUI = (function () {
     let _loading = false;
     let _fillingIdx = null; // row đang trong trạng thái điền
 
+    // ★ Rate limiting: queue tuần tự cho VT fill
+    let _fillQueue = [];
+    let _fillInProgress = false;
+
+    // ★ Safe Mode: chỉ hiện thông tin, không cho fill
+    let _safeMode = false;
+
     // =========================================================
     // INIT
     // =========================================================
@@ -21,6 +28,13 @@ const QuyenVatTuUI = (function () {
         _container = container;
         renderIdle();
         QuyenLog.info('🧰 VatTuUI initialized');
+
+        // Load safe mode state
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+            chrome.storage.local.get('quyen_safe_mode', function (data) {
+                _safeMode = data.quyen_safe_mode === true;
+            });
+        }
 
         window.addEventListener('message', function (event) {
             if (!event.data) return;
@@ -33,6 +47,16 @@ const QuyenVatTuUI = (function () {
                 onFillResult(event.data);
             }
         });
+
+        // ★ Listen safe mode toggle từ popup
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            chrome.runtime.onMessage.addListener(function (msg) {
+                if (msg && msg.type === 'QUYEN_SAFE_MODE') {
+                    _safeMode = msg.safeMode === true;
+                    QuyenLog.info('🛡️ Safe Mode:', _safeMode ? 'BẬT' : 'TẮT');
+                }
+            });
+        }
     }
 
     function onPatientChange() {
@@ -215,9 +239,15 @@ const QuyenVatTuUI = (function () {
     }
 
     // =========================================================
-    // CLICK ĐIỀN
+    // CLICK ĐIỀN (★ Queue tuần tự — chống chồng fill)
     // =========================================================
     function onClickFill(idx, suggestedVT) {
+        // ★ Safe Mode: chặn fill, chỉ hiện cảnh báo
+        if (_safeMode) {
+            showToast('🛡️ Safe Mode đang bật — tắt trong popup để sử dụng Điền', 'warning');
+            return;
+        }
+
         var item = suggestedVT && suggestedVT[idx];
         if (!item) return;
 
@@ -228,6 +258,21 @@ const QuyenVatTuUI = (function () {
         var sl       = slInput ? (parseInt(slInput.value, 10) || item.sl) : item.sl;
         var cachdung = cdInput ? cdInput.value.trim() : item.cachdung;
 
+        // Nếu đang fill → đưa vào hàng đợi
+        if (_fillInProgress) {
+            _fillQueue.push({ idx: idx, item: item, sl: sl, cachdung: cachdung });
+            if (fillBtn) { fillBtn.textContent = '🕐 Chờ'; fillBtn.disabled = true; }
+            QuyenLog.info('🧰 Queue VT:', item.ma, '(đang chờ ' + _fillQueue.length + ')');
+            return;
+        }
+
+        _executeFill(idx, item, sl, cachdung);
+    }
+
+    function _executeFill(idx, item, sl, cachdung) {
+        var fillBtn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
+
+        _fillInProgress = true;
         _fillingIdx = idx;
         if (fillBtn) { fillBtn.textContent = '⏳'; fillBtn.disabled = true; }
 
@@ -241,21 +286,33 @@ const QuyenVatTuUI = (function () {
             cachdung: cachdung,
         }, location.origin);
 
-        // Timeout fallback 12s
+        // Timeout fallback 12s — giải phóng queue nếu bridge không phản hồi
         setTimeout(function () {
             if (_fillingIdx === idx) {
                 resetFillBtn(idx, '✚ Điền');
                 _fillingIdx = null;
+                _fillInProgress = false;
+                _processNextFill();
             }
         }, 12000);
     }
 
+    function _processNextFill() {
+        if (_fillQueue.length === 0) return;
+        var next = _fillQueue.shift();
+        // Delay 500ms giữa các fill để HIS form reset
+        setTimeout(function () {
+            _executeFill(next.idx, next.item, next.sl, next.cachdung);
+        }, 500);
+    }
+
     // =========================================================
-    // KẾT QUẢ ĐIỀN
+    // KẾT QUẢ ĐIỀN (★ Trigger queue tiếp theo khi hoàn thành)
     // =========================================================
     function onFillResult(data) {
         var idx = _fillingIdx;
         _fillingIdx = null;
+        _fillInProgress = false;
 
         if (data.success) {
             resetFillBtn(idx, '✅');
@@ -265,6 +322,9 @@ const QuyenVatTuUI = (function () {
             resetFillBtn(idx, '✚ Điền');
             showToast('❌ ' + (data.error || 'Lỗi điền VT'), 'error');
         }
+
+        // Xử lý item tiếp theo trong queue
+        _processNextFill();
     }
 
     function resetFillBtn(idx, label) {
