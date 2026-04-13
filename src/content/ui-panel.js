@@ -3,7 +3,7 @@
  * Floating panel hiển thị y lệnh truyền dịch và nút điền tự động
  */
 
-/* global QuyenLog, QUYEN_CONFIG, getRandomThank, QuyenInfusionFiller, QuyenInfusionReader, QuyenCareSheetUI, cancelAnimationFrame */
+/* global QuyenLog, QUYEN_CONFIG, getRandomThank, QuyenInfusionFiller, QuyenInfusionReader, QuyenCareSheetUI, QuyenVatTuUI, cancelAnimationFrame */
 /* exported QuyenUI */
 
 const QuyenUI = (function () {
