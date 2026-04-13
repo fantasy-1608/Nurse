@@ -37,7 +37,36 @@ const QuyenUI = (function () {
         // ★ Bắt đầu thu gọn + sad (chưa chọn BN)
         toggleMinimize();
         setFlowerState('sad');
+        showWhatsNew();
         QuyenLog.info('UI Panel initialized __EXT_EMOJI__');
+    }
+
+    // ==========================================
+    // ★ WHAT'S NEW — Hiện 1 lần khi version mới
+    // ==========================================
+    function showWhatsNew() {
+        try {
+            if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.storage) return;
+            const currentVersion = chrome.runtime.getManifest().version;
+
+            chrome.storage.local.get('quyen_last_seen_version', function (data) {
+                const lastSeen = data.quyen_last_seen_version || '';
+                if (lastSeen === currentVersion) return;
+
+                // Changelog theo version
+                const changelogs = {
+                    '1.2.2': '🆕 v1.2.2\n• 🛡️ Safe Mode: tắt auto-fill khi cần\n• ⌨️ Alt+Q: toggle panel nhanh\n• 🔒 Chống fill chồng (queue tuần tự)',
+                    '1.2.1': '🆕 v1.2.1\n• 🔐 Bảo mật PBKDF2 600K iterations\n• 🧰 Tab Vật Tư (BETA)\n• 🐛 Sửa lỗi hiệu năng',
+                };
+
+                const msg = changelogs[currentVersion];
+                if (msg) {
+                    setTimeout(function () { showToast(msg, 'info'); }, 2000);
+                }
+
+                chrome.storage.local.set({ quyen_last_seen_version: currentVersion });
+            });
+        } catch (e) { /* silent */ }
     }
 
     /**
@@ -225,6 +254,18 @@ const QuyenUI = (function () {
         if (minimizeBtn) {
             minimizeBtn.addEventListener('click', toggleMinimize);
         }
+
+        // ★ Keyboard shortcut: Alt+Q = toggle panel
+        document.addEventListener('keydown', function (e) {
+            if (e.altKey && (e.key === 'q' || e.key === 'Q')) {
+                // Không fire khi đang gõ trong input/textarea
+                const tag = (document.activeElement || {}).tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+                e.preventDefault();
+                if (_isMinimized) restorePanel();
+                else toggleMinimize();
+            }
+        });
 
         // Header drag (simple)
         const header = document.getElementById('quyen-panel-header');

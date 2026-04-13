@@ -17,6 +17,8 @@ const QuyenVatTuUI = (function () {
     // ★ Rate limiting: queue tuần tự cho VT fill
     const _fillQueue = [];
     let _fillInProgress = false;
+    let _fillTotal = 0;   // ★ Progress: tổng số VT trong batch
+    let _fillDone = 0;    // ★ Progress: đã xong bao nhiêu
 
     // ★ Safe Mode: chỉ hiện thông tin, không cho fill
     let _safeMode = false;
@@ -261,10 +263,15 @@ const QuyenVatTuUI = (function () {
         // Nếu đang fill → đưa vào hàng đợi
         if (_fillInProgress) {
             _fillQueue.push({ idx: idx, item: item, sl: sl, cachdung: cachdung });
+            _fillTotal++;
             if (fillBtn) { fillBtn.textContent = '🕐 Chờ'; fillBtn.disabled = true; }
             QuyenLog.info('🧰 Queue VT:', item.ma, '(đang chờ ' + _fillQueue.length + ')');
             return;
         }
+
+        // Bắt đầu batch mới
+        _fillTotal = 1;
+        _fillDone = 0;
 
         _executeFill(idx, item, sl, cachdung);
     }
@@ -275,6 +282,11 @@ const QuyenVatTuUI = (function () {
         _fillInProgress = true;
         _fillingIdx = idx;
         if (fillBtn) { fillBtn.textContent = '⏳'; fillBtn.disabled = true; }
+
+        // ★ Progress toast khi fill batch > 1
+        if (_fillTotal > 1) {
+            showToast('⏳ Đang điền ' + (_fillDone + 1) + '/' + _fillTotal + '...', 'info');
+        }
 
         QuyenLog.info('🧰 Điền VT:', item.ma, '| SL:', sl, '| CD:', cachdung);
 
@@ -312,6 +324,7 @@ const QuyenVatTuUI = (function () {
     function onFillResult(data) {
         const idx = _fillingIdx;
         _fillingIdx = null;
+        _fillDone++;
         _fillInProgress = false;
 
         if (data.success) {
@@ -323,8 +336,15 @@ const QuyenVatTuUI = (function () {
             showToast('❌ ' + (data.error || 'Lỗi điền VT'), 'error');
         }
 
-        // Xử lý item tiếp theo trong queue
-        _processNextFill();
+        // Xử lý item tiếp theo hoặc show tổng kết batch
+        if (_fillQueue.length > 0) {
+            _processNextFill();
+        } else if (_fillTotal > 1) {
+            // Batch hoàn tất — show summary
+            showToast('🎉 Hoàn tất ' + _fillDone + '/' + _fillTotal + ' vật tư!', 'success');
+            _fillTotal = 0;
+            _fillDone = 0;
+        }
     }
 
     function resetFillBtn(idx, label) {
