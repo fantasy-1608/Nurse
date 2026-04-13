@@ -1734,35 +1734,35 @@
                         // Số lượng → #txtSOLUONG_TONG
                         if (slInput) { triggerInput(slInput, String(sl)); log.debug('🧰 SL =', sl); }
 
-                        // Cách dùng → #txtGHICHU (set cuối + blur để commit value chính thức)
+                        // Cách dùng → #txtGHICHU (không tự blur để giữ tự nhiên)
                         if (cdInput && cachdung) {
                             cdInput.focus();
                             triggerInput(cdInput, cachdung);
-                            cdInput.dispatchEvent(new Event('blur', { bubbles: true }));
-                            if (vtWin && vtWin.$) vtWin.$(cdInput).trigger('blur');
                             log.debug('🧰 GhiChu = "' + cachdung + '"');
                         }
 
                         // ─── 6. Enter trên #txtGHICHU → xác nhận thêm VT vào danh sách ──
-                        var confirmEl = cdInput || slInput;
-                        if (confirmEl) {
-                            confirmEl.focus();
-                            var enterEvts = ['keydown', 'keypress', 'keyup'];
-                            for (var eidx = 0; eidx < enterEvts.length; eidx++) {
-                                var eName = enterEvts[eidx];
-                                var eEvt = new KeyboardEvent(eName, {
-                                    bubbles: true, cancelable: true,
-                                    key: 'Enter', code: 'Enter', keyCode: 13, which: 13
-                                });
-                                confirmEl.dispatchEvent(eEvt);
-                                if (vtWin && vtWin.$) {
-                                    vtWin.$(confirmEl).trigger(vtWin.$.Event(eName, { keyCode: 13, which: 13, key: 'Enter' }));
+                        setTimeout(function() {
+                            var confirmEl = cdInput || slInput;
+                            if (confirmEl) {
+                                confirmEl.focus();
+                                var enterEvts = ['keydown', 'keypress', 'keyup'];
+                                for (var eidx = 0; eidx < enterEvts.length; eidx++) {
+                                    var eName = enterEvts[eidx];
+                                    var eEvt = new KeyboardEvent(eName, {
+                                        bubbles: true, cancelable: true,
+                                        key: 'Enter', code: 'Enter', keyCode: 13, which: 13
+                                    });
+                                    confirmEl.dispatchEvent(eEvt);
+                                    if (vtWin && vtWin.$) {
+                                        vtWin.$(confirmEl).trigger(vtWin.$.Event(eName, { keyCode: 13, which: 13, key: 'Enter' }));
+                                    }
                                 }
+                                log.debug('🧰 Enter (keydown+keypress+keyup) trên #txtGHICHU → thêm vào list');
                             }
-                            log.debug('🧰 Enter (keydown+keypress+keyup) trên #txtGHICHU → thêm vào list');
-                        }
 
-                        postResult(true, '');
+                            postResult(true, '');
+                        }, 300); // Trì hoãn Enter 300ms để HIS tiêu hoá input
                     }, 1500);
 
                 } else if (retries >= maxRetries) {
