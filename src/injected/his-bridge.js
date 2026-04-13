@@ -1615,79 +1615,88 @@
             }
         }
 
-        // ─── 3. Gõ mã VT vào #txtDS_THUOC ──────────────────────────────
+        // ─── 3. Gõ TÊN VT vào #txtDS_THUOC (ổn định hơn mã vì mã có thể đổi) ──
+        // Dùng 3 từ đầu tiên của tên để kết quả đủ cụ thể
+        var nameWords   = (ten || '').split(' ').filter(function(w) { return w.length > 0; });
+        var searchTerm  = nameWords.slice(0, 3).join(' ') || ma; // fallback mã nếu tên rỗng
+
         vtInput.focus();
         if (vtWin && vtWin.$) {
-            // jQuery-based trigger (chắc chắn kích hoạt combogrid HIS)
             vtWin.$(vtInput).val('').trigger('focus');
-            var searchTerm = ma;
-            // Gõ từng ký tự để combogrid nhận đúng event
             for (var ci = 0; ci < searchTerm.length; ci++) {
                 var c = searchTerm[ci];
                 vtInput.value += c;
-                vtWin.$(vtInput).trigger(vtWin.$.Event('keydown', { keyCode: c.charCodeAt(0) }));
-                vtWin.$(vtInput).trigger(vtWin.$.Event('keypress', { keyCode: c.charCodeAt(0) }));
+                vtWin.$(vtInput).trigger(vtWin.$.Event('keydown',  { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
+                vtWin.$(vtInput).trigger(vtWin.$.Event('keypress', { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
                 vtWin.$(vtInput).trigger('input');
-                vtWin.$(vtInput).trigger(vtWin.$.Event('keyup', { keyCode: c.charCodeAt(0) }));
+                vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',    { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
             }
         } else {
             vtInput.value = '';
             vtInput.dispatchEvent(new Event('focus', { bubbles: true }));
-            var st = ma;
-            for (var ci2 = 0; ci2 < st.length; ci2++) {
-                vtInput.value += st[ci2];
+            for (var ci2 = 0; ci2 < searchTerm.length; ci2++) {
+                vtInput.value += searchTerm[ci2];
                 vtInput.dispatchEvent(new Event('input', { bubbles: true }));
                 vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
             }
         }
 
-        log.debug('🧰 Đã gõ mã "' + ma + '" vào #txtDS_THUOC, chờ combogrid...');
+        log.debug('🧰 Tìm VT bằng tên: "' + searchTerm + '", chờ combogrid...');
 
-        // ─── 4. Polling combogrid popup (400ms × 15 = 6s max) ───────────
+        // ─── 4. Polling combogrid popup (500ms × 12 = 6s max) ───────────
         var retries    = 0;
-        var maxRetries = 15;
+        var maxRetries = 12;
 
         var checkTimer = setInterval(function () {
             retries++;
-
-            // Combogrid HIS: popup là div có class "ui-jqgrid" hoặc div chứa tr.jqgrow
-            // Sau khi gõ txtDS_THUOC, chỉ POPUP mới chứa kết quả tìm kiếm VT
-            // (phân biệt với jqGrid chính của form phiếu)
             var popupRow = null;
 
-            // Tìm jqgrow visible CÓ chứa mã VT đang tìm
+            // Tìm jqgrow visible — check bằng getBoundingClientRect (chính xác hơn offsetParent)
+            // HIS combogrid dùng absolute positioning nên offsetParent có thể là null dù đang hiện
             var jqRows = vtDoc.querySelectorAll('tr.jqgrow');
             for (var jri = 0; jri < jqRows.length; jri++) {
                 var jrow = jqRows[jri];
-                if (jrow.offsetParent === null) continue; // not visible
-                var rowText = jrow.textContent || '';
-                if (rowText.toUpperCase().indexOf(ma.toUpperCase()) >= 0) {
+                try {
+                    var rect = jrow.getBoundingClientRect();
+                    if (rect.height === 0 || rect.width === 0) continue; // thực sự ẩn
+                } catch(e) {
+                    if (jrow.offsetHeight === 0) continue; // fallback
+                }
+                // Row phải chứa tên hoặc mã của VT đang tìm
+                var rowText = (jrow.textContent || '').toLowerCase();
+                var matchName = nameWords.length > 0 && rowText.indexOf(nameWords[0].toLowerCase()) >= 0;
+                var matchCode = ma && rowText.indexOf(ma.toLowerCase()) >= 0;
+                if (matchName || matchCode) {
                     popupRow = jrow;
                     break;
                 }
             }
 
-            // Fallback: li trong jQuery UI autocomplete list
+            // Fallback: li trong jQuery UI autocomplete
             if (!popupRow) {
                 var liItems = vtDoc.querySelectorAll('ul.ui-autocomplete li.ui-menu-item');
                 for (var li2 = 0; li2 < liItems.length; li2++) {
-                    if (liItems[li2].offsetParent !== null) { popupRow = liItems[li2]; break; }
+                    try {
+                        var lrect = liItems[li2].getBoundingClientRect();
+                        if (lrect.height > 0) { popupRow = liItems[li2]; break; }
+                    } catch(e2) {
+                        if (liItems[li2].offsetHeight > 0) { popupRow = liItems[li2]; break; }
+                    }
                 }
             }
 
             if (popupRow) {
                 clearInterval(checkTimer);
-                log.debug('🧰 Combogrid popup tìm thấy, click chọn item...');
+                log.debug('🧰 Combogrid tìm thấy, đang click...');
 
-                // Click để chọn
                 popupRow.click();
                 if (vtWin && vtWin.$) {
                     vtWin.$(popupRow).trigger('click');
                 }
 
-                // ─── 5. Sau khi chọn: điền Đường dùng, SL, Cách dùng ─────
+                // ─── 5. Điền Đường dùng, SL, Cách dùng sau khi chọn ─────
                 setTimeout(function () {
-                    // Đường dùng → "Dùng ngoài" (value 2445) cho tất cả VT
+                    // Đường dùng → "Dùng ngoài" (2445) cho tất cả VT
                     if (ddSelect && ddSelect.options) {
                         for (var oi = 0; oi < ddSelect.options.length; oi++) {
                             if (ddSelect.options[oi].value === '2445') {
@@ -1702,28 +1711,25 @@
                             }
                         }
                     }
-
                     // Số lượng → #txtSOLUONG_TONG
                     if (slInput) {
                         triggerInput(slInput, String(sl));
                         log.debug('🧰 SL =', sl);
                     }
-
                     // Cách dùng → #txtGHICHU
                     if (cdInput && cachdung) {
                         triggerInput(cdInput, cachdung);
                         log.debug('🧰 GhiChu = "' + cachdung + '"');
                     }
-
                     postResult(true, '');
                 }, 700);
 
             } else if (retries >= maxRetries) {
                 clearInterval(checkTimer);
-                log.warn('🧰 Combogrid không xuất hiện sau 6s');
-                postResult(false, 'Khung chọn VT không xuất hiện. Có thể mã ' + ma + ' không có trong kho vật tư.');
+                log.warn('🧰 Combogrid không detect được sau 6s');
+                postResult(false, 'Không tìm thấy "' + searchTerm + '" trong kho VT. Kiểm tra lại tên hoặc thêm thủ công.');
             }
-        }, 400);
+        }, 500);
     }
 
     // ==========================================
