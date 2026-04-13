@@ -1745,6 +1745,24 @@
                         triggerInput(cdInput, cachdung);
                         log.debug('🧰 GhiChu = "' + cachdung + '"');
                     }
+
+                    // ─── 6. Enter để xác nhận đưa VT vào danh sách ───────
+                    // HIS form: Enter trên ô Số lượng hoặc Cách dùng → thêm row vào grid
+                    var confirmTarget = slInput || cdInput || vtInput;
+                    if (confirmTarget) {
+                        confirmTarget.focus();
+                        var enterEnvElm = confirmTarget;
+                        var enterEvt = new KeyboardEvent('keydown', {
+                            bubbles: true, cancelable: true,
+                            key: 'Enter', code: 'Enter', keyCode: 13, which: 13
+                        });
+                        enterEnvElm.dispatchEvent(enterEvt);
+                        if (vtWin && vtWin.$) {
+                            vtWin.$(confirmTarget).trigger(vtWin.$.Event('keydown', { keyCode: 13, which: 13, key: 'Enter' }));
+                        }
+                        log.debug('🧰 Enter → xác nhận thêm VT vào danh sách');
+                    }
+
                     postResult(true, '');
                 }, 700);
 
