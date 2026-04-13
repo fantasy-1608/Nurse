@@ -1627,152 +1627,163 @@
             }
         }
 
-        // ─── 3. Gõ TÊN VT (3 từ đầu) vào #txtDS_THUOC ──────────────────
+        // ─── 3. Gõ TÊN VT (3 từ đầu) vào #txtDS_THUOC chậm rãi ───────────────
         var nameWords  = (ten || '').split(' ').filter(function(w) { return w.length > 0; });
         var searchTerm = nameWords.slice(0, 3).join(' ') || ma;
 
         vtInput.focus();
         if (vtWin && vtWin.$) {
-            vtWin.$(vtInput).val('').trigger('focus');
-            for (var ci = 0; ci < searchTerm.length; ci++) {
-                var c = searchTerm[ci];
-                vtInput.value += c;
+            vtWin.$(vtInput).val('').trigger('focus').trigger('input');
+        } else {
+            vtInput.value = '';
+            vtInput.dispatchEvent(new Event('focus', { bubbles: true }));
+        }
+
+        var typeIdx = 0;
+        function typeNextChar() {
+            if (typeIdx >= searchTerm.length) {
+                log.debug('🧰 Tìm VT bằng tên: "' + searchTerm + '", chờ combogrid...');
+                startPolling();
+                return;
+            }
+            var c = searchTerm[typeIdx];
+            vtInput.value = vtInput.value + c; // append
+
+            if (vtWin && vtWin.$) {
                 vtWin.$(vtInput).trigger(vtWin.$.Event('keydown',  { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
                 vtWin.$(vtInput).trigger(vtWin.$.Event('keypress', { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
                 vtWin.$(vtInput).trigger('input');
                 vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',    { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
-            }
-        } else {
-            vtInput.value = '';
-            vtInput.dispatchEvent(new Event('focus', { bubbles: true }));
-            for (var ci2 = 0; ci2 < searchTerm.length; ci2++) {
-                vtInput.value += searchTerm[ci2];
+            } else {
                 vtInput.dispatchEvent(new Event('input', { bubbles: true }));
                 vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
             }
+            typeIdx++;
+            setTimeout(typeNextChar, 20); // 20ms delay per char like human
         }
-        log.debug('🧰 Tìm VT bằng tên: "' + searchTerm + '", chờ combogrid...');
 
-        // ─── 4. Polling combogrid popup (500ms × 12 = 6s max) ───────────
-        var retries = 0, maxRetries = 12;
-        var checkTimer = setInterval(function () {
-            retries++;
-            var popupRow = null;
+        typeNextChar();
 
-            // Priority 1: HIS combogrid — div.cg-comboItem / div.cg-menu-item
-            var cgItems = vtDoc.querySelectorAll('div.cg-comboItem, div.cg-menu-item');
-            for (var cgi = 0; cgi < cgItems.length; cgi++) {
-                var cgItem = cgItems[cgi];
-                try { var cgR = cgItem.getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
-                catch(ex) { if (cgItem.offsetHeight === 0) continue; }
-                // Lấy item đầu tiên hiển thị
-                popupRow = cgItem; break;
-            }
-            // Fallback A: tr.jqgrow
-            if (!popupRow) {
-                var jqRows = vtDoc.querySelectorAll('tr.jqgrow');
-                for (var jri = 0; jri < jqRows.length; jri++) {
-                    try { var jR = jqRows[jri].getBoundingClientRect(); if (jR.height === 0 || jR.width === 0) continue; }
-                    catch(ex2) { if (jqRows[jri].offsetHeight === 0) continue; }
+        // ─── 4. Polling combogrid popup (500ms × 12 = 6s max) sau khi gõ xong
+        function startPolling() {
+            var retries = 0, maxRetries = 15; // Tăng lên 7.5s chờ
+            var checkTimer = setInterval(function () {
+                retries++;
+                var popupRow = null;
+
+                // Priority 1: HIS combogrid — div.cg-comboItem / div.cg-menu-item
+                var cgItems = vtDoc.querySelectorAll('div.cg-comboItem, div.cg-menu-item');
+                for (var cgi = 0; cgi < cgItems.length; cgi++) {
+                    var cgItem = cgItems[cgi];
+                    try { var cgR = cgItem.getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
+                    catch(ex) { if (cgItem.offsetHeight === 0) continue; }
                     // Lấy item đầu tiên hiển thị
-                    popupRow = jqRows[jri]; break;
+                    popupRow = cgItem; break;
                 }
-            }
-            // Fallback B: li.ui-menu-item
-            if (!popupRow) {
-                var liItems = vtDoc.querySelectorAll('ul.ui-autocomplete li.ui-menu-item');
-                for (var li2 = 0; li2 < liItems.length; li2++) {
-                    try { if (liItems[li2].getBoundingClientRect().height > 0) { popupRow = liItems[li2]; break; } }
-                    catch(e2) { if (liItems[li2].offsetHeight > 0) { popupRow = liItems[li2]; break; } }
+                // Fallback A: tr.jqgrow
+                if (!popupRow) {
+                    var jqRows = vtDoc.querySelectorAll('tr.jqgrow');
+                    for (var jri = 0; jri < jqRows.length; jri++) {
+                        try { var jR = jqRows[jri].getBoundingClientRect(); if (jR.height === 0 || jR.width === 0) continue; }
+                        catch(ex2) { if (jqRows[jri].offsetHeight === 0) continue; }
+                        // Lấy item đầu tiên hiển thị
+                        popupRow = jqRows[jri]; break;
+                    }
                 }
-            }
-
-            if (popupRow) {
-                clearInterval(checkTimer);
-                // Click với đầy đủ mouse event chain (Giống logic Truyền Dịch)
-                var innerDivs = popupRow.querySelectorAll('.cg-DivItem');
-                var clickTarget = popupRow;
-                for (var ci = 0; ci < innerDivs.length; ci++) {
-                    if (innerDivs[ci].offsetWidth > 0 && innerDivs[ci].style.display !== 'none') {
-                        clickTarget = innerDivs[ci];
-                        break;
+                // Fallback B: li.ui-menu-item
+                if (!popupRow) {
+                    var liItems = vtDoc.querySelectorAll('ul.ui-autocomplete li.ui-menu-item');
+                    for (var li2 = 0; li2 < liItems.length; li2++) {
+                        try { if (liItems[li2].getBoundingClientRect().height > 0) { popupRow = liItems[li2]; break; } }
+                        catch(e2) { if (liItems[li2].offsetHeight > 0) { popupRow = liItems[li2]; break; } }
                     }
                 }
 
-                log.debug('🧰 Target click tìm thấy:', clickTarget.className);
-
-                // 1. Native JS click trên inner div (đã đủ để chốt dropdown)
-                clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                clickTarget.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-                clickTarget.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
-
-                // 2. jQuery click fallback đóng gói trong try..catch để tránh crash script
-                if (vtWin && vtWin.$) {
-                    try {
-                        vtWin.$(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
-                    } catch (e) {
-                        log.debug('jQuery click fallback error (có thể an toàn bỏ qua):', e.message);
-                    }
-                }
-
-                // ─── 5. Điền Đường dùng, SL, Cách dùng ─────────────────
-                // Delay 1500ms: chờ HIS hoàn thành XHR async sau khi chọn combogrid
-                // (700ms không đủ — HIS load dữ liệu VT và reset các field sau khi chọn)
-                setTimeout(function () {
-                    // Đường dùng → "Dùng ngoài" (value 2445 trong cboDUONG_DUNG)
-                    if (ddSelect && ddSelect.options) {
-                        for (var oi = 0; oi < ddSelect.options.length; oi++) {
-                            if (ddSelect.options[oi].value === '2445') {
-                                ddSelect.selectedIndex = oi;
-                                if (vtWin && vtWin.$) vtWin.$('#cboDUONG_DUNG').val('2445').trigger('change');
-                                else ddSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                                log.debug('🧰 Đường dùng = Dùng ngoài (2445)');
-                                break;
-                            }
+                if (popupRow) {
+                    clearInterval(checkTimer);
+                    // Click với đầy đủ mouse event chain (Giống logic Truyền Dịch)
+                    var innerDivs = popupRow.querySelectorAll('.cg-DivItem');
+                    var clickTarget = popupRow;
+                    for (var ci = 0; ci < innerDivs.length; ci++) {
+                        if (innerDivs[ci].offsetWidth > 0 && innerDivs[ci].style.display !== 'none') {
+                            clickTarget = innerDivs[ci];
+                            break;
                         }
                     }
-                    // Số lượng → #txtSOLUONG_TONG
-                    if (slInput) { triggerInput(slInput, String(sl)); log.debug('🧰 SL =', sl); }
 
-                    // Cách dùng → #txtGHICHU (set cuối + blur để commit value chính thức)
-                    if (cdInput && cachdung) {
-                        cdInput.focus();
-                        triggerInput(cdInput, cachdung);
-                        cdInput.dispatchEvent(new Event('blur', { bubbles: true }));
-                        if (vtWin && vtWin.$) vtWin.$(cdInput).trigger('blur');
-                        log.debug('🧰 GhiChu = "' + cachdung + '"');
+                    log.debug('🧰 Target click tìm thấy:', clickTarget.className);
+
+                    // 1. Native JS click trên inner div (đã đủ để chốt dropdown)
+                    clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                    clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                    clickTarget.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+                    clickTarget.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+
+                    // 2. jQuery click fallback đóng gói trong try..catch để tránh crash script
+                    if (vtWin && vtWin.$) {
+                        try {
+                            vtWin.$(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
+                        } catch (e) {
+                            log.debug('jQuery click fallback error (có thể an toàn bỏ qua):', e.message);
+                        }
                     }
 
-                    // ─── 6. Enter trên #txtGHICHU → xác nhận thêm VT vào danh sách ──
-                    // KHÔNG dùng txtSOLUONG_TONG: Enter ở đó mở dialog "Thuốc thường dùng"
-                    var confirmEl = cdInput || slInput;
-                    if (confirmEl) {
-                        confirmEl.focus();
-                        var enterEvts = ['keydown', 'keypress', 'keyup'];
-                        for (var eidx = 0; eidx < enterEvts.length; eidx++) {
-                            var eName = enterEvts[eidx];
-                            var eEvt = new KeyboardEvent(eName, {
-                                bubbles: true, cancelable: true,
-                                key: 'Enter', code: 'Enter', keyCode: 13, which: 13
-                            });
-                            confirmEl.dispatchEvent(eEvt);
-                            if (vtWin && vtWin.$) {
-                                vtWin.$(confirmEl).trigger(vtWin.$.Event(eName, { keyCode: 13, which: 13, key: 'Enter' }));
+                    // ─── 5. Điền Đường dùng, SL, Cách dùng ─────────────────
+                    // Delay 1500ms: chờ HIS hoàn thành XHR async sau khi chọn combogrid
+                    setTimeout(function () {
+                        // Đường dùng → "Dùng ngoài" (value 2445 trong cboDUONG_DUNG)
+                        if (ddSelect && ddSelect.options) {
+                            for (var oi = 0; oi < ddSelect.options.length; oi++) {
+                                if (ddSelect.options[oi].value === '2445') {
+                                    ddSelect.selectedIndex = oi;
+                                    if (vtWin && vtWin.$) vtWin.$('#cboDUONG_DUNG').val('2445').trigger('change');
+                                    else ddSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                                    log.debug('🧰 Đường dùng = Dùng ngoài (2445)');
+                                    break;
+                                }
                             }
                         }
-                        log.debug('🧰 Enter (keydown+keypress+keyup) trên #txtGHICHU → thêm vào list');
-                    }
+                        // Số lượng → #txtSOLUONG_TONG
+                        if (slInput) { triggerInput(slInput, String(sl)); log.debug('🧰 SL =', sl); }
 
-                    postResult(true, '');
-                }, 1500);
+                        // Cách dùng → #txtGHICHU (set cuối + blur để commit value chính thức)
+                        if (cdInput && cachdung) {
+                            cdInput.focus();
+                            triggerInput(cdInput, cachdung);
+                            cdInput.dispatchEvent(new Event('blur', { bubbles: true }));
+                            if (vtWin && vtWin.$) vtWin.$(cdInput).trigger('blur');
+                            log.debug('🧰 GhiChu = "' + cachdung + '"');
+                        }
 
-            } else if (retries >= maxRetries) {
-                clearInterval(checkTimer);
-                log.warn('🧰 Combogrid không detect được sau 6s');
-                postResult(false, 'Không tìm thấy "' + searchTerm + '" trong kho VT. Kiểm tra lại tên hoặc thêm thủ công.');
-            }
-        }, 500);
+                        // ─── 6. Enter trên #txtGHICHU → xác nhận thêm VT vào danh sách ──
+                        var confirmEl = cdInput || slInput;
+                        if (confirmEl) {
+                            confirmEl.focus();
+                            var enterEvts = ['keydown', 'keypress', 'keyup'];
+                            for (var eidx = 0; eidx < enterEvts.length; eidx++) {
+                                var eName = enterEvts[eidx];
+                                var eEvt = new KeyboardEvent(eName, {
+                                    bubbles: true, cancelable: true,
+                                    key: 'Enter', code: 'Enter', keyCode: 13, which: 13
+                                });
+                                confirmEl.dispatchEvent(eEvt);
+                                if (vtWin && vtWin.$) {
+                                    vtWin.$(confirmEl).trigger(vtWin.$.Event(eName, { keyCode: 13, which: 13, key: 'Enter' }));
+                                }
+                            }
+                            log.debug('🧰 Enter (keydown+keypress+keyup) trên #txtGHICHU → thêm vào list');
+                        }
+
+                        postResult(true, '');
+                    }, 1500);
+
+                } else if (retries >= maxRetries) {
+                    clearInterval(checkTimer);
+                    log.warn('🧰 Combogrid không detect được sau 7.5s');
+                    postResult(false, 'Không tìm thấy "' + searchTerm + '" trong kho VT. Kiểm tra lại tên hoặc thêm thủ công.');
+                }
+            }, 500);
+        }
     }
 
     // ==========================================
