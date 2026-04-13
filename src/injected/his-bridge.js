@@ -1701,21 +1701,19 @@
 
                 log.debug('🧰 Target click tìm thấy:', clickTarget.className);
 
-                // 1. Native JS click trên inner div và cả row
+                // 1. Native JS click trên inner div (đã đủ để chốt dropdown)
                 clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                 clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
                 clickTarget.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
                 clickTarget.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
-                
-                popupRow.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                popupRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                popupRow.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-                popupRow.click();
 
-                // 2. jQuery click
+                // 2. jQuery click fallback đóng gói trong try..catch để tránh crash script
                 if (vtWin && vtWin.$) {
-                    vtWin.$(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
-                    vtWin.$(popupRow).trigger('mousedown').trigger('mouseup').trigger('click');
+                    try {
+                        vtWin.$(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
+                    } catch (e) {
+                        log.debug('jQuery click fallback error (có thể an toàn bỏ qua):', e.message);
+                    }
                 }
 
                 // ─── 5. Điền Đường dùng, SL, Cách dùng ─────────────────
