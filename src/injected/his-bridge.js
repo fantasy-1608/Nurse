@@ -1222,6 +1222,9 @@
                     event.data.hosobenhanid || _currentHosobenhanid
                 );
                 break;
+            case 'QUYEN_FILL_VT_ITEM':
+                handleFillVtItem(event.data);
+                break;
             case 'QUYEN_FILL_COMBOGRID':
                 handleFillComboGrid(event.data.tasks);
                 break;
@@ -1548,6 +1551,228 @@
             onBothDone();
         };
         xhr2.send();
+    }
+
+    // ==========================================
+    // FILL VT ITEM — Tìm form phiếu VT đang mở và điền VT vào
+    // Flow: tìm form → gõ mã VT → chọn autocomplete → điền SL + cách dùng
+    // ==========================================
+    function handleFillVtItem(data) {
+        var ma       = data.ma       || '';
+        var ten      = data.ten      || '';
+        var sl       = data.sl       || 1;
+        var cachdung = data.cachdung || '';
+
+        function postResult(ok, err) {
+            window.postMessage({
+                type: 'QUYEN_VT_FILL_RESULT',
+                success: ok,
+                ma:      ma,
+                error:   err || ''
+            }, location.origin);
+        }
+
+        // ─── 1. Tìm document chứa form phiếu VT ────────────────────────
+        var allDocs = getAllDocuments();
+        var vtDoc   = null;
+
+        for (var di = 0; di < allDocs.length; di++) {
+            var doc = allDocs[di];
+            try {
+                // Dấu hiệu: có button/input text chứa "Thêm vật tư" OR "thêm vật tư"
+                var allBtns = doc.querySelectorAll('button, input[type="button"], a');
+                var found = false;
+                for (var bi = 0; bi < allBtns.length; bi++) {
+                    var btnText = allBtns[bi].textContent || allBtns[bi].value || '';
+                    if (/thêm vật tư/i.test(btnText)) { found = true; break; }
+                }
+                // Cũng check tiêu đề dialog
+                if (!found) {
+                    var allHeads = doc.querySelectorAll('.ui-dialog-title, h2, h3, .dialog-title, [class*="title"], b, strong');
+                    for (var hi = 0; hi < allHeads.length; hi++) {
+                        if (/phiếu vật tư/i.test(allHeads[hi].textContent)) { found = true; break; }
+                    }
+                }
+                if (found) { vtDoc = doc; break; }
+            } catch (e) { /* cross-origin iframe, skip */ }
+        }
+
+        if (!vtDoc) {
+            postResult(false, 'Chưa mở phiếu vật tư. Vui lòng mở phiếu trước khi điền.');
+            return;
+        }
+
+        // ─── 2. Tìm input "Tên vật tư" trong form ──────────────────────
+        // Strategy: tìm ô header chứa "Tên vật tư", lấy column index,
+        //           rồi tìm input trong tbody cùng cột
+        var vtInput = null;
+        var slInput = null;
+        var cdInput = null;
+
+        (function findInputsFromTable() {
+            // Tìm tất cả th/td chứa "Tên vật tư"
+            var allCells = vtDoc.querySelectorAll('th, td, div, span, label');
+            for (var ci = 0; ci < allCells.length; ci++) {
+                var cell = allCells[ci];
+                if (!/tên vật tư/i.test(cell.textContent)) continue;
+
+                // Tìm row chứa cell này
+                var headerRow = cell.closest('tr');
+                if (!headerRow) continue;
+
+                var headerCells = headerRow.querySelectorAll('th, td');
+                var tenColIdx = -1;
+                for (var hci = 0; hci < headerCells.length; hci++) {
+                    if (/tên vật tư/i.test(headerCells[hci].textContent)) {
+                        tenColIdx = hci; break;
+                    }
+                }
+                if (tenColIdx < 0) continue;
+
+                // Tìm edit row trong tbody
+                var table = headerRow.closest('table');
+                if (!table) continue;
+                var bodyRows = table.querySelectorAll('tbody tr');
+                for (var bri = 0; bri < bodyRows.length; bri++) {
+                    var bCells = bodyRows[bri].querySelectorAll('td');
+                    if (bCells.length <= tenColIdx) continue;
+                    var inp = bCells[tenColIdx].querySelector('input[type="text"], input:not([type])');
+                    if (inp) {
+                        vtInput = inp;
+                        // Cột SL thường là tenColIdx+2, Cách dùng tenColIdx+3
+                        var slCell = bCells[tenColIdx + 2];
+                        var cdCell = bCells[tenColIdx + 3];
+                        if (slCell) slInput = slCell.querySelector('input[type="text"], input[type="number"], input:not([type])');
+                        if (cdCell) cdInput = cdCell.querySelector('input[type="text"], input:not([type])');
+                        break;
+                    }
+                }
+                if (vtInput) break;
+            }
+        })();
+
+        // Fallback: tìm input theo common HIS ID patterns
+        if (!vtInput) {
+            var idPatterns = ['txtTenVatTu', 'txtVatTuTim', 'txtSearchVatTu', 'txtVatTu', 'txtTen'];
+            for (var pi = 0; pi < idPatterns.length; pi++) {
+                vtInput = vtDoc.getElementById(idPatterns[pi]);
+                if (vtInput) break;
+                vtInput = vtDoc.querySelector('[id*="' + idPatterns[pi] + '"]');
+                if (vtInput) break;
+            }
+        }
+
+        if (!vtInput) {
+            postResult(false, 'Không tìm thấy ô nhập tên vật tư trong form.');
+            return;
+        }
+
+        // Fallback cho SL và cách dùng nếu chưa tìm được từ cột
+        if (!slInput) {
+            var slIds = ['txtSoLuong', 'txtSL', 'txtSoluong', 'txtQuantity'];
+            for (var si2 = 0; si2 < slIds.length; si2++) {
+                slInput = vtDoc.getElementById(slIds[si2]) || vtDoc.querySelector('[id*="' + slIds[si2] + '"]');
+                if (slInput) break;
+            }
+        }
+        if (!cdInput) {
+            var cdIds = ['txtCachDung', 'txtCD', 'txtCachdung'];
+            for (var ci2 = 0; ci2 < cdIds.length; ci2++) {
+                cdInput = vtDoc.getElementById(cdIds[ci2]) || vtDoc.querySelector('[id*="' + cdIds[ci2] + '"]');
+                if (cdInput) break;
+            }
+        }
+
+        // ─── 3. Gõ mã VT vào search input ──────────────────────────────
+        var searchTerm = ma || ten.split(' ')[0];
+        vtInput.focus();
+        vtInput.value = '';
+        vtInput.dispatchEvent(new Event('focus',  { bubbles: true }));
+        vtInput.dispatchEvent(new Event('click',  { bubbles: true }));
+
+        // Gõ từng ký tự của mã VT
+        for (var ci3 = 0; ci3 < searchTerm.length; ci3++) {
+            vtInput.value += searchTerm[ci3];
+            vtInput.dispatchEvent(new KeyboardEvent('keydown',  { bubbles: true, key: searchTerm[ci3] }));
+            vtInput.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: searchTerm[ci3] }));
+            vtInput.dispatchEvent(new Event('input',  { bubbles: true }));
+            vtInput.dispatchEvent(new KeyboardEvent('keyup',    { bubbles: true, key: searchTerm[ci3] }));
+        }
+        // Kích hoạt thêm change
+        vtInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+        log.debug('🧰 Đã gõ "' + searchTerm + '" vào VT search input, đợi autocomplete...');
+
+        // ─── 4. Đợi autocomplete popup xuất hiện (polling 400ms × 15) ──
+        var retries = 0;
+        var maxRetries = 15;
+
+        var checkTimer = setInterval(function () {
+            retries++;
+
+            // Tìm autocomplete popup: jqGrid row, unordered list, hoặc suggestion div
+            var popup = null;
+            var popupRow = null;
+
+            // Thử tìm jqGrid popup row (pattern HIS thông dụng nhất)
+            var jqRows = vtDoc.querySelectorAll('tr.jqgrow');
+            for (var jri = 0; jri < jqRows.length; jri++) {
+                var jrow = jqRows[jri];
+                // Phải visible và nằm trong popup (không phải grid chính của form)
+                var par = jrow.closest('div');
+                if (par && (par.style.display !== 'none') && par.offsetHeight > 0) {
+                    var rowText = jrow.textContent || '';
+                    // Row này có chứa mã VT ta tìm không?
+                    if (rowText.toUpperCase().indexOf(searchTerm.toUpperCase()) >= 0 || jri === 0) {
+                        popupRow = jrow;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback: li trong ul.ui-autocomplete
+            if (!popupRow) {
+                var liItems = vtDoc.querySelectorAll('.ui-autocomplete li, .autocomplete-list li, .dropdown-list li');
+                for (var li2 = 0; li2 < liItems.length; li2++) {
+                    if (liItems[li2].offsetHeight > 0) { popupRow = liItems[li2]; break; }
+                }
+            }
+
+            if (popupRow) {
+                clearInterval(checkTimer);
+                log.debug('🧰 Autocomplete popup tìm thấy, click row...');
+                popupRow.click();
+                popupRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+                // ─── 5. Điền SL và Cách dùng sau khi chọn (delay 600ms) ──
+                setTimeout(function () {
+                    // SL
+                    if (slInput) {
+                        slInput.focus();
+                        var slStr = String(sl);
+                        slInput.value = slStr;
+                        slInput.dispatchEvent(new Event('input',  { bubbles: true }));
+                        slInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        slInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                        log.debug('🧰 SL =', slStr);
+                    }
+                    // Cách dùng
+                    if (cdInput && cachdung) {
+                        cdInput.focus();
+                        cdInput.value = cachdung;
+                        cdInput.dispatchEvent(new Event('input',  { bubbles: true }));
+                        cdInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        log.debug('🧰 Cách dùng = "' + cachdung + '"');
+                    }
+                    postResult(true, '');
+                }, 600);
+
+            } else if (retries >= maxRetries) {
+                clearInterval(checkTimer);
+                log.warn('🧰 Autocomplete không xuất hiện sau ' + (maxRetries * 400) + 'ms');
+                postResult(false, 'Autocomplete không xuất hiện. Thử nhập lại bằng tay hoặc kiểm tra kho vật tư.');
+            }
+        }, 400);
     }
 
     // ==========================================

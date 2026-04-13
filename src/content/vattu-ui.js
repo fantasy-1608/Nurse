@@ -1,8 +1,6 @@
 /**
  * __EXT_EMOJI__ __EXT_NAME__ — Vật Tư UI
- * Tab "🧰 Vật tư" trong floating panel — hiển thị gợi ý VT theo thuốc
- *
- * [BETA] — Phase 1: Read-only suggestion, không tự tạo phiếu HIS
+ * Tab "🧰 Vật tư" trong floating panel — hiển thị và điền gợi ý VT theo thuốc
  */
 
 /* global QuyenLog, QuyenVatTuEngine */
@@ -14,6 +12,7 @@ const QuyenVatTuUI = (function () {
     let _container = null;
     let _lastResult = null;
     let _loading = false;
+    let _fillingIdx = null; // row đang trong trạng thái điền
 
     // =========================================================
     // INIT
@@ -23,30 +22,27 @@ const QuyenVatTuUI = (function () {
         renderIdle();
         QuyenLog.info('🧰 VatTuUI initialized');
 
-        // Lắng nghe patient change
         window.addEventListener('message', function (event) {
             if (!event.data) return;
             if (event.data.type === 'QUYEN_PATIENT_SELECTED') {
                 _lastResult = null;
                 renderLoading('Đang tải dữ liệu thuốc...');
-                // Delay nhỏ để bridge xử lý xong patient selection trước
                 setTimeout(function () { refresh(); }, 800);
+            }
+            if (event.data.type === 'QUYEN_VT_FILL_RESULT') {
+                onFillResult(event.data);
             }
         });
     }
 
-    // =========================================================
-    // PUBLIC: onPatientChange (gọi từ ui-panel.js nếu cần)
-    // =========================================================
-    function onPatientChange(patientData) {
-        // Handled via message listener, but we can call refresh manually
+    function onPatientChange() {
         _lastResult = null;
         renderLoading('Đang tải dữ liệu...');
         setTimeout(function () { refresh(); }, 800);
     }
 
     // =========================================================
-    // REFRESH — Gọi engine phân tích
+    // REFRESH
     // =========================================================
     function refresh() {
         if (_loading) return;
@@ -69,47 +65,22 @@ const QuyenVatTuUI = (function () {
     }
 
     // =========================================================
-    // RENDER: Idle (chưa chọn BN)
+    // RENDER helpers
     // =========================================================
     function renderIdle() {
         if (!_container) return;
-        _container.innerHTML = `
-            <div class="quyen-vt-wrapper">
-                <div class="quyen-vt-idle">
-                    <div style="font-size:32px; margin-bottom:8px;">🧰</div>
-                    <div style="color:#aaa; font-size:12px;">Chọn bệnh nhân để xem gợi ý vật tư</div>
-                </div>
-            </div>`;
+        _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-idle"><div style="font-size:32px;margin-bottom:8px;">🧰</div><div style="color:#aaa;font-size:12px;">Chọn bệnh nhân để xem gợi ý vật tư</div></div></div>';
     }
 
-    // =========================================================
-    // RENDER: Loading
-    // =========================================================
     function renderLoading(msg) {
         if (!_container) return;
-        _container.innerHTML = `
-            <div class="quyen-vt-wrapper">
-                <div class="quyen-vt-loading">
-                    <div class="quyen-vt-spinner"></div>
-                    <div>${msg || 'Đang tải...'}</div>
-                </div>
-            </div>`;
+        _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-loading"><div class="quyen-vt-spinner"></div><div>' + (msg || 'Đang tải...') + '</div></div></div>';
     }
 
-    // =========================================================
-    // RENDER: Error
-    // =========================================================
     function renderError(msg) {
         if (!_container) return;
-        _container.innerHTML = `
-            <div class="quyen-vt-wrapper">
-                <div class="quyen-vt-error">
-                    <div style="font-size:20px; margin-bottom:6px;">⚠️</div>
-                    <div style="font-size:12px; color:#c62828;">${escapeHtml(msg)}</div>
-                    <button class="quyen-btn quyen-vt-retry-btn" id="quyen-vt-retry" style="margin-top:10px; background:#e91e63; color:#fff; padding:5px 14px; border-radius:7px; border:none; cursor:pointer; font-size:12px;">🔄 Thử lại</button>
-                </div>
-            </div>`;
-        const retryBtn = _container.querySelector('#quyen-vt-retry');
+        _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-error"><div style="font-size:20px;margin-bottom:6px;">⚠️</div><div style="font-size:12px;color:#c62828;">' + escapeHtml(msg) + '</div><button id="quyen-vt-retry" style="margin-top:10px;background:#e91e63;color:#fff;padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;">🔄 Thử lại</button></div></div>';
+        var retryBtn = _container.querySelector('#quyen-vt-retry');
         if (retryBtn) retryBtn.addEventListener('click', refresh);
     }
 
@@ -118,123 +89,188 @@ const QuyenVatTuUI = (function () {
     // =========================================================
     function renderResult(result) {
         if (!_container) return;
-        const { suggestedVT, existingVT, drugs } = result;
+        var suggestedVT = result.suggestedVT;
+        var existingVT  = result.existingVT;
+        var drugs       = result.drugs;
 
-        // Build existing VT HTML (từ HIS)
-        let existingHtml = '';
+        // ── Existing VT ──────────────────────────────────────
+        var existingHtml = '';
         if (existingVT && existingVT.length > 0) {
-            // Dedup existing VT by mã
-            const vtMap = new Map();
-            for (const item of existingVT) {
-                const key = item.ma || item.MADICHVU || '';
-                if (!vtMap.has(key)) {
-                    vtMap.set(key, {
-                        ma:  key,
-                        ten: item.ten || item.TENDICHVU || key,
-                        sl:  parseInt(item.sl || item.SOLUONG || 1, 10),
-                        dvt: item.dvt || item.DVT || '',
+            var vtMap = new Map();
+            for (var ei = 0; ei < existingVT.length; ei++) {
+                var eItem = existingVT[ei];
+                var eKey = eItem.ma || eItem.MADICHVU || '';
+                if (!vtMap.has(eKey)) {
+                    vtMap.set(eKey, {
+                        ma:  eKey,
+                        ten: eItem.ten || eItem.TENDICHVU || eKey,
+                        sl:  parseInt(eItem.sl || eItem.SOLUONG || 1, 10),
+                        dvt: eItem.dvt || eItem.DVT || '',
                     });
                 } else {
-                    vtMap.get(key).sl += parseInt(item.sl || item.SOLUONG || 1, 10);
+                    vtMap.get(eKey).sl += parseInt(eItem.sl || eItem.SOLUONG || 1, 10);
                 }
             }
-            const vtList = [...vtMap.values()];
-            existingHtml = `
-            <div class="quyen-vt-section">
-                <div class="quyen-vt-section-title">✅ Phiếu VT đang có <span class="quyen-vt-count">${vtList.length} loại</span></div>
-                <div class="quyen-vt-existing-list">
-                    ${vtList.map(item => `
-                    <div class="quyen-vt-existing-item">
-                        <span class="quyen-vt-ma">${escapeHtml(item.ma)}</span>
-                        <span class="quyen-vt-ten">${escapeHtml(item.ten)}</span>
-                        <span class="quyen-vt-sl-badge">${item.sl} ${escapeHtml(item.dvt)}</span>
-                    </div>`).join('')}
-                </div>
-            </div>`;
+            var vtList = Array.from(vtMap.values());
+            var existRows = vtList.map(function(item) {
+                return '<div class="quyen-vt-existing-item"><span class="quyen-vt-ma">' + escapeHtml(item.ma) + '</span><span class="quyen-vt-ten">' + escapeHtml(item.ten) + '</span><span class="quyen-vt-sl-badge">' + item.sl + ' ' + escapeHtml(item.dvt) + '</span></div>';
+            }).join('');
+            existingHtml = '<div class="quyen-vt-section"><div class="quyen-vt-section-title">✅ Phiếu VT đang có <span class="quyen-vt-count">' + vtList.length + ' loại</span></div><div class="quyen-vt-existing-list">' + existRows + '</div></div>';
         }
 
-        // Build suggested VT HTML
-        let suggestHtml = '';
+        // ── Suggested VT ──────────────────────────────────────
+        var suggestHtml = '';
         if (suggestedVT && suggestedVT.length > 0) {
-            // Group by rule for label
-            const ruleLabel = { base: '🩺 Cơ bản', tmc: '💉 Tiêm bắp/TMC', ttm: '💧 Truyền dịch (TTM)', insulin: '🩸 Insulin', wound: '🩹 Vết thương' };
-            const grouped = {};
-            for (const item of suggestedVT) {
-                const r = item.rule || 'base';
+            var ruleLabel = {
+                base:    '🩺 Cơ bản',
+                tmc:     '💉 Tiêm bắp/TMC',
+                ttm:     '💧 Truyền dịch (TTM)',
+                insulin: '🩸 Insulin',
+                wound:   '🩹 Vết thương'
+            };
+            // Group by rule
+            var grouped = {};
+            for (var si = 0; si < suggestedVT.length; si++) {
+                var sItem = suggestedVT[si];
+                var r = sItem.rule || 'base';
                 if (!grouped[r]) grouped[r] = [];
-                grouped[r].push(item);
+                grouped[r].push(sItem);
             }
 
-            suggestHtml = `
-            <div class="quyen-vt-section">
-                <div class="quyen-vt-section-title">💡 Gợi ý theo thuốc <span class="quyen-vt-count">${suggestedVT.length} loại</span></div>
-                <div class="quyen-vt-suggest-list" id="quyen-vt-suggest-list">`;
+            suggestHtml = '<div class="quyen-vt-section"><div class="quyen-vt-section-title">💡 Gợi ý theo thuốc <span class="quyen-vt-count">' + suggestedVT.length + ' loại</span></div><div class="quyen-vt-suggest-list" id="quyen-vt-suggest-list">';
 
-            let rowIdx = 0;
-            for (const [rule, items] of Object.entries(grouped)) {
-                suggestHtml += `<div class="quyen-vt-rule-group">
-                    <div class="quyen-vt-rule-label">${ruleLabel[rule] || rule}</div>`;
-                for (const item of items) {
-                    const isWound = rule === 'wound';
-                    suggestHtml += `
-                    <div class="quyen-vt-suggest-row${isWound ? ' quyen-vt-wound' : ''}" data-idx="${rowIdx}">
-                        <input type="checkbox" class="quyen-vt-check" id="quyen-vt-chk-${rowIdx}" data-idx="${rowIdx}" ${isWound ? '' : 'checked'}>
-                        <label for="quyen-vt-chk-${rowIdx}" class="quyen-vt-suggest-label">
-                            <span class="quyen-vt-ma">${escapeHtml(item.ma)}</span>
-                            <span class="quyen-vt-ten">${escapeHtml(item.ten)}</span>
-                        </label>
-                        <div class="quyen-vt-sl-ctrl">
-                            <input type="number" class="quyen-vt-sl-input" 
-                                data-idx="${rowIdx}" value="${item.sl}" min="1" max="99"
-                                id="quyen-vt-sl-${rowIdx}">
-                            <span class="quyen-vt-dvt">${escapeHtml(item.dvt)}</span>
-                        </div>
-                        <span class="quyen-vt-huong">${escapeHtml(item.huong || '')}</span>
-                        ${item.note ? `<span class="quyen-vt-note" title="${escapeHtml(item.note)}">ℹ️</span>` : ''}
-                    </div>`;
+            var rowIdx = 0;
+            var rules = Object.keys(grouped);
+            for (var ri = 0; ri < rules.length; ri++) {
+                var rule = rules[ri];
+                var rItems = grouped[rule];
+                suggestHtml += '<div class="quyen-vt-rule-group"><div class="quyen-vt-rule-label">' + (ruleLabel[rule] || rule) + '</div>';
+                for (var rii = 0; rii < rItems.length; rii++) {
+                    var item = rItems[rii];
+                    var isWound = (rule === 'wound');
+                    var noteHtml = item.note ? '<div class="quyen-vt-note-text">ℹ️ ' + escapeHtml(item.note) + '</div>' : '';
+                    suggestHtml += '<div class="quyen-vt-suggest-row' + (isWound ? ' quyen-vt-wound' : '') + '" data-idx="' + rowIdx + '" data-ma="' + escapeHtml(item.ma) + '">' +
+                        '<div class="quyen-vt-row-top">' +
+                            '<input type="checkbox" class="quyen-vt-check" id="quyen-vt-chk-' + rowIdx + '" data-idx="' + rowIdx + '"' + (isWound ? '' : ' checked') + '>' +
+                            '<label for="quyen-vt-chk-' + rowIdx + '" class="quyen-vt-suggest-label">' +
+                                '<span class="quyen-vt-ma">' + escapeHtml(item.ma) + '</span>' +
+                                '<span class="quyen-vt-ten">' + escapeHtml(item.ten) + '</span>' +
+                            '</label>' +
+                            '<div class="quyen-vt-sl-ctrl">' +
+                                '<input type="number" class="quyen-vt-sl-input" data-idx="' + rowIdx + '" value="' + item.sl + '" min="1" max="99" id="quyen-vt-sl-' + rowIdx + '">' +
+                                '<span class="quyen-vt-dvt">' + escapeHtml(item.dvt) + '</span>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="quyen-vt-row-bottom">' +
+                            '<input type="text" class="quyen-vt-cachdung-input" id="quyen-vt-cd-' + rowIdx + '" data-idx="' + rowIdx + '" value="' + escapeHtml(item.cachdung) + '" placeholder="Cách dùng...">' +
+                            '<button class="quyen-vt-fill-btn" data-idx="' + rowIdx + '" id="quyen-vt-fill-' + rowIdx + '" title="Điền vật tư này vào phiếu HIS đang mở">✚ Điền</button>' +
+                        '</div>' +
+                        noteHtml +
+                    '</div>';
                     rowIdx++;
                 }
-                suggestHtml += `</div>`;
+                suggestHtml += '</div>';
             }
-            suggestHtml += `</div></div>`;
+            suggestHtml += '</div></div>';
         } else if (drugs && drugs.length === 0) {
-            suggestHtml = `<div class="quyen-vt-empty">Không tìm thấy thuốc hôm nay.<br>Có thể chưa có phiếu thuốc.</div>`;
+            suggestHtml = '<div class="quyen-vt-empty">Không tìm thấy thuốc hôm nay.<br>Có thể chưa có phiếu thuốc.</div>';
         } else {
-            suggestHtml = `<div class="quyen-vt-empty">Không gợi ý thêm VT nào.<br>(BN chỉ có thuốc Uống)</div>`;
+            suggestHtml = '<div class="quyen-vt-empty">Không gợi ý thêm VT nào.<br>(BN chỉ có thuốc Uống)</div>';
         }
 
-        // Note về kim luồn
-        const kimLuonNote = suggestedVT.some(v => v.ma === 'BO560') ?
-            `<div class="quyen-vt-kim-note">📌 Kim luồn TM <strong>KI306</strong> + băng dính <strong>BA365</strong>: thêm vào khi lắp kim luồn mới (3–4 ngày/lần)</div>` : '';
+        var kimLuonNote = (suggestedVT && suggestedVT.some(function(v) { return v.ma === 'BO560'; })) ?
+            '<div class="quyen-vt-kim-note">📌 <strong>KI306</strong> + <strong>BA365</strong>: thêm khi lắp kim luồn mới (3–4 ngày/lần)</div>' : '';
 
-        // Drug summary
-        const drugSummary = drugs && drugs.length > 0 ?
-            `<div class="quyen-vt-drug-summary">
-                <span>💊 Thuốc hôm nay: ${drugs.length} loại —</span>
-                <span class="quyen-vt-drug-tags">${drugs.slice(0,4).map(d => `<span class="quyen-vt-drug-tag">${escapeHtml(d.ten ? d.ten.split(' ')[0] : d.ma)}</span>`).join('')}${drugs.length > 4 ? `<span class="quyen-vt-drug-tag">+${drugs.length - 4}</span>` : ''}</span>
-            </div>` : '';
+        var drugTags = '';
+        if (drugs && drugs.length > 0) {
+            var tagItems = drugs.slice(0, 4).map(function(d) {
+                return '<span class="quyen-vt-drug-tag">' + escapeHtml(d.ten ? d.ten.split(' ')[0] : d.ma) + '</span>';
+            });
+            if (drugs.length > 4) tagItems.push('<span class="quyen-vt-drug-tag">+' + (drugs.length - 4) + '</span>');
+            drugTags = '<div class="quyen-vt-drug-summary"><span>💊 Hôm nay: ' + drugs.length + ' thuốc — </span><span class="quyen-vt-drug-tags">' + tagItems.join('') + '</span></div>';
+        }
 
-        _container.innerHTML = `
-            <div class="quyen-vt-wrapper">
-                <div class="quyen-vt-toolbar">
-                    ${drugSummary}
-                    <button class="quyen-vt-refresh-btn" id="quyen-vt-refresh" title="Đọc lại từ HIS">🔄</button>
-                </div>
-                ${existingHtml}
-                ${suggestHtml}
-                ${kimLuonNote}
-                ${suggestedVT && suggestedVT.length > 0 ? `
-                <div class="quyen-vt-actions">
-                    <button class="quyen-vt-copy-btn" id="quyen-vt-copy">📋 Copy danh sách</button>
-                </div>` : ''}
-            </div>`;
+        var actionsHtml = (suggestedVT && suggestedVT.length > 0) ?
+            '<div class="quyen-vt-actions"><button class="quyen-vt-copy-btn" id="quyen-vt-copy">📋 Copy danh sách</button></div>' : '';
 
-        // Wire up events
-        const refreshBtn = _container.querySelector('#quyen-vt-refresh');
+        _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-toolbar">' + drugTags + '<button class="quyen-vt-refresh-btn" id="quyen-vt-refresh" title="Đọc lại từ HIS">🔄</button></div>' + existingHtml + suggestHtml + kimLuonNote + actionsHtml + '</div>';
+
+        // Wire events
+        var refreshBtn = _container.querySelector('#quyen-vt-refresh');
         if (refreshBtn) refreshBtn.addEventListener('click', refresh);
 
-        const copyBtn = _container.querySelector('#quyen-vt-copy');
+        var copyBtn = _container.querySelector('#quyen-vt-copy');
         if (copyBtn) copyBtn.addEventListener('click', function () { copyToClipboard(suggestedVT); });
+
+        // Wire nút Điền
+        var fillBtns = _container.querySelectorAll('.quyen-vt-fill-btn');
+        for (var fi = 0; fi < fillBtns.length; fi++) {
+            (function(btn) {
+                btn.addEventListener('click', function () {
+                    var idx = parseInt(btn.getAttribute('data-idx'), 10);
+                    onClickFill(idx, suggestedVT);
+                });
+            })(fillBtns[fi]);
+        }
+    }
+
+    // =========================================================
+    // CLICK ĐIỀN
+    // =========================================================
+    function onClickFill(idx, suggestedVT) {
+        var item = suggestedVT && suggestedVT[idx];
+        if (!item) return;
+
+        var slInput  = _container.querySelector('#quyen-vt-sl-'   + idx);
+        var cdInput  = _container.querySelector('#quyen-vt-cd-'   + idx);
+        var fillBtn  = _container.querySelector('#quyen-vt-fill-' + idx);
+
+        var sl       = slInput ? (parseInt(slInput.value, 10) || item.sl) : item.sl;
+        var cachdung = cdInput ? cdInput.value.trim() : item.cachdung;
+
+        _fillingIdx = idx;
+        if (fillBtn) { fillBtn.textContent = '⏳'; fillBtn.disabled = true; }
+
+        QuyenLog.info('🧰 Điền VT:', item.ma, '| SL:', sl, '| CD:', cachdung);
+
+        window.postMessage({
+            type:     'QUYEN_FILL_VT_ITEM',
+            ma:       item.ma,
+            ten:      item.ten,
+            sl:       sl,
+            cachdung: cachdung,
+        }, location.origin);
+
+        // Timeout fallback 12s
+        setTimeout(function () {
+            if (_fillingIdx === idx) {
+                resetFillBtn(idx, '✚ Điền');
+                _fillingIdx = null;
+            }
+        }, 12000);
+    }
+
+    // =========================================================
+    // KẾT QUẢ ĐIỀN
+    // =========================================================
+    function onFillResult(data) {
+        var idx = _fillingIdx;
+        _fillingIdx = null;
+
+        if (data.success) {
+            resetFillBtn(idx, '✅');
+            showToast('✅ Đã điền ' + (data.ma || '') + ' vào phiếu!', 'success');
+            setTimeout(function () { resetFillBtn(idx, '✚ Điền'); }, 2500);
+        } else {
+            resetFillBtn(idx, '✚ Điền');
+            showToast('❌ ' + (data.error || 'Lỗi điền VT'), 'error');
+        }
+    }
+
+    function resetFillBtn(idx, label) {
+        if (idx === null || idx === undefined) return;
+        var btn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
+        if (btn) { btn.textContent = label; btn.disabled = false; }
     }
 
     // =========================================================
@@ -243,65 +279,57 @@ const QuyenVatTuUI = (function () {
     function copyToClipboard(suggestedVT) {
         if (!suggestedVT || suggestedVT.length === 0) return;
 
-        // Lấy chỉ những item được check
-        const checkedItems = [];
-        const list = _container ? _container.querySelectorAll('.quyen-vt-suggest-row') : [];
-        list.forEach(function (row) {
-            const idx = row.getAttribute('data-idx');
-            const chk = row.querySelector('.quyen-vt-check');
-            const slInput = row.querySelector('.quyen-vt-sl-input');
+        var checkedItems = [];
+        var rows = _container ? _container.querySelectorAll('.quyen-vt-suggest-row') : [];
+        for (var i = 0; i < rows.length; i++) {
+            var row  = rows[i];
+            var idx  = parseInt(row.getAttribute('data-idx'), 10);
+            var chk  = row.querySelector('.quyen-vt-check');
+            var slI  = row.querySelector('.quyen-vt-sl-input');
+            var cdI  = row.querySelector('.quyen-vt-cachdung-input');
             if (chk && chk.checked) {
-                const item = suggestedVT[parseInt(idx, 10)];
+                var item = suggestedVT[idx];
                 if (item) {
-                    const sl = slInput ? slInput.value : item.sl;
-                    checkedItems.push({ ...item, sl });
+                    checkedItems.push({
+                        ma: item.ma, ten: item.ten, dvt: item.dvt, huong: item.huong,
+                        sl:       slI ? slI.value       : item.sl,
+                        cachdung: cdI ? cdI.value.trim(): item.cachdung,
+                    });
                 }
             }
-        });
-
-        if (checkedItems.length === 0) {
-            showToast('Không có VT nào được chọn!', 'warning');
-            return;
         }
 
-        const today = new Date().toLocaleDateString('vi-VN');
-        let text = `DANH SÁCH VẬT TƯ GỢI Ý — ${today}\n`;
-        text += '═'.repeat(40) + '\n';
-        let n = 1;
-        for (const item of checkedItems) {
-            text += `${n}. [${item.ma}] ${item.ten}\n`;
-            text += `   SL: ${item.sl} ${item.dvt}  |  ${item.huong}\n`;
-            if (item.note) text += `   ℹ️ ${item.note}\n`;
-            n++;
+        if (checkedItems.length === 0) { showToast('Không có VT nào được chọn!', 'warning'); return; }
+
+        var today = new Date().toLocaleDateString('vi-VN');
+        var text  = 'DANH SÁCH VẬT TƯ GỢI Ý — ' + today + '\n' + '═'.repeat(40) + '\n';
+        for (var n = 0; n < checkedItems.length; n++) {
+            var ci = checkedItems[n];
+            text += (n + 1) + '. [' + ci.ma + '] ' + ci.ten + '\n';
+            text += '   SL: ' + ci.sl + ' ' + ci.dvt + '  |  ' + ci.huong + '\n';
+            if (ci.cachdung) text += '   Cách dùng: ' + ci.cachdung + '\n';
         }
-        text += '─'.repeat(40) + '\n';
-        text += `Tổng: ${checkedItems.length} loại vật tư\n`;
-        text += '⚠️ Điều dưỡng kiểm tra lại trước khi lập phiếu';
+        text += '─'.repeat(40) + '\nTổng: ' + checkedItems.length + ' loại\n⚠️ Kiểm tra lại trước khi lập phiếu';
 
         navigator.clipboard.writeText(text).then(function () {
-            showToast('✅ Đã copy ' + checkedItems.length + ' VT vào clipboard!', 'success');
+            showToast('✅ Đã copy ' + checkedItems.length + ' VT!', 'success');
         }).catch(function () {
-            // Fallback
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
+            var ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy');
             document.body.removeChild(ta);
             showToast('✅ Đã copy!', 'success');
         });
     }
 
     // =========================================================
-    // TOAST (dùng chung)
+    // TOAST + UTILS
     // =========================================================
     function showToast(msg, type) {
         if (typeof QuyenUI !== 'undefined' && QuyenUI.showToast) {
             QuyenUI.showToast(msg, type);
         } else {
-            const el = document.createElement('div');
+            var el = document.createElement('div');
             el.style.cssText = 'position:fixed;bottom:80px;right:20px;background:#333;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;z-index:100002;';
             el.textContent = msg;
             document.body.appendChild(el);
@@ -309,16 +337,9 @@ const QuyenVatTuUI = (function () {
         }
     }
 
-    // =========================================================
-    // UTILS
-    // =========================================================
     function escapeHtml(str) {
         if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     // =========================================================

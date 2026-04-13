@@ -37,19 +37,19 @@ const QuyenVatTuEngine = (function () {
     // VT CATALOGUE — Thông tin VT để tra cứu tên/dvt
     // =========================================================
     const VT_INFO = {
-        'GA2501': { ten: 'Găng tay cao su Y tế chưa tiệt trùng', dvt: 'Đôi' },
-        'KI318':  { ten: 'Kim tiêm sử dụng một lần',              dvt: 'Cái' },
-        'BO535':  { ten: 'Bơm tiêm 10ml Banapha',                 dvt: 'Cái' },
-        'BO534':  { ten: 'Bơm tiêm 5ml Banapha',                  dvt: 'Cái' },
-        'BO527':  { ten: 'Bơm tiêm 20ml Banapha',                 dvt: 'Cái' },
-        'BO560':  { ten: 'Bộ dây truyền dịch UVERDA/UVD-3',       dvt: 'Bộ'  },
-        'NA148':  { ten: 'Nắp đậy kim luồn tĩnh mạch',           dvt: 'Cái' },
-        'KI306':  { ten: 'Kim luồn TM có cổng tiêm Nufix',        dvt: 'Cái' },
-        'BA365':  { ten: 'Băng dính cá nhân (VĐ)',                dvt: 'Miếng'},
-        'BO517':  { ten: 'Bơm tiêm Insulin 1ml',                  dvt: 'Cái' },
-        'QU176':  { ten: 'Que thử đường huyết cá nhân',           dvt: 'Test' },
-        'UR69':   { ten: 'Urgotul Ag/Silver 10x12cm',             dvt: 'Miếng'},
-        'BA360':  { ten: 'Băng keo lụa y tế RITASILK 2.5cm×5m',  dvt: 'Cuộn' },
+        'GA2501': { ten: 'Găng tay cao su Y tế chưa tiệt trùng', dvt: 'Đôi',   cachdung: 'Mang tay khi thực hiện thủ thuật' },
+        'KI318':  { ten: 'Kim tiêm sử dụng một lần',              dvt: 'Cái',   cachdung: 'Dùng pha và tiêm thuốc' },
+        'BO535':  { ten: 'Bơm tiêm 10ml Banapha',                 dvt: 'Cái',   cachdung: 'Dùng pha và tiêm thuốc TMC' },
+        'BO534':  { ten: 'Bơm tiêm 5ml Banapha',                  dvt: 'Cái',   cachdung: 'Dùng pha thuốc kháng sinh' },
+        'BO527':  { ten: 'Bơm tiêm 20ml Banapha',                 dvt: 'Cái',   cachdung: 'Dùng pha thuốc liều lớn' },
+        'BO560':  { ten: 'Bộ dây truyền dịch UVERDA/UVD-3',       dvt: 'Bộ',    cachdung: 'Truyền dịch tĩnh mạch TTM' },
+        'NA148':  { ten: 'Nắp đậy kim luồn tĩnh mạch',           dvt: 'Cái',   cachdung: 'Đậy kim luồn sau khi truyền dịch' },
+        'KI306':  { ten: 'Kim luồn TM có cổng tiêm Nufix',        dvt: 'Cái',   cachdung: 'Cắm kim luồn tĩnh mạch' },
+        'BA365':  { ten: 'Băng dính cá nhân (VĐ)',                dvt: 'Miếng', cachdung: 'Cố định kim luồn' },
+        'BO517':  { ten: 'Bơm tiêm Insulin 1ml',                  dvt: 'Cái',   cachdung: 'Tiêm insulin dưới da (TDD)' },
+        'QU176':  { ten: 'Que thử đường huyết cá nhân',           dvt: 'Test',  cachdung: 'Thử đường huyết máo mách' },
+        'UR69':   { ten: 'Urgotul Ag/Silver 10x12cm',             dvt: 'Miếng', cachdung: 'Đắp lên vết thương' },
+        'BA360':  { ten: 'Băng keo lụa y tế RITASILK 2.5cm×5m',  dvt: 'Cuộn',  cachdung: 'Cố định băng và kim luồn' },
     };
 
     // Mã insulin (drug mã cụ thể)
@@ -93,8 +93,12 @@ const QuyenVatTuEngine = (function () {
         const hasWound = /vết thương|chấn thương|gãy xương|viêm|phẫu thuật|mổ/.test(diagnosis);
 
         function add(ma, sl, huong, rule, note) {
-            const info = VT_INFO[ma] || { ten: ma, dvt: '?' };
-            result.push({ ma, ten: info.ten, sl, dvt: info.dvt, huong, rule, note: note || '' });
+            const info = VT_INFO[ma] || { ten: ma, dvt: '?', cachdung: '' };
+            result.push({
+                ma, ten: info.ten, sl, dvt: info.dvt,
+                huong, rule, note: note || '',
+                cachdung: info.cachdung || ''
+            });
         }
 
         // ── RULE 1: Base — bất kỳ thuốc tiêm ───────────────────────────────

@@ -1514,17 +1514,75 @@
 }
 .quyen-vt-suggest-row {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 6px;
-    border-radius: 7px;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 6px 5px;
+    border-radius: 8px;
     background: rgba(233,30,99,0.03);
     border: 1px solid rgba(233,30,99,0.08);
     transition: background 0.15s;
     font-size: 11px;
 }
 .quyen-vt-suggest-row:hover {
-    background: rgba(233,30,99,0.07);
+    background: rgba(233,30,99,0.06);
+}
+/* Line 1: checkbox + label + SL+DVT */
+.quyen-vt-row-top {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+/* Line 2: cách dùng input + Điền btn */
+.quyen-vt-row-bottom {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-left: 19px; /* indent under checkbox */
+}
+.quyen-vt-cachdung-input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid rgba(156,39,176,0.2);
+    border-radius: 5px;
+    padding: 3px 6px;
+    font-size: 10px;
+    font-family: 'Quicksand', sans-serif;
+    color: #555;
+    background: rgba(156,39,176,0.04);
+    outline: none;
+    transition: border 0.2s;
+}
+.quyen-vt-cachdung-input:focus {
+    border-color: #9c27b0;
+    background: #fff;
+}
+.quyen-vt-fill-btn {
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #e91e63, #9c27b0);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 3px 9px;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: 'Quicksand', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.quyen-vt-fill-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(233,30,99,0.35);
+}
+.quyen-vt-fill-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+.quyen-vt-note-text {
+    font-size: 9px;
+    color: #aaa;
+    padding-left: 19px;
+    font-style: italic;
 }
 .quyen-vt-wound {
     background: rgba(255,152,0,0.04) !important;
