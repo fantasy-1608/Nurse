@@ -1771,7 +1771,6 @@
                     postResult(false, 'Không tìm thấy "' + searchTerm + '" trong kho VT. Kiểm tra lại tên hoặc thêm thủ công.');
                 }
             }, 500);
-        }
     }
 
     // ==========================================
