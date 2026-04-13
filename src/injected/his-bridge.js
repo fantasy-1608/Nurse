@@ -1560,6 +1560,7 @@
     // ==========================================
     function handleFillVtItem(data) {
         var ma       = data.ma       || '';
+        var ten      = data.ten      || '';
         var sl       = data.sl       || 1;
         var cachdung = data.cachdung || '';
 
