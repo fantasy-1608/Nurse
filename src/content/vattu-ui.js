@@ -10,6 +10,7 @@ const QuyenVatTuUI = (function () {
     'use strict';
 
     let _container = null;
+    // eslint-disable-next-line no-unused-vars -- cache nội bộ, dùng trong refresh→renderResult
     let _lastResult = null;
     let _loading = false;
     let _fillingIdx = null; // row đang trong trạng thái điền
