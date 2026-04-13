@@ -1689,15 +1689,23 @@
 
             if (popupRow) {
                 clearInterval(checkTimer);
-                log.debug('🧰 Combogrid tìm thấy item, đang chọn...');
+                log.debug('🧰 Combogrid tìm thấy item, đang chọn bằng ArrowDown + Enter...');
 
-                // Click với đầy đủ mouse event chain cho jQuery UI combogrid
-                popupRow.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                popupRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                popupRow.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-                popupRow.click();
+                vtInput.focus();
                 if (vtWin && vtWin.$) {
-                    vtWin.$(popupRow).trigger('mouseover').trigger('mousedown').trigger('mouseup').trigger('click');
+                    var $in = vtWin.$(vtInput);
+                    $in.trigger(vtWin.$.Event('keydown', { keyCode: 40, which: 40, key: 'ArrowDown' }));
+                    $in.trigger(vtWin.$.Event('keyup',   { keyCode: 40, which: 40, key: 'ArrowDown' }));
+                    setTimeout(function() {
+                        $in.trigger(vtWin.$.Event('keydown',  { keyCode: 13, which: 13, key: 'Enter' }));
+                        $in.trigger(vtWin.$.Event('keypress', { keyCode: 13, which: 13, key: 'Enter' }));
+                        $in.trigger(vtWin.$.Event('keyup',    { keyCode: 13, which: 13, key: 'Enter' }));
+                    }, 50);
+                } else {
+                    vtInput.dispatchEvent(new KeyboardEvent('keydown', { bubbles:true, cancelable:true, keyCode:40, which:40, key:'ArrowDown' }));
+                    setTimeout(function() {
+                        vtInput.dispatchEvent(new KeyboardEvent('keydown', { bubbles:true, cancelable:true, keyCode:13, which:13, key:'Enter' }));
+                    }, 50);
                 }
 
                 // ─── 5. Điền Đường dùng, SL, Cách dùng ─────────────────
