@@ -104,7 +104,7 @@ const QuyenVatTuUI = (function () {
     function renderError(msg) {
         if (!_container) return;
         _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-error"><div style="font-size:20px;margin-bottom:6px;">⚠️</div><div style="font-size:12px;color:#c62828;">' + escapeHtml(msg) + '</div><button id="quyen-vt-retry" style="margin-top:10px;background:#e91e63;color:#fff;padding:5px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;">🔄 Thử lại</button></div></div>';
-        let retryBtn = _container.querySelector('#quyen-vt-retry');
+        const retryBtn = _container.querySelector('#quyen-vt-retry');
         if (retryBtn) retryBtn.addEventListener('click', refresh);
     }
 
@@ -113,17 +113,17 @@ const QuyenVatTuUI = (function () {
     // =========================================================
     function renderResult(result) {
         if (!_container) return;
-        let suggestedVT = result.suggestedVT;
-        let existingVT  = result.existingVT;
-        let drugs       = result.drugs;
+        const suggestedVT = result.suggestedVT;
+        const existingVT  = result.existingVT;
+        const drugs       = result.drugs;
 
         // ── Existing VT ──────────────────────────────────────
         let existingHtml = '';
         if (existingVT && existingVT.length > 0) {
-            let vtMap = new Map();
-            for (var ei = 0; ei < existingVT.length; ei++) {
-                let eItem = existingVT[ei];
-                let eKey = eItem.ma || eItem.MADICHVU || '';
+            const vtMap = new Map();
+            for (let ei = 0; ei < existingVT.length; ei++) {
+                const eItem = existingVT[ei];
+                const eKey = eItem.ma || eItem.MADICHVU || '';
                 if (!vtMap.has(eKey)) {
                     vtMap.set(eKey, {
                         ma:  eKey,
@@ -135,8 +135,8 @@ const QuyenVatTuUI = (function () {
                     vtMap.get(eKey).sl += parseInt(eItem.sl || eItem.SOLUONG || 1, 10);
                 }
             }
-            let vtList = Array.from(vtMap.values());
-            let existRows = vtList.map(function(item) {
+            const vtList = Array.from(vtMap.values());
+            const existRows = vtList.map(function(item) {
                 return '<div class="quyen-vt-existing-item"><span class="quyen-vt-ma">' + escapeHtml(item.ma) + '</span><span class="quyen-vt-ten">' + escapeHtml(item.ten) + '</span><span class="quyen-vt-sl-badge">' + item.sl + ' ' + escapeHtml(item.dvt) + '</span></div>';
             }).join('');
             existingHtml = '<div class="quyen-vt-section"><div class="quyen-vt-section-title">✅ Phiếu VT đang có <span class="quyen-vt-count">' + vtList.length + ' loại</span></div><div class="quyen-vt-existing-list">' + existRows + '</div></div>';
@@ -145,7 +145,7 @@ const QuyenVatTuUI = (function () {
         // ── Suggested VT ──────────────────────────────────────
         let suggestHtml = '';
         if (suggestedVT && suggestedVT.length > 0) {
-            let ruleLabel = {
+            const ruleLabel = {
                 base:    '🩺 Cơ bản',
                 tmc:     '💉 Tiêm bắp/TMC',
                 ttm:     '💧 Truyền dịch (TTM)',
@@ -153,10 +153,10 @@ const QuyenVatTuUI = (function () {
                 wound:   '🩹 Vết thương'
             };
             // Group by rule
-            let grouped = {};
-            for (var si = 0; si < suggestedVT.length; si++) {
-                let sItem = suggestedVT[si];
-                let r = sItem.rule || 'base';
+            const grouped = {};
+            for (let si = 0; si < suggestedVT.length; si++) {
+                const sItem = suggestedVT[si];
+                const r = sItem.rule || 'base';
                 if (!grouped[r]) grouped[r] = [];
                 grouped[r].push(sItem);
             }
@@ -164,15 +164,15 @@ const QuyenVatTuUI = (function () {
             suggestHtml = '<div class="quyen-vt-section"><div class="quyen-vt-section-title">💡 Gợi ý theo thuốc <span class="quyen-vt-count">' + suggestedVT.length + ' loại</span></div><div class="quyen-vt-suggest-list" id="quyen-vt-suggest-list">';
 
             let rowIdx = 0;
-            let rules = Object.keys(grouped);
-            for (var ri = 0; ri < rules.length; ri++) {
-                let rule = rules[ri];
-                let rItems = grouped[rule];
+            const rules = Object.keys(grouped);
+            for (let ri = 0; ri < rules.length; ri++) {
+                const rule = rules[ri];
+                const rItems = grouped[rule];
                 suggestHtml += '<div class="quyen-vt-rule-group"><div class="quyen-vt-rule-label">' + (ruleLabel[rule] || rule) + '</div>';
-                for (var rii = 0; rii < rItems.length; rii++) {
-                    let item = rItems[rii];
-                    let isWound = (rule === 'wound');
-                    let noteHtml = item.note ? '<div class="quyen-vt-note-text">ℹ️ ' + escapeHtml(item.note) + '</div>' : '';
+                for (let rii = 0; rii < rItems.length; rii++) {
+                    const item = rItems[rii];
+                    const isWound = (rule === 'wound');
+                    const noteHtml = item.note ? '<div class="quyen-vt-note-text">ℹ️ ' + escapeHtml(item.note) + '</div>' : '';
                     suggestHtml += '<div class="quyen-vt-suggest-row' + (isWound ? ' quyen-vt-wound' : '') + '" data-idx="' + rowIdx + '" data-ma="' + escapeHtml(item.ma) + '">' +
                         '<div class="quyen-vt-row-top">' +
                             '<input type="checkbox" class="quyen-vt-check" id="quyen-vt-chk-' + rowIdx + '" data-idx="' + rowIdx + '"' + (isWound ? '' : ' checked') + '>' +
@@ -202,36 +202,36 @@ const QuyenVatTuUI = (function () {
             suggestHtml = '<div class="quyen-vt-empty">Không gợi ý thêm VT nào.<br>(BN chỉ có thuốc Uống)</div>';
         }
 
-        let kimLuonNote = (suggestedVT && suggestedVT.some(function(v) { return v.ma === 'BO560'; })) ?
+        const kimLuonNote = (suggestedVT && suggestedVT.some(function(v) { return v.ma === 'BO560'; })) ?
             '<div class="quyen-vt-kim-note">📌 <strong>KI306</strong> + <strong>BA365</strong>: thêm khi lắp kim luồn mới (3–4 ngày/lần)</div>' : '';
 
         let drugTags = '';
         if (drugs && drugs.length > 0) {
-            let tagItems = drugs.slice(0, 4).map(function(d) {
+            const tagItems = drugs.slice(0, 4).map(function(d) {
                 return '<span class="quyen-vt-drug-tag">' + escapeHtml(d.ten ? d.ten.split(' ')[0] : d.ma) + '</span>';
             });
             if (drugs.length > 4) tagItems.push('<span class="quyen-vt-drug-tag">+' + (drugs.length - 4) + '</span>');
             drugTags = '<div class="quyen-vt-drug-summary"><span>💊 Hôm nay: ' + drugs.length + ' thuốc — </span><span class="quyen-vt-drug-tags">' + tagItems.join('') + '</span></div>';
         }
 
-        let actionsHtml = (suggestedVT && suggestedVT.length > 0) ?
+        const actionsHtml = (suggestedVT && suggestedVT.length > 0) ?
             '<div class="quyen-vt-actions"><button class="quyen-vt-copy-btn" id="quyen-vt-copy">📋 Copy danh sách</button></div>' : '';
 
         _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-toolbar">' + drugTags + '<button class="quyen-vt-refresh-btn" id="quyen-vt-refresh" title="Đọc lại từ HIS">🔄</button></div>' + existingHtml + suggestHtml + kimLuonNote + actionsHtml + '</div>';
 
         // Wire events
-        let refreshBtn = _container.querySelector('#quyen-vt-refresh');
+        const refreshBtn = _container.querySelector('#quyen-vt-refresh');
         if (refreshBtn) refreshBtn.addEventListener('click', refresh);
 
-        let copyBtn = _container.querySelector('#quyen-vt-copy');
+        const copyBtn = _container.querySelector('#quyen-vt-copy');
         if (copyBtn) copyBtn.addEventListener('click', function () { copyToClipboard(suggestedVT); });
 
         // Wire nút Điền
-        let fillBtns = _container.querySelectorAll('.quyen-vt-fill-btn');
-        for (var fi = 0; fi < fillBtns.length; fi++) {
+        const fillBtns = _container.querySelectorAll('.quyen-vt-fill-btn');
+        for (let fi = 0; fi < fillBtns.length; fi++) {
             (function(btn) {
                 btn.addEventListener('click', function () {
-                    let idx = parseInt(btn.getAttribute('data-idx'), 10);
+                    const idx = parseInt(btn.getAttribute('data-idx'), 10);
                     onClickFill(idx, suggestedVT);
                 });
             })(fillBtns[fi]);
@@ -248,15 +248,15 @@ const QuyenVatTuUI = (function () {
             return;
         }
 
-        let item = suggestedVT && suggestedVT[idx];
+        const item = suggestedVT && suggestedVT[idx];
         if (!item) return;
 
-        let slInput  = _container.querySelector('#quyen-vt-sl-'   + idx);
-        let cdInput  = _container.querySelector('#quyen-vt-cd-'   + idx);
-        let fillBtn  = _container.querySelector('#quyen-vt-fill-' + idx);
+        const slInput  = _container.querySelector('#quyen-vt-sl-'   + idx);
+        const cdInput  = _container.querySelector('#quyen-vt-cd-'   + idx);
+        const fillBtn  = _container.querySelector('#quyen-vt-fill-' + idx);
 
-        let sl       = slInput ? (parseInt(slInput.value, 10) || item.sl) : item.sl;
-        let cachdung = cdInput ? cdInput.value.trim() : item.cachdung;
+        const sl       = slInput ? (parseInt(slInput.value, 10) || item.sl) : item.sl;
+        const cachdung = cdInput ? cdInput.value.trim() : item.cachdung;
 
         // Nếu đang fill → đưa vào hàng đợi
         if (_fillInProgress) {
@@ -270,7 +270,7 @@ const QuyenVatTuUI = (function () {
     }
 
     function _executeFill(idx, item, sl, cachdung) {
-        let fillBtn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
+        const fillBtn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
 
         _fillInProgress = true;
         _fillingIdx = idx;
@@ -299,7 +299,7 @@ const QuyenVatTuUI = (function () {
 
     function _processNextFill() {
         if (_fillQueue.length === 0) return;
-        let next = _fillQueue.shift();
+        const next = _fillQueue.shift();
         // Delay 500ms giữa các fill để HIS form reset
         setTimeout(function () {
             _executeFill(next.idx, next.item, next.sl, next.cachdung);
@@ -310,7 +310,7 @@ const QuyenVatTuUI = (function () {
     // KẾT QUẢ ĐIỀN (★ Trigger queue tiếp theo khi hoàn thành)
     // =========================================================
     function onFillResult(data) {
-        let idx = _fillingIdx;
+        const idx = _fillingIdx;
         _fillingIdx = null;
         _fillInProgress = false;
 
@@ -329,7 +329,7 @@ const QuyenVatTuUI = (function () {
 
     function resetFillBtn(idx, label) {
         if (idx === null || idx === undefined) return;
-        let btn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
+        const btn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
         if (btn) { btn.textContent = label; btn.disabled = false; }
     }
 
@@ -339,16 +339,16 @@ const QuyenVatTuUI = (function () {
     function copyToClipboard(suggestedVT) {
         if (!suggestedVT || suggestedVT.length === 0) return;
 
-        let checkedItems = [];
-        let rows = _container ? _container.querySelectorAll('.quyen-vt-suggest-row') : [];
-        for (var i = 0; i < rows.length; i++) {
-            let row  = rows[i];
-            let idx  = parseInt(row.getAttribute('data-idx'), 10);
-            let chk  = row.querySelector('.quyen-vt-check');
-            let slI  = row.querySelector('.quyen-vt-sl-input');
-            let cdI  = row.querySelector('.quyen-vt-cachdung-input');
+        const checkedItems = [];
+        const rows = _container ? _container.querySelectorAll('.quyen-vt-suggest-row') : [];
+        for (let i = 0; i < rows.length; i++) {
+            const row  = rows[i];
+            const idx  = parseInt(row.getAttribute('data-idx'), 10);
+            const chk  = row.querySelector('.quyen-vt-check');
+            const slI  = row.querySelector('.quyen-vt-sl-input');
+            const cdI  = row.querySelector('.quyen-vt-cachdung-input');
             if (chk && chk.checked) {
-                let item = suggestedVT[idx];
+                const item = suggestedVT[idx];
                 if (item) {
                     checkedItems.push({
                         ma: item.ma, ten: item.ten, dvt: item.dvt, huong: item.huong,
@@ -361,10 +361,10 @@ const QuyenVatTuUI = (function () {
 
         if (checkedItems.length === 0) { showToast('Không có VT nào được chọn!', 'warning'); return; }
 
-        let today = new Date().toLocaleDateString('vi-VN');
+        const today = new Date().toLocaleDateString('vi-VN');
         let text  = 'DANH SÁCH VẬT TƯ GỢI Ý — ' + today + '\n' + '═'.repeat(40) + '\n';
-        for (var n = 0; n < checkedItems.length; n++) {
-            let ci = checkedItems[n];
+        for (let n = 0; n < checkedItems.length; n++) {
+            const ci = checkedItems[n];
             text += (n + 1) + '. [' + ci.ma + '] ' + ci.ten + '\n';
             text += '   SL: ' + ci.sl + ' ' + ci.dvt + '  |  ' + ci.huong + '\n';
             if (ci.cachdung) text += '   Cách dùng: ' + ci.cachdung + '\n';
@@ -374,7 +374,7 @@ const QuyenVatTuUI = (function () {
         navigator.clipboard.writeText(text).then(function () {
             showToast('✅ Đã copy ' + checkedItems.length + ' VT!', 'success');
         }).catch(function () {
-            let ta = document.createElement('textarea');
+            const ta = document.createElement('textarea');
             ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
             document.body.appendChild(ta); ta.select(); document.execCommand('copy');
             document.body.removeChild(ta);
@@ -389,7 +389,7 @@ const QuyenVatTuUI = (function () {
         if (typeof QuyenUI !== 'undefined' && QuyenUI.showToast) {
             QuyenUI.showToast(msg, type);
         } else {
-            let el = document.createElement('div');
+            const el = document.createElement('div');
             el.style.cssText = 'position:fixed;bottom:80px;right:20px;background:#333;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;z-index:100002;';
             el.textContent = msg;
             document.body.appendChild(el);
