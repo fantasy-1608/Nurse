@@ -1751,8 +1751,11 @@
                                     var eName = enterEvts[eidx];
                                     var eEvt = new KeyboardEvent(eName, {
                                         bubbles: true, cancelable: true,
-                                        key: 'Enter', code: 'Enter', keyCode: 13, which: 13
+                                        key: 'Enter', code: 'Enter'
                                     });
+                                    // Hack Chrome chối từ set keyCode trong constructor
+                                    Object.defineProperty(eEvt, 'keyCode', { get: function() { return 13; } });
+                                    Object.defineProperty(eEvt, 'which', { get: function() { return 13; } });
                                     confirmEl.dispatchEvent(eEvt);
                                     if (vtWin && vtWin.$) {
                                         vtWin.$(confirmEl).trigger(vtWin.$.Event(eName, { keyCode: 13, which: 13, key: 'Enter' }));
