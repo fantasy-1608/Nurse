@@ -1665,11 +1665,8 @@
                 var cgItem = cgItems[cgi];
                 try { var cgR = cgItem.getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
                 catch(ex) { if (cgItem.offsetHeight === 0) continue; }
-                var cgTxt = (cgItem.textContent || '').toLowerCase();
-                if ((nameWords.length > 0 && cgTxt.indexOf(nameWords[0].toLowerCase()) >= 0) ||
-                    (ma && cgTxt.indexOf(ma.toLowerCase()) >= 0)) {
-                    popupRow = cgItem; break;
-                }
+                // Lấy item đầu tiên hiển thị
+                popupRow = cgItem; break;
             }
             // Fallback A: tr.jqgrow
             if (!popupRow) {
@@ -1677,11 +1674,8 @@
                 for (var jri = 0; jri < jqRows.length; jri++) {
                     try { var jR = jqRows[jri].getBoundingClientRect(); if (jR.height === 0 || jR.width === 0) continue; }
                     catch(ex2) { if (jqRows[jri].offsetHeight === 0) continue; }
-                    var jTxt = (jqRows[jri].textContent || '').toLowerCase();
-                    if ((nameWords.length > 0 && jTxt.indexOf(nameWords[0].toLowerCase()) >= 0) ||
-                        (ma && jTxt.indexOf(ma.toLowerCase()) >= 0)) {
-                        popupRow = jqRows[jri]; break;
-                    }
+                    // Lấy item đầu tiên hiển thị
+                    popupRow = jqRows[jri]; break;
                 }
             }
             // Fallback B: li.ui-menu-item
@@ -1739,15 +1733,19 @@
                     var confirmEl = cdInput || slInput;
                     if (confirmEl) {
                         confirmEl.focus();
-                        var eEvt = new KeyboardEvent('keydown', {
-                            bubbles: true, cancelable: true,
-                            key: 'Enter', code: 'Enter', keyCode: 13, which: 13
-                        });
-                        confirmEl.dispatchEvent(eEvt);
-                        if (vtWin && vtWin.$) {
-                            vtWin.$(confirmEl).trigger(vtWin.$.Event('keydown', { keyCode: 13, which: 13, key: 'Enter' }));
+                        var enterEvts = ['keydown', 'keypress', 'keyup'];
+                        for (var eidx = 0; eidx < enterEvts.length; eidx++) {
+                            var eName = enterEvts[eidx];
+                            var eEvt = new KeyboardEvent(eName, {
+                                bubbles: true, cancelable: true,
+                                key: 'Enter', code: 'Enter', keyCode: 13, which: 13
+                            });
+                            confirmEl.dispatchEvent(eEvt);
+                            if (vtWin && vtWin.$) {
+                                vtWin.$(confirmEl).trigger(vtWin.$.Event(eName, { keyCode: 13, which: 13, key: 'Enter' }));
+                            }
                         }
-                        log.debug('🧰 Enter trên #txtGHICHU → xác nhận thêm VT vào danh sách');
+                        log.debug('🧰 Enter (keydown+keypress+keyup) trên #txtGHICHU → thêm vào list');
                     }
 
                     postResult(true, '');
