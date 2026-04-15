@@ -1,4 +1,4 @@
-# 💉 Điều Dưỡng Extension v1.2.2
+# 💉 Điều Dưỡng Extension v1.3.0
 
 > Trợ lý tự động nhập liệu trên VNPT HIS cho Điều dưỡng viên
 
@@ -191,7 +191,7 @@ background.js (service worker)
 
 Xem chi tiết tại [CHANGELOG.md](CHANGELOG.md).
 
-### v1.2.2 (16/04/2026) — Phiếu Vật Tư Auto & UI Polish
+### v1.3.0 (16/04/2026) — Phiếu Vật Tư Auto & UI Polish
 
 - Thêm hệ thống "Phiếu vật tư": Auto chọn Kho, Điền bác sĩ, loại bỏ các popup HIS phiền nhức nhối.
 - Tái cấu trúc lại UI Phiếu Vật Tư thành dạng list cực kỳ khoa học, nhỏ gọn.

@@ -43,7 +43,7 @@
         }, 500);
     }
 
-    log.debug('HIS Bridge v1.2.1 — __EXT_NAME__! __EXT_EMOJI__');
+    log.debug('HIS Bridge v1.3.0 — __EXT_NAME__! __EXT_EMOJI__');
 
     // ★ 3.2: HIS Version Detection — ghi nhận version HIS đang chạy
     (function detectHISVersion() {
@@ -2618,5 +2618,5 @@
     })();
 
     // ★ AUDIT FIX: Thêm bridgeVersion để content script có thể kiểm tra compatibility
-    window.postMessage({ type: 'QUYEN_BRIDGE_READY', status: 'ready', bridgeVersion: '1.2.1' }, window.location.origin);
+    window.postMessage({ type: 'QUYEN_BRIDGE_READY', status: 'ready', bridgeVersion: '1.3.0' }, window.location.origin);
 })();
