@@ -1583,10 +1583,12 @@
     }
 
     // ==========================================
-    // ==========================================
     // FILL VT ITEM — Điền VT vào phiếu HIS đang mở
-    // IDs chính xác từ DOM: #txtDS_THUOC (combogrid), #cboDUONG_DUNG,
-    //                       #txtSOLUONG_TONG, #txtGHICHU
+    // ★ Viết lại hoàn toàn theo cơ chế infusion filler (handleTypeText):
+    //   - Native KeyboardEvent từ đúng iframe window context
+    //   - Gõ từng ký tự với 50ms delay
+    //   - Tìm combogrid xuyên tất cả documents (parent/top)
+    //   - ArrowDown sau khi gõ xong
     // ==========================================
     function handleFillVtItem(data) {
         var ma       = data.ma       || '';
@@ -1601,7 +1603,6 @@
             }, location.origin);
         }
 
-        // ─── 1. Tìm document chứa form phiếu VT (#txtDS_THUOC) ──────────
         var allDocs = getAllDocuments();
         var vtDoc = null, vtWin = null;
         for (var di = 0; di < allDocs.length; di++) {
@@ -1613,106 +1614,141 @@
         }
         if (!vtDoc) { postResult(false, 'Chưa mở phiếu vật tư. Vui lòng mở phiếu HIS trước khi bấm Điền.'); return; }
 
-        // ─── 2. Lấy các input bằng exact ID ─────────────────────────────
         var vtInput  = vtDoc.getElementById('txtDS_THUOC');
         var ddSelect = vtDoc.getElementById('cboDUONG_DUNG');
         var slInput  = vtDoc.getElementById('txtSOLUONG_TONG');
         var cdInput  = vtDoc.getElementById('txtGHICHU');
         if (!vtInput) { postResult(false, 'Không tìm thấy #txtDS_THUOC trong form.'); return; }
 
+        var elWin = vtWin || (vtInput.ownerDocument && vtInput.ownerDocument.defaultView) || window;
+
         function triggerInput(el, val) {
             el.value = val;
-            if (vtWin && vtWin.$) {
-                vtWin.$(el).val(val).trigger('input').trigger('keyup').trigger('change');
-            } else {
+            try {
+                el.dispatchEvent(new elWin.Event('input', { bubbles: true }));
+                el.dispatchEvent(new elWin.Event('change', { bubbles: true }));
+            } catch(e) {
                 el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
             }
         }
 
-        // ─── 3. Gõ MÃ VT vào #txtDS_THUOC ──────────────
-        // Tìm trực tiếp theo mã vật tư, không dùng wildcard % nữa
         var searchTerm = ma || ten;
 
         vtInput.focus();
-        if (vtWin && vtWin.$) {
-            // Fake backspace để reset cache jQuery UI Autocomplete (cần keyCode thì jQuery UI mới nhận)
-            vtWin.$(vtInput).trigger(vtWin.$.Event('keydown', { keyCode: 8, which: 8 }));
-            vtWin.$(vtInput).val('').trigger('input');
-            vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',   { keyCode: 8, which: 8 }));
-            
-            for (var ci = 0; ci < searchTerm.length; ci++) {
-                var c = searchTerm[ci];
-                vtInput.value += c;
-                vtWin.$(vtInput).trigger(vtWin.$.Event('keydown',  { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
-                vtWin.$(vtInput).trigger(vtWin.$.Event('keypress', { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
-                vtWin.$(vtInput).trigger('input');
-                vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',    { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
-            }
-        } else {
-            vtInput.value = '';
-            vtInput.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 8, bubbles: true }));
+        vtInput.click();
+        vtInput.value = '';
+        try {
+            vtInput.dispatchEvent(new elWin.Event('input', { bubbles: true }));
+        } catch(e) {
             vtInput.dispatchEvent(new Event('input', { bubbles: true }));
-            vtInput.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 8, bubbles: true }));
-            
-            for (var ci2 = 0; ci2 < searchTerm.length; ci2++) {
-                vtInput.value += searchTerm[ci2];
-                vtInput.dispatchEvent(new Event('input', { bubbles: true }));
-                vtInput.dispatchEvent(new KeyboardEvent('keyup', { keyCode: searchTerm.charCodeAt(ci2), bubbles: true }));
-            }
         }
-        log.debug('🧰 Tìm VT: "' + searchTerm + '", chờ combogrid...');
 
-        // ─── 4. Polling combogrid popup (500ms × 15 = 7.5s max) ───────────
-        var retries = 0, maxRetries = 15;
-        var checkTimer = setInterval(function () {
+        var charIdx = 0;
+        function typeNextChar() {
+            if (charIdx >= searchTerm.length) {
+                try {
+                    vtInput.dispatchEvent(new elWin.KeyboardEvent('keydown', {
+                        keyCode: 40, which: 40, key: 'ArrowDown',
+                        bubbles: true, cancelable: true
+                    }));
+                    vtInput.dispatchEvent(new elWin.KeyboardEvent('keyup', {
+                        keyCode: 40, which: 40, key: 'ArrowDown',
+                        bubbles: true, cancelable: true
+                    }));
+                } catch(e) {
+                    vtInput.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 40, bubbles: true }));
+                    vtInput.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 40, bubbles: true }));
+                }
+                log.debug('🧰 Tìm VT: "' + searchTerm + '", gõ xong + ArrowDown, chờ combogrid...');
+                startComboGridPolling();
+                return;
+            }
+
+            var char = searchTerm[charIdx];
+            var kc = char.toUpperCase().charCodeAt(0);
+
+            try {
+                vtInput.dispatchEvent(new elWin.KeyboardEvent('keydown', {
+                    keyCode: kc, which: kc, key: char,
+                    bubbles: true, cancelable: true
+                }));
+                vtInput.dispatchEvent(new elWin.KeyboardEvent('keypress', {
+                    keyCode: kc, which: kc, key: char,
+                    bubbles: true, cancelable: true
+                }));
+
+                vtInput.value = vtInput.value + char;
+                vtInput.dispatchEvent(new elWin.Event('input', { bubbles: true }));
+
+                vtInput.dispatchEvent(new elWin.KeyboardEvent('keyup', {
+                    keyCode: kc, which: kc, key: char,
+                    bubbles: true, cancelable: true
+                }));
+            } catch(e) {
+                vtInput.value = vtInput.value + char;
+                vtInput.dispatchEvent(new KeyboardEvent('keydown', { keyCode: kc, bubbles: true }));
+                vtInput.dispatchEvent(new Event('input', { bubbles: true }));
+                vtInput.dispatchEvent(new KeyboardEvent('keyup', { keyCode: kc, bubbles: true }));
+            }
+
+            charIdx++;
+            setTimeout(typeNextChar, 50);
+        }
+        typeNextChar();
+
+        function startComboGridPolling() {
+            var retries = 0, maxRetries = 20;
+            var checkTimer = setInterval(function () {
                 retries++;
                 var popupRow = null;
                 var allVisible = [];
 
-                // ★ Bơm lại phím sau mỗi 1.5s (3 retries) nếu chưa thấy popup, đề phòng HIS đang bận tải AJAX Kho VT nên nuốt phím đợt đầu
-                if (retries > 1 && retries % 3 === 0) {
-                    var lastChar = searchTerm.charCodeAt(searchTerm.length - 1) || 13;
-                    if (vtWin && vtWin.$) {
-                        vtWin.$(vtInput).val(searchTerm).trigger('input');
-                        vtWin.$(vtInput).trigger(vtWin.$.Event('keydown', { keyCode: lastChar, which: lastChar }));
-                        vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',   { keyCode: lastChar, which: lastChar }));
-                        log.debug('🧰 Re-trigger search do HIS chưa phản hồi...');
-                    } else {
-                        vtInput.value = searchTerm;
+                if (retries > 1 && retries % 4 === 0) {
+                    log.debug('🧰 Re-trigger search...');
+                    vtInput.value = searchTerm;
+                    try {
+                        vtInput.dispatchEvent(new elWin.Event('input', { bubbles: true }));
+                        vtInput.dispatchEvent(new elWin.KeyboardEvent('keydown', {
+                            keyCode: 40, which: 40, key: 'ArrowDown',
+                            bubbles: true, cancelable: true
+                        }));
+                        vtInput.dispatchEvent(new elWin.KeyboardEvent('keyup', {
+                            keyCode: 40, which: 40, key: 'ArrowDown',
+                            bubbles: true, cancelable: true
+                        }));
+                    } catch(e) {
                         vtInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        vtInput.dispatchEvent(new KeyboardEvent('keyup', { keyCode: lastChar, bubbles: true }));
+                        vtInput.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 40, bubbles: true }));
                     }
                 }
 
-                // Priority 1: HIS combogrid — div.cg-comboItem / div.cg-menu-item
-                var cgItems = vtDoc.querySelectorAll('div.cg-comboItem, div.cg-menu-item');
-                for (var cgi = 0; cgi < cgItems.length; cgi++) {
-                    var cgItem = cgItems[cgi];
-                    try { var cgR = cgItem.getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
-                    catch(ex) { if (cgItem.offsetHeight === 0) continue; }
-                    allVisible.push(cgItem);
-                }
-                // Fallback A: tr.jqgrow
-                if (allVisible.length === 0) {
-                    var jqRows = vtDoc.querySelectorAll('tr.jqgrow');
-                    for (var jri = 0; jri < jqRows.length; jri++) {
-                        try { var jR = jqRows[jri].getBoundingClientRect(); if (jR.height === 0 || jR.width === 0) continue; }
-                        catch(ex2) { if (jqRows[jri].offsetHeight === 0) continue; }
-                        allVisible.push(jqRows[jri]);
-                    }
-                }
-                // Fallback B: li.ui-menu-item
-                if (allVisible.length === 0) {
-                    var liItems = vtDoc.querySelectorAll('ul.ui-autocomplete li.ui-menu-item');
-                    for (var li2 = 0; li2 < liItems.length; li2++) {
-                        try { if (liItems[li2].getBoundingClientRect().height > 0) allVisible.push(liItems[li2]); }
-                        catch(e2) { if (liItems[li2].offsetHeight > 0) allVisible.push(liItems[li2]); }
-                    }
+                var searchDocs = [vtDoc];
+                try { if (window.parent && window.parent.document && window.parent.document !== vtDoc) searchDocs.push(window.parent.document); } catch(e) {}
+                try { if (window.top && window.top.document && window.top.document !== vtDoc) searchDocs.push(window.top.document); } catch(e) {}
+                if (document !== vtDoc) searchDocs.push(document);
+
+                for (var si = 0; si < searchDocs.length; si++) {
+                    try {
+                        var searchDoc = searchDocs[si];
+                        var cgItems = searchDoc.querySelectorAll('.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item, .cg-comboItem');
+                        for (var cgi = 0; cgi < cgItems.length; cgi++) {
+                            var cgItem = cgItems[cgi];
+                            try { var cgR = cgItem.getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
+                            catch(ex) { if (cgItem.offsetHeight === 0) continue; }
+                            allVisible.push(cgItem);
+                        }
+                        if (allVisible.length === 0) {
+                            var jqRows = searchDoc.querySelectorAll('tr.jqgrow');
+                            for (var jri = 0; jri < jqRows.length; jri++) {
+                                try { if (jqRows[jri].getBoundingClientRect().height > 0) allVisible.push(jqRows[jri]); }
+                                catch(ex2) { if (jqRows[jri].offsetHeight > 0) allVisible.push(jqRows[jri]); }
+                            }
+                        }
+                        if (allVisible.length > 0) break;
+                    } catch(e) { /* cross-origin */ }
                 }
 
-                // ★ Ưu tiên item có mã VT trùng khớp (chính xác hơn lấy item đầu)
                 if (allVisible.length > 0) {
                     for (var vi = 0; vi < allVisible.length; vi++) {
                         var rowText = (allVisible[vi].textContent || '').toUpperCase();
@@ -1722,43 +1758,37 @@
                             break;
                         }
                     }
-                    // Fallback: lấy item đầu tiên nếu không match mã
                     if (!popupRow) popupRow = allVisible[0];
                 }
 
                 if (popupRow) {
                     clearInterval(checkTimer);
-                    // Click với đầy đủ mouse event chain
                     var innerDivs = popupRow.querySelectorAll('.cg-DivItem');
                     var clickTarget = popupRow;
-                    for (var ci = 0; ci < innerDivs.length; ci++) {
-                        if (innerDivs[ci].offsetWidth > 0 && innerDivs[ci].style.display !== 'none') {
-                            clickTarget = innerDivs[ci];
+                    for (var ci2 = 0; ci2 < innerDivs.length; ci2++) {
+                        if (innerDivs[ci2].offsetWidth > 0 && innerDivs[ci2].style.display !== 'none') {
+                            clickTarget = innerDivs[ci2];
                             break;
                         }
                     }
 
                     log.debug('🧰 Target click tìm thấy:', clickTarget.className);
 
-                    // 1. Native JS click trên inner div (đã đủ để chốt dropdown)
                     clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                     clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
                     clickTarget.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
                     clickTarget.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
 
-                    // 2. jQuery click fallback đóng gói trong try..catch để tránh crash script
-                    if (vtWin && vtWin.$) {
-                        try {
-                            vtWin.$(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
-                        } catch (e) {
-                            log.debug('jQuery click fallback error (có thể an toàn bỏ qua):', e.message);
+                    try {
+                        var itemWin = (clickTarget.ownerDocument && clickTarget.ownerDocument.defaultView) || window;
+                        var jq = itemWin.jQuery || itemWin.$ || (window.parent && window.parent.jQuery) || (window.top && window.top.jQuery);
+                        if (jq) {
+                            jq(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
+                            jq(popupRow).trigger('mousedown').trigger('mouseup').trigger('click');
                         }
-                    }
+                    } catch (e) { /* ignore */ }
 
-                    // ─── 5. Điền Đường dùng, SL, Cách dùng ─────────────────
-                    // Delay 1500ms: chờ HIS hoàn thành XHR async sau khi chọn combogrid
                     setTimeout(function () {
-                        // Đường dùng → "Dùng ngoài" (value 2445 trong cboDUONG_DUNG)
                         if (ddSelect && ddSelect.options) {
                             for (var oi = 0; oi < ddSelect.options.length; oi++) {
                                 if (ddSelect.options[oi].value === '2445') {
@@ -1770,10 +1800,8 @@
                                 }
                             }
                         }
-                        // Số lượng → #txtSOLUONG_TONG
                         if (slInput) { triggerInput(slInput, String(sl)); log.debug('🧰 SL =', sl); }
 
-                        // Cách dùng → #txtGHICHU (không tự blur để giữ tự nhiên)
                         if (cdInput && cachdung) {
                             cdInput.focus();
                             triggerInput(cdInput, cachdung);
@@ -1805,6 +1833,7 @@
                     postResult(false, 'Không tìm thấy "' + searchTerm + '" trong kho VT. Kiểm tra lại tên hoặc thêm thủ công.');
                 }
             }, 500);
+        }
     }
 
     // ==========================================
