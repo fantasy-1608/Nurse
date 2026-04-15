@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "__EXT_NAME__",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "description": "__EXT_DESC__",
     "author": "Huỳnh Trung Anh",
     "permissions": [

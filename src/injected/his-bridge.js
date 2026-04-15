@@ -1248,6 +1248,9 @@
             case 'QUYEN_FILL_VT_ITEM':
                 handleFillVtItem(event.data);
                 break;
+            case 'QUYEN_VT_SEND_ENTER':
+                handleVtSendEnter();
+                break;
             case 'QUYEN_FILL_COMBOGRID':
                 handleFillComboGrid(event.data.tasks);
                 break;
@@ -1590,6 +1593,7 @@
         var ten      = data.ten      || '';
         var sl       = data.sl       || 1;
         var cachdung = data.cachdung || '';
+        var doctor   = data.doctor   || '';
 
         function postResult(ok, err) {
             window.postMessage({
@@ -1627,9 +1631,9 @@
             }
         }
 
-        // ─── 3. Gõ TÊN VT (3 từ đầu) vào #txtDS_THUOC ──────────────────
-        var nameWords  = (ten || '').split(' ').filter(function(w) { return w.length > 0; });
-        var searchTerm = nameWords.slice(0, 3).join(' ') || ma;
+        // ─── 3. Gõ MÃ VT vào #txtDS_THUOC ──────────────
+        // Tìm trực tiếp theo mã vật tư, không dùng wildcard % nữa
+        var searchTerm = ma || ten;
 
         vtInput.focus();
         if (vtWin && vtWin.$) {
@@ -1651,13 +1655,14 @@
                 vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
             }
         }
-        log.debug('🧰 Tìm VT bằng tên: "' + searchTerm + '", chờ combogrid...');
+        log.debug('🧰 Tìm VT: "' + searchTerm + '", chờ combogrid...');
 
-        // ─── 4. Polling combogrid popup (500ms × 12 = 6s max) ───────────
+        // ─── 4. Polling combogrid popup (500ms × 15 = 7.5s max) ───────────
         var retries = 0, maxRetries = 15;
         var checkTimer = setInterval(function () {
                 retries++;
                 var popupRow = null;
+                var allVisible = [];
 
                 // Priority 1: HIS combogrid — div.cg-comboItem / div.cg-menu-item
                 var cgItems = vtDoc.querySelectorAll('div.cg-comboItem, div.cg-menu-item');
@@ -1665,31 +1670,43 @@
                     var cgItem = cgItems[cgi];
                     try { var cgR = cgItem.getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
                     catch(ex) { if (cgItem.offsetHeight === 0) continue; }
-                    // Lấy item đầu tiên hiển thị
-                    popupRow = cgItem; break;
+                    allVisible.push(cgItem);
                 }
                 // Fallback A: tr.jqgrow
-                if (!popupRow) {
+                if (allVisible.length === 0) {
                     var jqRows = vtDoc.querySelectorAll('tr.jqgrow');
                     for (var jri = 0; jri < jqRows.length; jri++) {
                         try { var jR = jqRows[jri].getBoundingClientRect(); if (jR.height === 0 || jR.width === 0) continue; }
                         catch(ex2) { if (jqRows[jri].offsetHeight === 0) continue; }
-                        // Lấy item đầu tiên hiển thị
-                        popupRow = jqRows[jri]; break;
+                        allVisible.push(jqRows[jri]);
                     }
                 }
                 // Fallback B: li.ui-menu-item
-                if (!popupRow) {
+                if (allVisible.length === 0) {
                     var liItems = vtDoc.querySelectorAll('ul.ui-autocomplete li.ui-menu-item');
                     for (var li2 = 0; li2 < liItems.length; li2++) {
-                        try { if (liItems[li2].getBoundingClientRect().height > 0) { popupRow = liItems[li2]; break; } }
-                        catch(e2) { if (liItems[li2].offsetHeight > 0) { popupRow = liItems[li2]; break; } }
+                        try { if (liItems[li2].getBoundingClientRect().height > 0) allVisible.push(liItems[li2]); }
+                        catch(e2) { if (liItems[li2].offsetHeight > 0) allVisible.push(liItems[li2]); }
                     }
+                }
+
+                // ★ Ưu tiên item có mã VT trùng khớp (chính xác hơn lấy item đầu)
+                if (allVisible.length > 0) {
+                    for (var vi = 0; vi < allVisible.length; vi++) {
+                        var rowText = (allVisible[vi].textContent || '').toUpperCase();
+                        if (ma && rowText.indexOf(ma.toUpperCase()) >= 0) {
+                            popupRow = allVisible[vi];
+                            log.debug('🧰 Combogrid match mã ' + ma + ' ở dòng', vi);
+                            break;
+                        }
+                    }
+                    // Fallback: lấy item đầu tiên nếu không match mã
+                    if (!popupRow) popupRow = allVisible[0];
                 }
 
                 if (popupRow) {
                     clearInterval(checkTimer);
-                    // Click với đầy đủ mouse event chain (Giống logic Truyền Dịch)
+                    // Click với đầy đủ mouse event chain
                     var innerDivs = popupRow.querySelectorAll('.cg-DivItem');
                     var clickTarget = popupRow;
                     for (var ci = 0; ci < innerDivs.length; ci++) {
@@ -1741,31 +1758,14 @@
                             log.debug('🧰 GhiChu = "' + cachdung + '"');
                         }
 
-                        // ─── 6. Enter trên #txtGHICHU → xác nhận thêm VT vào danh sách ──
-                        setTimeout(function() {
-                            var confirmEl = cdInput || slInput;
-                            if (confirmEl) {
-                                confirmEl.focus();
-                                var enterEvts = ['keydown', 'keypress', 'keyup'];
-                                for (var eidx = 0; eidx < enterEvts.length; eidx++) {
-                                    var eName = enterEvts[eidx];
-                                    var eEvt = new KeyboardEvent(eName, {
-                                        bubbles: true, cancelable: true,
-                                        key: 'Enter', code: 'Enter'
-                                    });
-                                    // Hack Chrome chối từ set keyCode trong constructor
-                                    Object.defineProperty(eEvt, 'keyCode', { get: function() { return 13; } });
-                                    Object.defineProperty(eEvt, 'which', { get: function() { return 13; } });
-                                    confirmEl.dispatchEvent(eEvt);
-                                    if (vtWin && vtWin.$) {
-                                        vtWin.$(confirmEl).trigger(vtWin.$.Event(eName, { keyCode: 13, which: 13, key: 'Enter' }));
-                                    }
-                                }
-                                log.debug('🧰 Enter (keydown+keypress+keyup) trên #txtGHICHU → thêm vào list');
-                            }
+                        // ─── 6. Dừng lại ở ô Cách dùng để người dùng tự Enter ──
+                        var confirmEl = cdInput || slInput;
+                        if (confirmEl) {
+                            confirmEl.focus();
+                            log.debug('🧰 Dừng lại ở ô ghi chú để người dùng tự bấm Enter');
+                        }
 
-                            postResult(true, '');
-                        }, 300); // Trì hoãn Enter 300ms để HIS tiêu hoá input
+                        postResult(true, '');
                     }, 1500);
 
                 } else if (retries >= maxRetries) {
@@ -1774,6 +1774,68 @@
                     postResult(false, 'Không tìm thấy "' + searchTerm + '" trong kho VT. Kiểm tra lại tên hoặc thêm thủ công.');
                 }
             }, 500);
+    }
+
+    // ==========================================
+    // SEND ENTER TO VT FORM — Click nút "Thêm vật tư"
+    // Synthetic keyboard Enter không hoạt động với HIS
+    // → tìm và click trực tiếp nút "Thêm vật tư"
+    // ==========================================
+    function handleVtSendEnter() {
+        var allDocs = getAllDocuments();
+        var vtDoc = null, vtWin = null;
+        for (var di = 0; di < allDocs.length; di++) {
+            try {
+                if (allDocs[di].getElementById('txtDS_THUOC')) {
+                    vtDoc = allDocs[di]; vtWin = allDocs[di].defaultView; break;
+                }
+            } catch(e) { /* cross-origin */ }
+        }
+        if (!vtDoc) {
+            log.warn('🧰 handleVtSendEnter: Không tìm thấy phiếu VT');
+            window.postMessage({ type: 'QUYEN_VT_ENTER_RESULT', success: false, error: 'Chưa mở phiếu VT' }, location.origin);
+            return;
+        }
+
+        // ── Tìm nút "Thêm vật tư" trong form ──
+        var addBtn = null;
+        var allBtns = vtDoc.querySelectorAll('button, input[type="button"], a.btn, .btn');
+        for (var bi = 0; bi < allBtns.length; bi++) {
+            var btnText = (allBtns[bi].textContent || allBtns[bi].value || '').trim();
+            if (btnText.indexOf('Thêm vật tư') >= 0 || btnText.indexOf('Thêm VT') >= 0 || btnText.indexOf('ThemVT') >= 0) {
+                addBtn = allBtns[bi];
+                break;
+            }
+        }
+
+        // Fallback: tìm theo ID phổ biến
+        if (!addBtn) {
+            addBtn = vtDoc.getElementById('btnThemVT') || vtDoc.getElementById('btnThem') || vtDoc.getElementById('btnAdd');
+        }
+
+        if (addBtn) {
+            log.debug('🧰 Click nút "Thêm vật tư":', addBtn.textContent || addBtn.id);
+            // Chỉ click native 1 lần — tránh double-click gây lỗi "SL > 0"
+            addBtn.click();
+            window.postMessage({ type: 'QUYEN_VT_ENTER_RESULT', success: true }, location.origin);
+            return;
+        }
+
+        // Fallback cuối: thử gọi hàm toàn cục HIS nếu có
+        if (vtWin) {
+            var fnNames = ['addVatTu', 'themVatTu', 'ThemVatTu', 'AddRow', 'addRow', 'saveRow'];
+            for (var fi = 0; fi < fnNames.length; fi++) {
+                if (typeof vtWin[fnNames[fi]] === 'function') {
+                    log.debug('🧰 Gọi hàm HIS:', fnNames[fi]);
+                    try { vtWin[fnNames[fi]](); } catch (e) { log.warn('🧰 Lỗi gọi', fnNames[fi], e.message); }
+                    window.postMessage({ type: 'QUYEN_VT_ENTER_RESULT', success: true }, location.origin);
+                    return;
+                }
+            }
+        }
+
+        log.warn('🧰 Không tìm được nút "Thêm vật tư" trong form');
+        window.postMessage({ type: 'QUYEN_VT_ENTER_RESULT', success: false, error: 'Không tìm thấy nút Thêm vật tư' }, location.origin);
     }
 
     // ==========================================
@@ -2411,10 +2473,108 @@
         function checkHref(href) {
             if (href.indexOf('NTU02D006') >= 0) return 'infusion';   // Phiếu truyền dịch
             if (href.indexOf('NTU02D204') >= 0) return 'caresheet';   // Phiếu chăm sóc
+            if (href.indexOf('NTU02D021') >= 0) return 'vattu';       // Phiếu vật tư
             return null;
         }
 
         function scanForms() {
+            // Check VT form dialog (mở dạng popup trong trang, không phải iframe)
+            var allDocs = getAllDocuments();
+            for (var ddi = 0; ddi < allDocs.length; ddi++) {
+                try {
+                    var vtInput = allDocs[ddi].getElementById('txtDS_THUOC');
+                    if (vtInput) {
+                        // Kiểm tra form đang hiển thị (không bị ẩn)
+                        try { var vtRect = vtInput.getBoundingClientRect(); if (vtRect.width < 5) continue; }
+                        catch(e3) { continue; }
+                        if (_lastTab !== 'vattu') {
+                            _lastTab = 'vattu';
+                            window.postMessage({ type: 'QUYEN_FORM_FOCUSED', tab: 'vattu' }, location.origin);
+
+                            // ★ Auto-fill BS kê đơn + chọn Kho VT khi mở form
+                            var vtFormDoc = allDocs[ddi];
+                            var vtFormWin = vtFormDoc.defaultView;
+                            setTimeout(function() {
+                                try {
+                                    // 1. Điền tên bác sĩ kê đơn
+                                    var bsField = vtFormDoc.getElementById('txtTKBACSIID');
+                                    if (bsField && !(bsField.value || '').trim()) {
+                                        // Lấy tên BS từ drugs đã capture
+                                        var doctorName = '';
+                                        if (_capturedDrugs && _capturedDrugs.length > 0) {
+                                            for (var dri = 0; dri < _capturedDrugs.length; dri++) {
+                                                if (_capturedDrugs[dri].doctor) { doctorName = _capturedDrugs[dri].doctor; break; }
+                                            }
+                                        }
+                                        if (doctorName) {
+                                            bsField.value = doctorName;
+                                            if (vtFormWin && vtFormWin.$) {
+                                                vtFormWin.$(bsField).val(doctorName).trigger('input').trigger('keyup').trigger('change');
+                                            } else {
+                                                bsField.dispatchEvent(new Event('input', { bubbles: true }));
+                                                bsField.dispatchEvent(new Event('change', { bubbles: true }));
+                                            }
+                                            log.debug('🧰 Auto-fill BS kê đơn:', doctorName);
+                                        }
+                                    }
+
+                                    // 2. Chờ popup đóng và chọn tủ trực
+                                    function doAutoClose() {
+                                        var mainDoc = vtFormDoc.defaultView ? vtFormDoc.defaultView.parent.document : document;
+                                        var jboxes = mainDoc.querySelectorAll('.jBox-wrapper');
+                                        for (var ji = 0; ji < jboxes.length; ji++) {
+                                            var titleEl = jboxes[ji].querySelector('.jBox-title div:first-child');
+                                            if (titleEl && (titleEl.textContent || '').indexOf('Thuốc thường dùng') >= 0) {
+                                                var closeBtn = jboxes[ji].querySelector('.jBox-closeButton');
+                                                if (closeBtn) { closeBtn.click(); log.debug('🧰 Auto-đóng popup "Thuốc thường dùng"'); }
+                                                var msgBtns = mainDoc.querySelectorAll('.jBox-wrapper button');
+                                                for (var mi = 0; mi < msgBtns.length; mi++) {
+                                                    if ((msgBtns[mi].textContent || '').indexOf('Đồng ý') >= 0) {
+                                                        msgBtns[mi].click(); log.debug('🧰 Auto-đóng "Đồng ý"');
+                                                    }
+                                                }
+                                                return;
+                                            }
+                                        }
+                                    }
+
+                                    var khoAttempt = 0;
+                                    var khoTimer = setInterval(function() {
+                                        khoAttempt++;
+                                        var khoSelect = vtFormDoc.getElementById('cboMA_KHO');
+                                        if (khoSelect && (!khoSelect.value || khoSelect.value === '' || khoSelect.value === '-1' || khoSelect.value === '0')) {
+                                            for (var ki = 0; ki < khoSelect.options.length; ki++) {
+                                                var optVal = khoSelect.options[ki].value || '';
+                                                var optText = khoSelect.options[ki].text || '';
+                                                if (optVal.indexOf('4251') >= 0 || optText.indexOf('Tủ trực') >= 0) {
+                                                    khoSelect.selectedIndex = ki;
+                                                    if (vtFormWin && vtFormWin.$) {
+                                                        vtFormWin.$('#cboMA_KHO').val(optVal).trigger('change');
+                                                    } else {
+                                                        khoSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                                                    }
+                                                    log.debug('🧰 Auto-chọn Kho VT [Attempt ' + khoAttempt + ']: ' + optText + ' (' + optVal + ')');
+                                                    setTimeout(doAutoClose, 500);
+                                                    setTimeout(doAutoClose, 1000);
+                                                    setTimeout(doAutoClose, 2000);
+                                                    clearInterval(khoTimer);
+                                                    return;
+                                                }
+                                            }
+                                        } else if (khoSelect && (khoSelect.value.indexOf('4251') >= 0 || (khoSelect.options[khoSelect.selectedIndex] && khoSelect.options[khoSelect.selectedIndex].text.indexOf('Tủ trực') >= 0))) {
+                                            // Đã chọn rồi (bởi người dùng hoặc script khác)
+                                            clearInterval(khoTimer);
+                                        }
+                                        if (khoAttempt > 15) clearInterval(khoTimer);
+                                    }, 500);
+                                } catch(e5) { log.warn('🧰 Auto-fill VT form error:', e5); }
+                            }, 800);
+                        }
+                        return;
+                    }
+                } catch(e4) { /* cross-origin */ }
+            }
+
             const level1 = document.querySelectorAll('iframe');
             for (let i = 0; i < level1.length; i++) {
                 try {

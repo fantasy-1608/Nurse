@@ -49,6 +49,13 @@ const QuyenVatTuUI = (function () {
             if (event.data.type === 'QUYEN_VT_FILL_RESULT') {
                 onFillResult(event.data);
             }
+            if (event.data.type === 'QUYEN_VT_ENTER_RESULT') {
+                if (event.data.success) {
+                    showToast('✅ Đã thêm vật tư vào phiếu!', 'success');
+                } else {
+                    showToast('❌ ' + (event.data.error || 'Không thêm được'), 'error');
+                }
+            }
         });
 
         // ★ Listen safe mode toggle từ popup
@@ -91,6 +98,8 @@ const QuyenVatTuUI = (function () {
         });
     }
 
+    let _doctorName = ''; // Tên bác sĩ kê đơn (lấy từ drug data)
+
     // =========================================================
     // RENDER helpers
     // =========================================================
@@ -116,12 +125,23 @@ const QuyenVatTuUI = (function () {
     // =========================================================
     function renderResult(result) {
         if (!_container) return;
-        const suggestedVT = result.suggestedVT;
+        let suggestedVT   = result.suggestedVT;
         const existingVT  = result.existingVT;
         const drugs       = result.drugs;
 
-        // ── Existing VT ──────────────────────────────────────
-        let existingHtml = '';
+        // ── Lấy tên bác sĩ kê đơn từ drug data ──────────────
+        _doctorName = '';
+        if (drugs && drugs.length > 0) {
+            for (let di = 0; di < drugs.length; di++) {
+                if (drugs[di].doctor) { _doctorName = drugs[di].doctor; break; }
+            }
+        }
+
+        // ── Build tên VT lookup từ phiếu sẵn có (HIS) ───────
+        // Ưu tiên dùng tên từ HIS thay vì tên catalogue cứng
+        const hisNameMap = new Map();
+
+        // ── Existing VT → chuyển thành suggestion fillable ─────
         if (existingVT && existingVT.length > 0) {
             const vtMap = new Map();
             for (let ei = 0; ei < existingVT.length; ei++) {
@@ -137,18 +157,69 @@ const QuyenVatTuUI = (function () {
                 } else {
                     vtMap.get(eKey).sl += parseInt(eItem.sl || eItem.SOLUONG || 1, 10);
                 }
+                // Lưu tên HIS thực tế theo mã VT
+                if (eKey && !hisNameMap.has(eKey)) {
+                    hisNameMap.set(eKey, eItem.ten || eItem.TENDICHVU || '');
+                }
             }
+            // Chuyển VT đã dùng thành suggestion items (rule: 'existing')
+            // Cách dùng ngắn gọn theo mã VT
+            const cdLookup = {
+                'GA2501': 'Mang tay thủ thuật', 'KI318': 'Pha tiêm thuốc',
+                'BO535': 'Tiêm TMC', 'BO534': 'Pha thuốc TB', 'BO527': 'Pha thuốc liều lớn',
+                'BO560': 'Truyền dịch TTM', 'NA148': 'Đậy kim luồn', 'KI306': 'Cắm kim luồn TM',
+                'BA365': 'Cố định kim luồn', 'BO517': 'Tiêm insulin TDD', 'QU176': 'Thử ĐH mao mạch',
+                'UR69': 'Đắp vết thương', 'BA360': 'Cố định băng', 'BA380': 'Băng vết thương',
+                'KI307': 'Cắm kim luồn TM',
+            };
             const vtList = Array.from(vtMap.values());
-            const existRows = vtList.map(function(item) {
-                return '<div class="quyen-vt-existing-item"><span class="quyen-vt-ma">' + escapeHtml(item.ma) + '</span><span class="quyen-vt-ten">' + escapeHtml(item.ten) + '</span><span class="quyen-vt-sl-badge">' + item.sl + ' ' + escapeHtml(item.dvt) + '</span></div>';
-            }).join('');
-            existingHtml = '<div class="quyen-vt-section"><div class="quyen-vt-section-title">✅ Phiếu VT đang có <span class="quyen-vt-count">' + vtList.length + ' loại</span></div><div class="quyen-vt-existing-list">' + existRows + '</div></div>';
+            // Sắp xếp theo tổng SL đã dùng (nhiều → ít)
+            vtList.sort(function(a, b) { return b.sl - a.sl; });
+            const existingItems = vtList.map(function(item) {
+                let cd = cdLookup[item.ma] || '';
+                // Fallback: đoán cách dùng từ tên
+                if (!cd) {
+                    const tenLow = (item.ten || '').toLowerCase();
+                    if (tenLow.indexOf('găng') >= 0 || tenLow.indexOf('gang') >= 0) cd = 'Mang tay thủ thuật';
+                    else if (tenLow.indexOf('bơm tiêm') >= 0 || tenLow.indexOf('bom tiem') >= 0) cd = 'Pha tiêm thuốc';
+                    else if (tenLow.indexOf('dây truyền') >= 0 || tenLow.indexOf('day truyen') >= 0) cd = 'Truyền dịch TTM';
+                    else if (tenLow.indexOf('kim tiêm') >= 0 || tenLow.indexOf('kim tiem') >= 0) cd = 'Pha tiêm thuốc';
+                    else if (tenLow.indexOf('kim luồn') >= 0 || tenLow.indexOf('kim luon') >= 0) cd = 'Cắm kim luồn TM';
+                    else if (tenLow.indexOf('nắp') >= 0 || tenLow.indexOf('nap') >= 0) cd = 'Đậy kim luồn';
+                    else if (tenLow.indexOf('băng') >= 0 || tenLow.indexOf('bang') >= 0) cd = 'Cố định băng';
+                    else if (tenLow.indexOf('que thử') >= 0) cd = 'Thử ĐH mao mạch';
+                }
+                return {
+                    ma: item.ma,
+                    ten: item.ten,
+                    sl: 1,
+                    dvt: item.dvt,
+                    huong: '',
+                    rule: 'existing',
+                    note: '',
+                    cachdung: cd
+                };
+            });
+            // Prepend vào đầu suggestedVT, loại trùng
+            if (!suggestedVT) suggestedVT = [];
+            const existingMaSet = new Set(existingItems.map(function(e) { return e.ma; }));
+            suggestedVT = existingItems.concat(suggestedVT.filter(function(s) { return !existingMaSet.has(s.ma); }));
+        }
+
+        // ── Ghi đè tên VT gợi ý bằng tên HIS thực tế ───────
+        // Để cả UI hiển thị lẫn fill đều dùng cùng 1 tên (khớp combogrid HIS)
+        if (suggestedVT && hisNameMap.size > 0) {
+            for (let ni = 0; ni < suggestedVT.length; ni++) {
+                const hisName = hisNameMap.get(suggestedVT[ni].ma);
+                if (hisName) suggestedVT[ni].ten = hisName;
+            }
         }
 
         // ── Suggested VT ──────────────────────────────────────
         let suggestHtml = '';
         if (suggestedVT && suggestedVT.length > 0) {
             const ruleLabel = {
+                existing:'✅ VT đã dùng (điền nhanh)',
                 base:    '🩺 Cơ bản',
                 tmc:     '💉 Tiêm bắp/TMC',
                 ttm:     '💧 Truyền dịch (TTM)',
@@ -178,19 +249,21 @@ const QuyenVatTuUI = (function () {
                     const noteHtml = item.note ? '<div class="quyen-vt-note-text">ℹ️ ' + escapeHtml(item.note) + '</div>' : '';
                     suggestHtml += '<div class="quyen-vt-suggest-row' + (isWound ? ' quyen-vt-wound' : '') + '" data-idx="' + rowIdx + '" data-ma="' + escapeHtml(item.ma) + '">' +
                         '<div class="quyen-vt-row-top">' +
-                            '<input type="checkbox" class="quyen-vt-check" id="quyen-vt-chk-' + rowIdx + '" data-idx="' + rowIdx + '"' + (isWound ? '' : ' checked') + '>' +
-                            '<label for="quyen-vt-chk-' + rowIdx + '" class="quyen-vt-suggest-label">' +
+                            '<div class="quyen-vt-suggest-info" title="' + escapeHtml(item.ma) + ' - ' + escapeHtml(item.ten) + '">' +
                                 '<span class="quyen-vt-ma">' + escapeHtml(item.ma) + '</span>' +
                                 '<span class="quyen-vt-ten">' + escapeHtml(item.ten) + '</span>' +
-                            '</label>' +
-                            '<div class="quyen-vt-sl-ctrl">' +
-                                '<input type="number" class="quyen-vt-sl-input" data-idx="' + rowIdx + '" value="' + item.sl + '" min="1" max="99" id="quyen-vt-sl-' + rowIdx + '">' +
-                                '<span class="quyen-vt-dvt">' + escapeHtml(item.dvt) + '</span>' +
                             '</div>' +
                         '</div>' +
                         '<div class="quyen-vt-row-bottom">' +
                             '<input type="text" class="quyen-vt-cachdung-input" id="quyen-vt-cd-' + rowIdx + '" data-idx="' + rowIdx + '" value="' + escapeHtml(item.cachdung) + '" placeholder="Cách dùng...">' +
-                            '<button class="quyen-vt-fill-btn" data-idx="' + rowIdx + '" id="quyen-vt-fill-' + rowIdx + '" title="Điền vật tư này vào phiếu HIS đang mở">✚ Điền</button>' +
+                            '<div class="quyen-vt-sl-ctrl">' +
+                                '<button type="button" class="quyen-vt-sl-arrow quyen-vt-sl-down" data-idx="' + rowIdx + '" title="Giảm">-</button>' +
+                                '<input type="number" class="quyen-vt-sl-input" data-idx="' + rowIdx + '" value="' + item.sl + '" min="1" max="99" id="quyen-vt-sl-' + rowIdx + '">' +
+                                '<button type="button" class="quyen-vt-sl-arrow quyen-vt-sl-up" data-idx="' + rowIdx + '" title="Tăng">+</button>' +
+                                '<span class="quyen-vt-dvt">' + escapeHtml(item.dvt) + '</span>' +
+                            '</div>' +
+                            '<button class="quyen-vt-fill-btn" data-idx="' + rowIdx + '" id="quyen-vt-fill-' + rowIdx + '" title="Điền VT">✚ Điền</button>' +
+                            '<button class="quyen-vt-enter-btn" data-idx="' + rowIdx + '" id="quyen-vt-enter-' + rowIdx + '" title="Lưu" style="display:none; margin-left: 2px;">↵ Lưu</button>' +
                         '</div>' +
                         noteHtml +
                     '</div>';
@@ -220,7 +293,7 @@ const QuyenVatTuUI = (function () {
         const actionsHtml = (suggestedVT && suggestedVT.length > 0) ?
             '<div class="quyen-vt-actions"><button class="quyen-vt-copy-btn" id="quyen-vt-copy">📋 Copy danh sách</button></div>' : '';
 
-        _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-toolbar">' + drugTags + '<button class="quyen-vt-refresh-btn" id="quyen-vt-refresh" title="Đọc lại từ HIS">🔄</button></div>' + existingHtml + suggestHtml + kimLuonNote + actionsHtml + '</div>';
+        _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-toolbar">' + drugTags + '<button class="quyen-vt-refresh-btn" id="quyen-vt-refresh" title="Đọc lại từ HIS">🔄</button></div>' + suggestHtml + kimLuonNote + actionsHtml + '</div>';
 
         // Wire events
         const refreshBtn = _container.querySelector('#quyen-vt-refresh');
@@ -238,6 +311,50 @@ const QuyenVatTuUI = (function () {
                     onClickFill(idx, suggestedVT);
                 });
             })(fillBtns[fi]);
+        }
+
+        // Wire nút Enter (giả lập Enter lưu phiếu)
+        const enterBtns = _container.querySelectorAll('.quyen-vt-enter-btn');
+        for (let ei = 0; ei < enterBtns.length; ei++) {
+            (function(btn) {
+                btn.addEventListener('click', function () {
+                    const idx = parseInt(btn.getAttribute('data-idx'), 10);
+                    // Ẩn Enter, hiện lại Điền
+                    btn.style.display = 'none';
+                    const fillBtn = _container.querySelector('#quyen-vt-fill-' + idx);
+                    if (fillBtn) {
+                        fillBtn.style.display = 'inline-block';
+                        fillBtn.textContent = '✚ Điền';
+                    }
+                    // Gửi lệnh giả lập Enter tới HIS
+                    window.postMessage({ type: 'QUYEN_VT_SEND_ENTER' }, location.origin);
+                    showToast('Đang mô phỏng thao tác ấn Enter...', 'info');
+                    
+                    // Thêm hiệu ứng +1 chỉ vàng khi nhấn Lưu
+                    if (window.NursePanel && typeof window.NursePanel.incrementFilledCount === 'function') {
+                        window.NursePanel.incrementFilledCount();
+                    }
+                });
+            })(enterBtns[ei]);
+        }
+
+        // Wire nút ▲▼ tăng/giảm số lượng
+        const arrowBtns = _container.querySelectorAll('.quyen-vt-sl-arrow');
+        for (let ai = 0; ai < arrowBtns.length; ai++) {
+            (function(btn) {
+                btn.addEventListener('click', function () {
+                    const idx = parseInt(btn.getAttribute('data-idx'), 10);
+                    const slInput = _container.querySelector('#quyen-vt-sl-' + idx);
+                    if (!slInput) return;
+                    let val = parseInt(slInput.value, 10) || 1;
+                    if (btn.classList.contains('quyen-vt-sl-up')) {
+                        val = Math.min(val + 1, 99);
+                    } else {
+                        val = Math.max(val - 1, 1);
+                    }
+                    slInput.value = val;
+                });
+            })(arrowBtns[ai]);
         }
     }
 
@@ -297,6 +414,7 @@ const QuyenVatTuUI = (function () {
             ten:      item.ten,
             sl:       sl,
             cachdung: cachdung,
+            doctor:   _doctorName,
         }, location.origin);
 
         // Timeout fallback 12s — giải phóng queue nếu bridge không phản hồi
@@ -328,10 +446,16 @@ const QuyenVatTuUI = (function () {
         _fillDone++;
         _fillInProgress = false;
 
+        const fillBtn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
+        const enterBtn = _container && _container.querySelector('#quyen-vt-enter-' + idx);
+
         if (data.success) {
             resetFillBtn(idx, '✅');
-            showToast('✅ Đã điền ' + (data.ma || '') + ' vào phiếu!', 'success');
-            setTimeout(function () { resetFillBtn(idx, '✚ Điền'); }, 2500);
+            showToast('✅ Đã điền ' + (data.ma || '') + ' vào form! Bấm "↵ Lưu" để hoàn tất.', 'success');
+            
+            // Đổi từ nút Điền sang nút Enter
+            if (fillBtn) fillBtn.style.display = 'none';
+            if (enterBtn) enterBtn.style.display = 'inline-block';
         } else {
             resetFillBtn(idx, '✚ Điền');
             showToast('❌ ' + (data.error || 'Lỗi điền VT'), 'error');

@@ -1,4 +1,4 @@
-# 💉 Điều Dưỡng Extension v1.2.1
+# 💉 Điều Dưỡng Extension v1.2.2
 
 > Trợ lý tự động nhập liệu trên VNPT HIS cho Điều dưỡng viên
 
@@ -8,40 +8,48 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 
 ## 🌟 Tính Năng Chính
 
-### 1. Tự Động Lập Phiếu Truyền Dịch
+### 1. Tự Động Hóa Phiếu Vật Tư (Mới!)
+
+- Bắt tự động sự kiện mở form "Tạo phiếu vật tư".
+- **Tự động điền Bác sĩ kê đơn** và **chọn Kho vật tư** (Tủ trực VTYT).
+- Auto-đóng popup thông báo phiền phức của HIS.
+- Khung UI gọn gàng, Điền 1 chạm thông minh kèm theo gợi ý Cách dùng, chống trùng lặp.
+- Liên kết nút "Lưu" để cộng điểm Chỉ vàng.
+
+### 2. Tự Động Lập Phiếu Truyền Dịch
 
 - Trích xuất y lệnh thuốc/dịch truyền từ HIS
 - Tự động phân tách và điền: tên thuốc, dung môi, số lượng (ml), tốc độ (giọt/phút), thời gian
 - Hỗ trợ số La Mã (C g/p = 100, LX g/p = 60)
 
-### 2. Tự Động Điền Phiếu Chăm Sóc
+### 3. Tự Động Điền Phiếu Chăm Sóc
 
 - **3 chế độ:** Điền đầy đủ, Điền đơn giản, Chọn mục tùy chỉnh
 - **Kế thừa phiếu cũ:** Copy sinh hiệu, cơ quan bệnh (Section 4), can thiệp điều dưỡng (Section 17) từ phiếu gần nhất
 - **Templates:** Mẫu chuẩn cho các khoa (Cấp cứu, Nhi, Hồi sức...)
 
-### 3. An Toàn Bệnh Nhân (Patient Lock)
+### 4. An Toàn Bệnh Nhân (Patient Lock)
 
 - Khóa dữ liệu theo bệnh nhân đang chọn — chống nhầm lẫn cross-patient
 - Fuzzy name match + sequence validation — fail-closed khi không xác minh được
 - Race condition guard: hủy request cũ khi chuyển bệnh nhân
 
-### 4. Sinh Hiệu Fallback Thông Minh
+### 5. Sinh Hiệu Fallback Thông Minh
 
 - Tìm kiếm sinh hiệu qua 6 nguồn: NT.006 → Grid → HSBA → CC → Ngoại trú → Khám bệnh
 - Async fetch — không block giao diện khi truy vấn
 
-### 5. Hệ Thống "Chỉ Vàng" (Gamification)
+### 6. Hệ Thống "Chỉ Vàng" (Gamification)
 
-- Tích lũy điểm qua mỗi phiếu hoàn thành
+- Tích lũy điểm qua mỗi phiếu vật tư / phiếu chăm sóc hoàn thành
 - Hiệu ứng "+1 chỉ vàng ✨" bay lên + Gold Flash giữa màn hình
 - Rank system: 🌱 → 🪙 → 🥉 → 🥈 → 🥇 → 💎 → ✨👑✨
 
-### 6. Bảng Điều Khiển (Side Panel)
+### 7. Bảng Điều Khiển (Side Panel)
 
 - Floating panel tích hợp ngay trong cửa sổ HIS
 - Real-time status hiển thị tiến trình đang thực hiện
-- Cảnh báo sinh hiệu bất thường trước khi điền phiếu
+- UI cực kỳ hiện đại, gọn gàng, tối ưu diện tích.
 
 ---
 
@@ -100,6 +108,14 @@ Extension hỗ trợ auto-update qua thư mục mạng chia sẻ — không cầ
 3. Nhấn **"Điền phiếu"** → extension tự điền tất cả sections
 4. (Tuỳ chọn) Nhấn **"Copy phiếu cũ"** để kế thừa Section 4 + 17
 
+### Bước 2C: Phiếu Vật Tư
+
+1. Mở form **Tạo phiếu vật tư** trên màn hình chỉ định.
+2. Extension tự động chọn Bác sĩ kê đơn và Kho vật tư.
+3. Bảng điều khiển xuất hiện với gợi ý, tìm kiếm nhanh và thiết lập Cách dùng sẵn.
+4. Bấm ✚ Điền để đưa vật tư vào phiếu HIS.
+5. Bấm ↵ Lưu để hoàn thành và nhận +1 chỉ vàng!
+
 ### Bước 3: Xem Lịch Sử
 
 - Click icon 💉 trên toolbar để xem popup
@@ -119,6 +135,7 @@ src/
 │   ├── caresheet-ui.js    # Phiếu chăm sóc — UI + detection
 │   ├── caresheet-filler.js # Phiếu chăm sóc — auto-fill logic
 │   ├── infusion-filler.js # Phiếu truyền dịch — auto-fill logic
+│   ├── vattu-ui.js        # Phiếu vật tư - UI + Điền tự động
 │   └── constants.js       # Config + selectors
 ├── injected/
 │   └── his-bridge.js      # Bridge script (page context) — truy cập jsonrpc/jQuery
@@ -164,6 +181,7 @@ background.js (service worker)
 | Nút "Điền" không hoạt động | Đảm bảo đã click chọn bệnh nhân trên HIS trước |
 | Điền sai ô / chệch dữ liệu | Chờ form HIS tải xong hoàn toàn rồi mới bấm Điền |
 | Không copy được phiếu cũ | BN mới nhập viện, chưa có phiếu trước đó |
+| Kho VT không được chọn | Do tốc độ tải Form HIS chậm. Thử mở lại lần nữa. |
 | Extension không hiện | Kiểm tra `chrome://extensions/` — bật extension và reload trang |
 | Lỗi "Bridge not ready" | Reload trang HIS (F5) — bridge cần vài giây để khởi tạo |
 
@@ -173,12 +191,14 @@ background.js (service worker)
 
 Xem chi tiết tại [CHANGELOG.md](CHANGELOG.md).
 
-### v1.2.1 (11/04/2026) — Audit Remediation
+### v1.2.2 (16/04/2026) — Phiếu Vật Tư Auto & UI Polish
 
-- Performance: `all_frames: false`, async NT.006, MutationObserver optimized
-- Security: PBKDF2 600k, innerHTML XSS fix, optional permissions
-- Reliability: 72 empty catches logged, global error boundary
-- Removed: Tính năng đếm phiếu (không cần thiết)
+- Thêm hệ thống "Phiếu vật tư": Auto chọn Kho, Điền bác sĩ, loại bỏ các popup HIS phiền nhức nhối.
+- Tái cấu trúc lại UI Phiếu Vật Tư thành dạng list cực kỳ khoa học, nhỏ gọn.
+- Tìm kiếm linh hoạt qua `Mã VT`, chống trùng mã cực nhạy.
+- Thêm hiệu ứng âm thanh/chỉ vàng khi điền xong phiếu VT!
+- Fix loạt lỗi linter/CSS cảnh báo từ trình duyệt.
+- Tối ưu hóa API fetch sinh hiệu / xử lý grid bất đồng bộ.
 
 ### v1.2.0 (10/04/2026) — Feature Release
 

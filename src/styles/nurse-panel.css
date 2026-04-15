@@ -1515,8 +1515,8 @@
 .quyen-vt-suggest-row {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 6px 6px 5px;
+    gap: 6px;
+    padding: 7px 8px;
     border-radius: 8px;
     background: rgba(233,30,99,0.03);
     border: 1px solid rgba(233,30,99,0.08);
@@ -1526,25 +1526,49 @@
 .quyen-vt-suggest-row:hover {
     background: rgba(233,30,99,0.06);
 }
-/* Line 1: checkbox + label + SL+DVT */
+/* Line 1: MA + TEN */
 .quyen-vt-row-top {
     display: flex;
     align-items: center;
-    gap: 5px;
 }
-/* Line 2: cách dùng input + Điền btn */
+.quyen-vt-suggest-info {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    gap: 6px;
+}
+.quyen-vt-ma {
+    font-size: 10px;
+    font-weight: 800;
+    color: #9c27b0;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+    background: rgba(156,39,176,0.1);
+    padding: 2px 5px;
+    border-radius: 4px;
+}
+.quyen-vt-ten {
+    font-size: 11px;
+    font-weight: 600;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Line 2: cách dùng input + SL + Điền btn */
 .quyen-vt-row-bottom {
     display: flex;
     align-items: center;
     gap: 5px;
-    padding-left: 19px; /* indent under checkbox */
 }
 .quyen-vt-cachdung-input {
     flex: 1;
-    min-width: 0;
+    min-width: 50px;
     border: 1px solid rgba(156,39,176,0.2);
     border-radius: 5px;
-    padding: 3px 6px;
+    padding: 4px 6px;
     font-size: 10px;
     font-family: 'Quicksand', sans-serif;
     color: #555;
@@ -1556,14 +1580,67 @@
     border-color: #9c27b0;
     background: #fff;
 }
+.quyen-vt-sl-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    background: #fff;
+    border-radius: 5px;
+    padding: 1px;
+    border: 1px solid rgba(233,30,99,0.2);
+}
+.quyen-vt-sl-input {
+    width: 24px;
+    text-align: center;
+    border: none;
+    font-size: 11px;
+    font-weight: 700;
+    color: #e91e63;
+    padding: 0;
+    background: transparent;
+    outline: none;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.quyen-vt-sl-input::-webkit-outer-spin-button,
+.quyen-vt-sl-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.quyen-vt-dvt {
+    font-size: 9px;
+    color: #777;
+    margin-left: 2px;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+.quyen-vt-sl-arrow {
+    width: 18px;
+    height: 18px;
+    background: rgba(233,30,99,0.05);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #e91e63;
+    transition: background 0.15s;
+    font-weight: bold;
+}
+.quyen-vt-sl-arrow:hover {
+    background: rgba(233,30,99,0.15);
+}
 .quyen-vt-fill-btn {
     flex-shrink: 0;
     background: linear-gradient(135deg, #e91e63, #9c27b0);
     color: #fff;
     border: none;
     border-radius: 6px;
-    padding: 3px 9px;
-    font-size: 10px;
+    padding: 4px 10px;
+    font-size: 11px;
     font-weight: 700;
     font-family: 'Quicksand', sans-serif;
     cursor: pointer;
@@ -1578,73 +1655,63 @@
     opacity: 0.65;
     cursor: not-allowed;
 }
+.quyen-vt-enter-btn {
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #4caf50, #2e7d32);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'Quicksand', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.quyen-vt-enter-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(76,175,80,0.35);
+}
 .quyen-vt-note-text {
     font-size: 9px;
     color: #aaa;
-    padding-left: 19px;
     font-style: italic;
 }
 .quyen-vt-wound {
     background: rgba(255,152,0,0.04) !important;
     border-color: rgba(255,152,0,0.2) !important;
 }
-.quyen-vt-check {
-    flex-shrink: 0;
-    accent-color: #e91e63;
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-}
-.quyen-vt-suggest-label {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-    cursor: pointer;
-    gap: 1px;
-}
-.quyen-vt-ma {
-    font-size: 9px;
-    font-weight: 700;
-    color: #9c27b0;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    flex-shrink: 0;
-}
-.quyen-vt-ten {
-    font-size: 11px;
-    font-weight: 500;
-    color: #333;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.quyen-vt-sl-ctrl {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-}
-.quyen-vt-sl-input {
-    width: 34px;
-    text-align: center;
-    border: 1px solid rgba(233,30,99,0.3);
-    border-radius: 5px;
-    padding: 2px 3px;
-    font-size: 11px;
-    font-family: 'Quicksand', sans-serif;
-    font-weight: 700;
-    color: #c62828;
-    background: #fff;
-    outline: none;
-}
-.quyen-vt-sl-input:focus {
-    border-color: #e91e63;
-    box-shadow: 0 0 0 2px rgba(233,30,99,0.15);
-}
 /* Hide number spinners */
 .quyen-vt-sl-input::-webkit-inner-spin-button,
 .quyen-vt-sl-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+/* ▲▼ Arrow buttons for quantity */
+.quyen-vt-sl-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 1px solid rgba(233,30,99,0.25);
+    border-radius: 4px;
+    background: rgba(233,30,99,0.06);
+    color: #c62828;
+    font-size: 8px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+.quyen-vt-sl-arrow:hover {
+    background: rgba(233,30,99,0.15);
+    border-color: #e91e63;
+    transform: scale(1.1);
+}
+.quyen-vt-sl-arrow:active {
+    transform: scale(0.95);
+    background: rgba(233,30,99,0.25);
+}
 .quyen-vt-dvt {
     font-size: 9px;
     color: #888;
