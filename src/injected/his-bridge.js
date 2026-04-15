@@ -1637,7 +1637,8 @@
 
         vtInput.focus();
         if (vtWin && vtWin.$) {
-            vtWin.$(vtInput).val('').trigger('focus');
+            vtWin.$(vtInput).val('').trigger('focus').trigger('input').trigger('keydown').trigger('keyup');
+            
             for (var ci = 0; ci < searchTerm.length; ci++) {
                 var c = searchTerm[ci];
                 vtInput.value += c;
@@ -1646,9 +1647,14 @@
                 vtWin.$(vtInput).trigger('input');
                 vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',    { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
             }
+            // Trigger 1 lần cuối cùng phòng trường hợp bị rớt nhịp
+            vtWin.$(vtInput).trigger('change');
         } else {
             vtInput.value = '';
             vtInput.dispatchEvent(new Event('focus', { bubbles: true }));
+            vtInput.dispatchEvent(new Event('input', { bubbles: true }));
+            vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+            
             for (var ci2 = 0; ci2 < searchTerm.length; ci2++) {
                 vtInput.value += searchTerm[ci2];
                 vtInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1663,6 +1669,18 @@
                 retries++;
                 var popupRow = null;
                 var allVisible = [];
+
+                // ★ Bơm lại phím sau mỗi 1.5s (3 retries) nếu chưa thấy popup, đề phòng HIS đang bận tải AJAX Kho VT nên nuốt phím đợt đầu
+                if (retries > 1 && retries % 3 === 0) {
+                    if (vtWin && vtWin.$) {
+                        vtWin.$(vtInput).val(searchTerm).trigger('input').trigger('keyup').trigger('change');
+                        log.debug('🧰 Re-trigger search do HIS chưa phản hồi...');
+                    } else {
+                        vtInput.value = searchTerm;
+                        vtInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                    }
+                }
 
                 // Priority 1: HIS combogrid — div.cg-comboItem / div.cg-menu-item
                 var cgItems = vtDoc.querySelectorAll('div.cg-comboItem, div.cg-menu-item');
