@@ -1637,7 +1637,10 @@
 
         vtInput.focus();
         if (vtWin && vtWin.$) {
-            vtWin.$(vtInput).val('').trigger('focus').trigger('input').trigger('keydown').trigger('keyup');
+            // Fake backspace để reset cache jQuery UI Autocomplete (cần keyCode thì jQuery UI mới nhận)
+            vtWin.$(vtInput).trigger(vtWin.$.Event('keydown', { keyCode: 8, which: 8 }));
+            vtWin.$(vtInput).val('').trigger('input');
+            vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',   { keyCode: 8, which: 8 }));
             
             for (var ci = 0; ci < searchTerm.length; ci++) {
                 var c = searchTerm[ci];
@@ -1647,18 +1650,16 @@
                 vtWin.$(vtInput).trigger('input');
                 vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',    { keyCode: c.charCodeAt(0), which: c.charCodeAt(0) }));
             }
-            // Trigger 1 lần cuối cùng phòng trường hợp bị rớt nhịp
-            vtWin.$(vtInput).trigger('change');
         } else {
             vtInput.value = '';
-            vtInput.dispatchEvent(new Event('focus', { bubbles: true }));
+            vtInput.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 8, bubbles: true }));
             vtInput.dispatchEvent(new Event('input', { bubbles: true }));
-            vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+            vtInput.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 8, bubbles: true }));
             
             for (var ci2 = 0; ci2 < searchTerm.length; ci2++) {
                 vtInput.value += searchTerm[ci2];
                 vtInput.dispatchEvent(new Event('input', { bubbles: true }));
-                vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                vtInput.dispatchEvent(new KeyboardEvent('keyup', { keyCode: searchTerm.charCodeAt(ci2), bubbles: true }));
             }
         }
         log.debug('🧰 Tìm VT: "' + searchTerm + '", chờ combogrid...');
@@ -1672,13 +1673,16 @@
 
                 // ★ Bơm lại phím sau mỗi 1.5s (3 retries) nếu chưa thấy popup, đề phòng HIS đang bận tải AJAX Kho VT nên nuốt phím đợt đầu
                 if (retries > 1 && retries % 3 === 0) {
+                    var lastChar = searchTerm.charCodeAt(searchTerm.length - 1) || 13;
                     if (vtWin && vtWin.$) {
-                        vtWin.$(vtInput).val(searchTerm).trigger('input').trigger('keyup').trigger('change');
+                        vtWin.$(vtInput).val(searchTerm).trigger('input');
+                        vtWin.$(vtInput).trigger(vtWin.$.Event('keydown', { keyCode: lastChar, which: lastChar }));
+                        vtWin.$(vtInput).trigger(vtWin.$.Event('keyup',   { keyCode: lastChar, which: lastChar }));
                         log.debug('🧰 Re-trigger search do HIS chưa phản hồi...');
                     } else {
                         vtInput.value = searchTerm;
                         vtInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        vtInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                        vtInput.dispatchEvent(new KeyboardEvent('keyup', { keyCode: lastChar, bubbles: true }));
                     }
                 }
 
@@ -1781,6 +1785,15 @@
                         if (confirmEl) {
                             confirmEl.focus();
                             log.debug('🧰 Dừng lại ở ô ghi chú để người dùng tự bấm Enter');
+                            
+                            // Lắng nghe người dùng bấm Enter vật lý để reset giao diện
+                            var manualEnterHandler = function(e) {
+                                if (e.key === 'Enter' || e.keyCode === 13) {
+                                    confirmEl.removeEventListener('keydown', manualEnterHandler);
+                                    window.postMessage({ type: 'QUYEN_VT_PHYSICAL_ENTER_PRESSED', ma: ma }, location.origin);
+                                }
+                            };
+                            confirmEl.addEventListener('keydown', manualEnterHandler);
                         }
 
                         postResult(true, '');

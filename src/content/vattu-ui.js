@@ -50,11 +50,28 @@ const QuyenVatTuUI = (function () {
                 onFillResult(event.data);
             }
             if (event.data.type === 'QUYEN_VT_ENTER_RESULT') {
-                if (event.data.success) {
-                    showToast('✅ Đã thêm vật tư vào phiếu!', 'success');
+                if (!event.data.success) {
+                    showToast('❌ ' + event.data.error, 'warning');
                 } else {
-                    showToast('❌ ' + (event.data.error || 'Không thêm được'), 'error');
+                    showToast('✅ Đã lưu phiếu VT', 'success');
                 }
+            } else if (event.data.type === 'QUYEN_VT_PHYSICAL_ENTER_PRESSED') {
+                if (window.NursePanel && typeof window.NursePanel.incrementFilledCount === 'function') {
+                    window.NursePanel.incrementFilledCount();
+                }
+                const enterBtns = _container ? _container.querySelectorAll('.quyen-vt-enter-btn') : [];
+                for (let i = 0; i < enterBtns.length; i++) {
+                    if (enterBtns[i].style.display !== 'none') {
+                        enterBtns[i].style.display = 'none';
+                        const idx = enterBtns[i].getAttribute('data-idx');
+                        const fillBtn = _container.querySelector('#quyen-vt-fill-' + idx);
+                        if (fillBtn) {
+                            fillBtn.style.display = 'inline-block';
+                            fillBtn.textContent = '✚ Điền';
+                        }
+                    }
+                }
+                showToast('Chốt đơn Vật Tư thành công! +1 Chỉ vàng', 'success');
             }
         });
 
@@ -470,6 +487,7 @@ const QuyenVatTuUI = (function () {
             _fillTotal = 0;
             _fillDone = 0;
         }
+        // KẾT QUẢ ENTER THỦ CÔNG
     }
 
     function resetFillBtn(idx, label) {
