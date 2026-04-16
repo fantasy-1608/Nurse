@@ -56,22 +56,14 @@ const QuyenVatTuUI = (function () {
                     showToast('✅ Đã lưu phiếu VT', 'success');
                 }
             } else if (event.data.type === 'QUYEN_VT_PHYSICAL_ENTER_PRESSED') {
-                if (window.NursePanel && typeof window.NursePanel.incrementFilledCount === 'function') {
-                    window.NursePanel.incrementFilledCount();
+                if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.incrementFilledCount === 'function') {
+                    QuyenUI.incrementFilledCount();
                 }
-                const enterBtns = _container ? _container.querySelectorAll('.quyen-vt-enter-btn') : [];
-                for (let i = 0; i < enterBtns.length; i++) {
-                    if (enterBtns[i].style.display !== 'none') {
-                        enterBtns[i].style.display = 'none';
-                        const idx = enterBtns[i].getAttribute('data-idx');
-                        const fillBtn = _container.querySelector('#quyen-vt-fill-' + idx);
-                        if (fillBtn) {
-                            fillBtn.style.display = 'inline-block';
-                            fillBtn.textContent = '✚ Điền';
-                        }
-                    }
+                // ★ Gold flash effect
+                if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.triggerGoldFlash === 'function') {
+                    QuyenUI.triggerGoldFlash();
                 }
-                showToast('Chốt đơn Vật Tư thành công! +1 Chỉ vàng', 'success');
+                showToast('✨ +1 Chỉ vàng!', 'success');
             }
         });
 
@@ -348,8 +340,8 @@ const QuyenVatTuUI = (function () {
                     showToast('Đang mô phỏng thao tác ấn Enter...', 'info');
                     
                     // Thêm hiệu ứng +1 chỉ vàng khi nhấn Lưu
-                    if (window.NursePanel && typeof window.NursePanel.incrementFilledCount === 'function') {
-                        window.NursePanel.incrementFilledCount();
+                    if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.incrementFilledCount === 'function') {
+                        QuyenUI.incrementFilledCount();
                     }
                 });
             })(enterBtns[ei]);
@@ -463,16 +455,11 @@ const QuyenVatTuUI = (function () {
         _fillDone++;
         _fillInProgress = false;
 
-        const fillBtn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
-        const enterBtn = _container && _container.querySelector('#quyen-vt-enter-' + idx);
+
 
         if (data.success) {
             resetFillBtn(idx, '✅');
-            showToast('✅ Đã điền ' + (data.ma || '') + ' vào form! Bấm "↵ Lưu" để hoàn tất.', 'success');
-            
-            // Đổi từ nút Điền sang nút Enter
-            if (fillBtn) fillBtn.style.display = 'none';
-            if (enterBtn) enterBtn.style.display = 'inline-block';
+            showToast('✅ Đã điền + thêm ' + (data.ma || '') + ' vào phiếu VT!', 'success');
         } else {
             resetFillBtn(idx, '✚ Điền');
             showToast('❌ ' + (data.error || 'Lỗi điền VT'), 'error');

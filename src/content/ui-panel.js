@@ -55,6 +55,7 @@ const QuyenUI = (function () {
 
                 // Changelog theo version
                 const changelogs = {
+                    '1.3.1': '🆕 v1.3.1\n• 🛠️ Sửa lỗi linter Vật Tư\n• 📦 Cập nhật phiên bản',
                     '1.3.0': '🆕 v1.3.0\n• 📦 Tự động điền Phiếu Vật Tư\n• 🎓 Giao diện tối ưu mới & Gamification\n• 🐞 Chống duplicate & lỗi tải Kho VT',
                     '1.2.2': '🆕 v1.2.2\n• 🛡️ Safe Mode: tắt auto-fill khi cần\n• ⌨️ Alt+Q: toggle panel nhanh\n• 🔒 Chống fill chồng (queue tuần tự)',
                     '1.2.1': '🆕 v1.2.1\n• 🔐 Bảo mật PBKDF2 600K iterations\n• 🧰 Tab Vật Tư (BETA)\n• 🐛 Sửa lỗi hiệu năng',
