@@ -1676,6 +1676,43 @@
             setTimeout(startTyping, 1500);
         }
 
+        // ── HELPER: Điền Đường dùng, SL, Cách dùng & Click "Thêm" ──
+        function fillDetailsAndSave(delay) {
+            setTimeout(function () {
+                if (ddSelect && ddSelect.options) {
+                    for (var oi = 0; oi < ddSelect.options.length; oi++) {
+                        if (ddSelect.options[oi].value === '2445') {
+                            ddSelect.selectedIndex = oi;
+                            if ($jq) $jq('#cboDUONG_DUNG').val('2445').trigger('change');
+                            else ddSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                            log.debug('🧰 Đường dùng = Dùng ngoài (2445)');
+                            break;
+                        }
+                    }
+                }
+                if (slInput) { triggerInput(slInput, String(sl)); log.debug('🧰 SL =', sl); }
+                if (cdInput && cachdung) { cdInput.focus(); triggerInput(cdInput, cachdung); log.debug('🧰 GhiChu = "' + cachdung + '"'); }
+
+                var addBtn = null;
+                var allBtns2 = vtDoc.querySelectorAll('button, input[type="button"], a.btn, .btn');
+                for (var bi = 0; bi < allBtns2.length; bi++) {
+                    var btnText = (allBtns2[bi].textContent || allBtns2[bi].value || '').trim();
+                    if (btnText.indexOf('Thêm vật tư') >= 0 || btnText.indexOf('Thêm VT') >= 0) {
+                        addBtn = allBtns2[bi]; break;
+                    }
+                }
+                if (addBtn) {
+                    log.debug('🧰 Auto click "Thêm vật tư"');
+                    addBtn.click();
+                    window.top.postMessage({ type: 'QUYEN_VT_PHYSICAL_ENTER_PRESSED', ma: ma }, '*');
+                } else {
+                    log.warn('🧰 Không tìm thấy nút Thêm vật tư');
+                }
+
+                postResult(true, '');
+            }, delay || 1500);
+        }
+
         function startTyping() {
             vtInput.focus();
             vtInput.click();
@@ -1683,15 +1720,13 @@
             try { vtInput.dispatchEvent(new elWin.Event('input', { bubbles: true })); }
             catch(e) { /* safe to ignore */ }
 
-            // ── Strategy 1: ComboGrid widget API (cgCombogrid) ──
-            // Widget exttype="cbg" lưu data dưới key "cgCombogrid"
-            // và có method .search() để trigger AJAX + popup
+            // ── TÌM WIDGET COMBOGRID ──
             var widgetFound = false;
+            var widget = null;
             if ($jq) {
                 try {
                     var allData = $jq(vtInput).data() || {};
-                    // Priority: cgCombogrid (confirmed), rồi fallback scan
-                    var widget = allData.cgCombogrid || allData.combogrid || allData.comboGrid || null;
+                    widget = allData.cgCombogrid || allData.combogrid || allData.comboGrid || null;
                     if (!widget) {
                         var dataKeys = Object.keys(allData);
                         for (var ki = 0; ki < dataKeys.length; ki++) {
@@ -1701,16 +1736,47 @@
                             }
                         }
                     }
-                    if (widget && typeof widget.search === 'function') {
-                        // ★ Reset term cache — widget skip search khi term không đổi
-                        widget.term = '';
-                        if (widget.previous !== undefined) widget.previous = '';
-                        vtInput.value = searchTerm;
-                        widget.search(searchTerm);
-                        widgetFound = true;
-                        log.debug('🧰 widget.search("' + searchTerm + '") ✅');
+                } catch(e) { log.debug('🧰 Widget quét lỗi:', e.message); }
+            }
+
+            // ── PHƯƠNG PHÁP 2: DATA INJECTION (FAST PATH) ──
+            var injected = false;
+            if (widget) {
+                try {
+                    log.debug('🧰 🚀 Thử Data Injection (Method 2)...');
+                    
+                    if (typeof widget.setValue === 'function') {
+                        widget.setValue(ma);
+                        if (typeof widget.setText === 'function') widget.setText(ten);
+                        injected = true;
+                    } else if ($jq && typeof $jq(vtInput).combogrid === 'function') {
+                        $jq(vtInput).combogrid('setValue', ma);
+                        $jq(vtInput).combogrid('setText', ten);
+                        injected = true;
                     }
-                } catch(e) { log.debug('🧰 Widget API error:', e.message); }
+                    
+                    if (injected) {
+                        triggerInput(vtInput, ten);
+                        log.debug('🧰 ✅ Tiêm thành công mã: ' + ma + '. Fast Path kích hoạt!');
+                        fillDetailsAndSave(500); // 🚀 Rút ngắn timer
+                        return; // Done
+                    }
+                } catch(injErr) {
+                    log.warn('🧰 ⚠️ Data Injection thất bại, chuyển Fallback Method 1...', injErr.message);
+                    injected = false;
+                }
+            }
+
+            // ── PHƯƠNG PHÁP 1: FALLBACK ──
+            if (widget && typeof widget.search === 'function') {
+                try {
+                    widget.term = '';
+                    if (widget.previous !== undefined) widget.previous = '';
+                    vtInput.value = searchTerm;
+                    widget.search(searchTerm);
+                    widgetFound = true;
+                    log.debug('🧰 fallback: widget.search("' + searchTerm + '") ✅');
+                } catch(swErr) { log.debug('🧰 fallback fail widget.search:', swErr.message); }
             }
 
             if (widgetFound) {
@@ -1718,7 +1784,6 @@
                 return;
             }
 
-            // ── Strategy 2: Fallback — Native KeyboardEvent (gõ từng ký tự) ──
             log.debug('🧰 Widget API không khả dụng, fallback native KeyboardEvent...');
             log.debug('🧰 Gõ VT: "' + searchTerm + '"...');
             var charIdx = 0;
@@ -1758,7 +1823,7 @@
 
         waitForWidgetReady(0);
 
-        // ── 3. POLLING COMBOGRID ────────────────────────────
+        // ── 3. POLLING COMBOGRID (Dành cho Fallback) ──
         function startComboGridPolling() {
             var retries = 0, maxRetries = 25;
             var checkTimer = setInterval(function () {
@@ -1766,14 +1831,12 @@
                 var popupRow = null;
                 var allVisible = [];
 
-                // Re-trigger mỗi 3s: clear + gõ lại
                 if (retries > 1 && retries % 6 === 0) {
                     log.debug('🧰 Re-trigger (lần ' + retries + ')...');
                     vtInput.focus();
                     vtInput.click();
                     vtInput.value = '';
                     try { vtInput.dispatchEvent(new elWin.Event('input', { bubbles: true })); } catch(e) { /* cross-frame safe */ }
-                    // Gõ lại toàn bộ rồi ArrowDown
                     var ri = 0;
                     function retypeChar() {
                         if (ri >= searchTerm.length) {
@@ -1793,7 +1856,6 @@
                     retypeChar();
                 }
 
-                // ★ TÌM POPUP ITEMS — XUYÊN TẤT CẢ DOCUMENTS ★
                 var searchDocs = [vtDoc];
                 try { if (window.parent && window.parent.document && window.parent.document !== vtDoc) searchDocs.push(window.parent.document); } catch(e) { /* cross-origin safe */ }
                 try { if (window.top && window.top.document && window.top.document !== vtDoc) searchDocs.push(window.top.document); } catch(e) { /* cross-origin safe */ }
@@ -1802,8 +1864,6 @@
                 for (var si = 0; si < searchDocs.length; si++) {
                     try {
                         var searchDoc = searchDocs[si];
-
-                        // ★ ComboGrid items (cg-* classes) — đây là dạng popup duy nhất của HIS
                         var cgItems = searchDoc.querySelectorAll('.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item, .cg-comboItem');
                         for (var cgi = 0; cgi < cgItems.length; cgi++) {
                             try { var cgR = cgItems[cgi].getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
@@ -1811,7 +1871,6 @@
                             allVisible.push(cgItems[cgi]);
                         }
 
-                        // ★ jQuery UI Autocomplete dropdown (backup)
                         if (allVisible.length === 0) {
                             var acLis = searchDoc.querySelectorAll('ul.ui-autocomplete:not([style*="display: none"]) li.ui-menu-item');
                             for (var ali = 0; ali < acLis.length; ali++) {
@@ -1827,7 +1886,6 @@
                     } catch(e) { /* cross-origin */ }
                 }
 
-                // ★ Ưu tiên item có mã VT trùng khớp
                 if (allVisible.length > 0) {
                     for (var vi = 0; vi < allVisible.length; vi++) {
                         var rowText = (allVisible[vi].textContent || '').toUpperCase();
@@ -1866,41 +1924,10 @@
                         }
                     } catch (e) { /* ignore */ }
 
-                    // ── 5. Điền Đường dùng, SL, Cách dùng ───────────
-                    setTimeout(function () {
-                        if (ddSelect && ddSelect.options) {
-                            for (var oi = 0; oi < ddSelect.options.length; oi++) {
-                                if (ddSelect.options[oi].value === '2445') {
-                                    ddSelect.selectedIndex = oi;
-                                    if ($jq) $jq('#cboDUONG_DUNG').val('2445').trigger('change');
-                                    else ddSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                                    log.debug('🧰 Đường dùng = Dùng ngoài (2445)');
-                                    break;
-                                }
-                            }
-                        }
-                        if (slInput) { triggerInput(slInput, String(sl)); log.debug('🧰 SL =', sl); }
-                        if (cdInput && cachdung) { cdInput.focus(); triggerInput(cdInput, cachdung); log.debug('🧰 GhiChu = "' + cachdung + '"'); }
-
-                        // ── Auto click "Thêm vật tư" (ngay lập tức) ──
-                        var addBtn = null;
-                        var allBtns2 = vtDoc.querySelectorAll('button, input[type="button"], a.btn, .btn');
-                        for (var bi = 0; bi < allBtns2.length; bi++) {
-                            var btnText = (allBtns2[bi].textContent || allBtns2[bi].value || '').trim();
-                            if (btnText.indexOf('Thêm vật tư') >= 0 || btnText.indexOf('Thêm VT') >= 0) {
-                                addBtn = allBtns2[bi]; break;
-                            }
-                        }
-                        if (addBtn) {
-                            log.debug('🧰 Auto click "Thêm vật tư"');
-                            addBtn.click();
-                            window.top.postMessage({ type: 'QUYEN_VT_PHYSICAL_ENTER_PRESSED', ma: ma }, '*');
-                        } else {
-                            log.warn('🧰 Không tìm thấy nút Thêm vật tư');
-                        }
-
-                        postResult(true, '');
-                    }, 1500);
+                    // ── Khởi chạy Helper ở chế độ Fallback ──
+                    if (typeof fillDetailsAndSave === 'function') {
+                        fillDetailsAndSave(1500);
+                    }
 
                 } else if (retries >= maxRetries) {
                     clearInterval(checkTimer);
@@ -2683,7 +2710,7 @@
                                             for (var ki = 0; ki < khoSelect.options.length; ki++) {
                                                 var optVal = khoSelect.options[ki].value || '';
                                                 var optText = khoSelect.options[ki].text || '';
-                                                if (optVal.indexOf('4251') >= 0 || optText.indexOf('Tủ trực') >= 0) {
+                                                if (optVal.indexOf('4251') >= 0 || optText.indexOf('Tủ trực VTYT') >= 0) {
                                                     khoSelect.selectedIndex = ki;
                                                     if (vtFormWin && vtFormWin.$) {
                                                         vtFormWin.$('#cboMA_KHO').val(optVal).trigger('change');
@@ -2698,7 +2725,7 @@
                                                     return;
                                                 }
                                             }
-                                        } else if (khoSelect && (khoSelect.value.indexOf('4251') >= 0 || (khoSelect.options[khoSelect.selectedIndex] && khoSelect.options[khoSelect.selectedIndex].text.indexOf('Tủ trực') >= 0))) {
+                                        } else if (khoSelect && (khoSelect.value.indexOf('4251') >= 0 || (khoSelect.options[khoSelect.selectedIndex] && khoSelect.options[khoSelect.selectedIndex].text.indexOf('Tủ trực VTYT') >= 0))) {
                                             // Đã chọn rồi (bởi người dùng hoặc script khác)
                                             clearInterval(khoTimer);
                                         }

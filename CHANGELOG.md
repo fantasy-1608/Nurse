@@ -5,12 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.1] - 2026-04-16
+## [1.3.1] - 2026-04-17
+
+### Added
+
+- **Data Injection (Bypass DOM)**: Kỹ thuật tiêm thẳng vật tư vào biến nội bộ của HIS, giảm thời gian điền xuống 0.3s/vật tư, loại bỏ độ trễ do phụ thuộc mạng drop-down.
+- **Universal Storage Selection**: Tự động chộp chính xác Tủ trực vật tư linh hoạt bằng từ khóa `Tủ trực VTYT`, loại bỏ rủi ro lệch ID khi chia sẻ đa khoa.
+- **Data Injection Fallback**: Hệ thống tự động kích hoạt 'phao cứu sinh', chuyển về quy trình gõ phím cũ nếu tiêm thất bại (do HIS cập nhật cấu trúc).
 
 ### Fixed
 
 - **Linter**: Đã xoá các biến không dùng `fillBtn`, `enterBtn` trong `vattu-ui.js` để code clean.
-- Cập nhật phiên bản phụ.
 
 ## [1.3.0] - 2026-04-16
 

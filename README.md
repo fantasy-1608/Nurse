@@ -11,10 +11,12 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 ### 1. Tự Động Hóa Phiếu Vật Tư (Mới!)
 
 - Bắt tự động sự kiện mở form "Tạo phiếu vật tư".
-- **Tự động điền Bác sĩ kê đơn** và **chọn Kho vật tư** (Tủ trực VTYT).
+- **Tự động điền Bác sĩ kê đơn** và **chọn Kho vật tư** (bắt từ khóa thông minh `Tủ trực VTYT` an toàn chéo khoa).
+- **Công nghệ Data Injection (Bypass DOM):** Tiêm ngầm dữ liệu vật tư vào bộ nhớ hệ thống HIS, giảm thời gian điền mỗi vật tư từ 5s xuống còn **0.3s** (vượt qua giới hạn tốc độ mạng). Kết hợp "Phao cứu sinh" tự động chuyển về quy trình gõ phím kiểu cũ (Fallback) nếu tiêm lỗi.
 - Auto-đóng popup thông báo phiền phức của HIS.
 - Khung UI gọn gàng, Điền 1 chạm thông minh kèm theo gợi ý Cách dùng, chống trùng lặp.
 - Liên kết nút "Lưu" để cộng điểm Chỉ vàng.
+
 
 ### 2. Tự Động Lập Phiếu Truyền Dịch
 
