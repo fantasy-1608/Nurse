@@ -94,7 +94,8 @@
         try {
             const _chrome = /** @type {any} */ (window).chrome;
             if (_chrome && _chrome.runtime) {
-                script.src = _chrome.runtime.getURL('injected/his-bridge.js');
+                const manifestVer = _chrome.runtime.getManifest().version;
+                script.src = _chrome.runtime.getURL('injected/his-bridge.js') + '?v=' + manifestVer + '_' + Date.now();
             }
         } catch (e) {
             QuyenLog.error('Không thể inject bridge script:', e);

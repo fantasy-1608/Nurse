@@ -72,6 +72,8 @@ const QuyenInfusionFiller = (function () {
     //   5. Click row → callback
     // ==========================================
 
+
+
     /**
      * @param {Object} options
      * @param {Document} options.doc - Document context (iframe hoặc main)
@@ -383,11 +385,15 @@ const QuyenInfusionFiller = (function () {
         }
 
         comboGridAutoSelect({
+            target: 'THUOC',
             doc: _formDoc,
             inputEl: searchInput,
+            ma: drug.ma || '',
+            ten: drug.name || searchTerm,
             searchTerm: searchTerm,
             matchTexts: matchTexts,
             label: 'Thuốc',
+            sessionId: sessionId,
             onComplete: function (success) {
                 // ★ BUG-01: Check session sau mỗi bước async
                 if (sessionId !== _fillSessionId) {
@@ -646,11 +652,15 @@ const QuyenInfusionFiller = (function () {
         const searchTerm = getNameSearchTerm(doctorName);
 
         comboGridAutoSelect({
+            target: 'YTA',
             doc: doc,
             inputEl: doctorInput,
+            ma: '',
+            ten: doctorName,
             searchTerm: searchTerm,
             matchTexts: [doctorName],
             label: 'BS chỉ định',
+            sessionId: null, // BS không phụ thuộc session fill chính
             onComplete: function (success) {
                 if (success) {
                     QuyenLog.info(`  ✅ BS chỉ định đã chọn: ${doctorName}`);
@@ -755,11 +765,15 @@ const QuyenInfusionFiller = (function () {
 
         const searchTerm = getNameSearchTerm(userName);
         comboGridAutoSelect({
+            target: 'YTA',
             doc: doc,
             inputEl: nurseInput,
+            ma: '',
+            ten: userName,
             searchTerm: searchTerm,
             matchTexts: [userName],
             label: 'Y tá',
+            sessionId: null, // Y tá không có sessionId của fill drug
             onComplete: function (success) {
                 if (success) {
                     QuyenLog.info(`  ✅ Y tá đã chọn: ${userName}`);

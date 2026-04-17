@@ -17,7 +17,6 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 - Khung UI gọn gàng, Điền 1 chạm thông minh kèm theo gợi ý Cách dùng, chống trùng lặp.
 - Liên kết nút "Lưu" để cộng điểm Chỉ vàng.
 
-
 ### 2. Tự Động Lập Phiếu Truyền Dịch
 
 - Trích xuất y lệnh thuốc/dịch truyền từ HIS

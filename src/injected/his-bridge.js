@@ -1262,6 +1262,7 @@
                 handleFillComboGrid(event.data.tasks);
                 break;
 
+
         }
         } catch (msgError) {
             log.error('❌ Message handler error [' + (event.data.type || '?') + ']:', msgError.message || msgError);
@@ -1330,6 +1331,7 @@
 
         log.debug('🏥 ✅ Section 17 hoàn tất!');
     }
+
 
 
 
@@ -2194,7 +2196,8 @@
             concentration: '',
             doctor: '',  // Bác sĩ chỉ định
             isIV: false,
-            rawData: row // Giữ raw data để debug
+            rawData: row, // Giữ raw data để debug
+            ma: row.MATHUOC || row.DICHVUID || row.MATHUOC_ID || row.ID_KHAMBENH_THUOC || row.ID || row.Id || row.id || ''
         };
 
         // Parse — thử nhiều key khác nhau

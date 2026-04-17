@@ -7,26 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.2] - 2026-04-17
 
-### Added
+### Added (v1.3.2)
 
 - **Data Injection (Bypass DOM)**: Kỹ thuật tiêm thẳng vật tư vào biến nội bộ của HIS, giảm thời gian điền xuống 0.3s/vật tư, loại bỏ độ trễ do phụ thuộc mạng drop-down.
 - **Universal Storage Selection**: Tự động chộp chính xác Tủ trực vật tư linh hoạt bằng từ khóa `Tủ trực VTYT`, loại bỏ rủi ro lệch ID khi chia sẻ đa khoa.
 - **Data Injection Fallback**: Hệ thống tự động kích hoạt 'phao cứu sinh', chuyển về quy trình gõ phím cũ nếu tiêm thất bại (do HIS cập nhật cấu trúc).
 
-### Fixed
+### Fixed (v1.3.2)
 
 - **Linter**: Đã xoá các biến không dùng `fillBtn`, `enterBtn` trong `vattu-ui.js` để code clean.
 
 ## [1.3.0] - 2026-04-16
 
-### Added
+### Added (v1.3.0)
 
 - **Tự Động Hóa Phiếu Vật Tư (Mới!)**: Bắt tự động sự kiện mở form "Tạo phiếu vật tư". Thay thế hoàn toàn thao tác thủ công.
 - **Auto Kho & Doctor**: Tự động điền Bác sĩ kê đơn và chọn Kho vật tư (Tủ trực VTYT).
 - **Gamification**: Tích lũy điểm Chỉ Vàng cho module Vật Tư.
 - **Deduplication**: Xử lý logic chống lặp lại vật tư trên danh sách.
 
-### Fixed
+### Fixed (v1.3.0)
 
 - **Performance**: Sửa lỗi DOM reflow và popup phiền phức từ HIS khi chọn kho.
 - **CSS**: Làm gọn toàn bộ các element của Phiếu Vật Tư, sạch sẽ linter.
