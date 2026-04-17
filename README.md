@@ -1,4 +1,4 @@
-# 💉 Điều Dưỡng Extension v1.3.1
+# 💉 Điều Dưỡng Extension v1.3.2
 
 > Trợ lý tự động nhập liệu trên VNPT HIS cho Điều dưỡng viên
 
@@ -193,7 +193,7 @@ background.js (service worker)
 
 Xem chi tiết tại [CHANGELOG.md](CHANGELOG.md).
 
-### v1.3.1 (16/04/2026) — Hotfix Linter Vật Tư
+### v1.3.2 (16/04/2026) — Hotfix Linter Vật Tư
 
 - Fix lỗi khai báo biến không dùng trong giao diện Vật tư. Cập nhật version phụ.
 
