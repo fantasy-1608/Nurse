@@ -12,7 +12,7 @@
     "build:nurse": "node build/build.js nurse",
     "build:ddt": "node build/build.js ddt",
     "build:all": "node build/release.js",
-    "release": "node build/release.js && gh release create v$(node -p \"require('./package.json').version\") dist-zip/*.zip --title \"v$(node -p \"require('./package.json').version\")\" --notes \"## 📦 Phiên bản v$(node -p \"require('./package.json').version\")\\n\\n### Tải về:\\n- **DDT** — Bản triển khai toàn viện (Điều Dưỡng)\\n- **Nurse** — Bản kỷ niệm (🌸 Cảm ơn chị Quyên)\\n\\n### Cài đặt:\\n1. Giải nén file .zip\\n2. Mở chrome://extensions/ → Bật Developer mode\\n3. Nhấn Load unpacked → Chọn thư mục vừa giải nén\""
+    "release": "node build/release.js && gh release create v$(node -p \"require('./package.json').version\") dist-zip/*.zip --title \"v$(node -p \"require('./package.json').version\")\" --generate-notes"
   },
   "keywords": [],
   "author": "",
