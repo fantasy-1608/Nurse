@@ -1,6 +1,6 @@
 {
   "name": "nurse",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Điều Dưỡng — Trợ lý tự động nhập liệu trên VNPT HIS",
   "main": "index.js",
   "directories": {

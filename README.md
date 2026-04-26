@@ -1,4 +1,4 @@
-# 💉 Điều Dưỡng Extension v1.3.2
+# 💉 Điều Dưỡng Extension v1.3.3
 
 > Trợ lý tự động nhập liệu trên VNPT HIS cho Điều dưỡng viên
 
@@ -15,6 +15,7 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 - **Công nghệ Data Injection (Bypass DOM):** Tiêm ngầm dữ liệu vật tư vào bộ nhớ hệ thống HIS, giảm thời gian điền mỗi vật tư từ 5s xuống còn **0.3s** (vượt qua giới hạn tốc độ mạng). Kết hợp "Phao cứu sinh" tự động chuyển về quy trình gõ phím kiểu cũ (Fallback) nếu tiêm lỗi.
 - Auto-đóng popup thông báo phiền phức của HIS.
 - Khung UI gọn gàng, Điền 1 chạm thông minh kèm theo gợi ý Cách dùng, chống trùng lặp.
+- **Tiện ích Copy**: Sao chép nhanh toàn bộ danh sách vật tư hiển thị ra Clipboard với 1 click.
 - Liên kết nút "Lưu" để cộng điểm Chỉ vàng.
 
 ### 2. Tự Động Lập Phiếu Truyền Dịch
@@ -32,6 +33,7 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 ### 4. An Toàn Bệnh Nhân (Patient Lock)
 
 - Khóa dữ liệu theo bệnh nhân đang chọn — chống nhầm lẫn cross-patient
+- **Siêu bảo mật (Strict Mode):** Kích hoạt `requireTarget: true` khi chạy Auto-fill, yêu cầu xác thực kép ID và DOB, block ngay nếu có dấu hiệu mismatch.
 - Fuzzy name match + sequence validation — fail-closed khi không xác minh được
 - Race condition guard: hủy request cũ khi chuyển bệnh nhân
 
@@ -43,6 +45,7 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 ### 6. Hệ Thống "Chỉ Vàng" (Gamification)
 
 - Tích lũy điểm qua mỗi phiếu vật tư / phiếu chăm sóc hoàn thành
+- **Server-side Validation:** Điểm chỉ được cộng khi server HIS thực sự xác nhận đã lưu dữ liệu thành công (không cộng ảo).
 - Hiệu ứng "+1 chỉ vàng ✨" bay lên + Gold Flash giữa màn hình
 - Rank system: 🌱 → 🪙 → 🥉 → 🥈 → 🥇 → 💎 → ✨👑✨
 
@@ -168,7 +171,8 @@ background.js (service worker)
 ## 🔒 Bảo Mật
 
 - **Origin validation:** Message bus chỉ nhận message từ đúng origin của HIS
-- **Type allowlist:** Chỉ xử lý các message types đã đăng ký
+- **Type allowlist:** Chỉ xử lý các message types đã đăng ký (Module Phiếu Chăm sóc, Vật tư...)
+- **Message Envelope & Request ID:** Đóng gói và gắn thẻ Request ID cho mọi tác vụ bất đồng bộ, loại bỏ tình trạng nhận nhầm dữ liệu cũ.
 - **PBKDF2:** Activation lock dùng 600,000 iterations (OWASP 2025)
 - **XSS protection:** `escapeHtml()` + `safeHTML` tagged template cho mọi user input
 - **Least privilege:** GitHub permissions là optional, chỉ request khi cần check update
@@ -191,6 +195,13 @@ background.js (service worker)
 ## 📋 Changelog
 
 Xem chi tiết tại [CHANGELOG.md](CHANGELOG.md).
+
+### v1.3.3 (26/04/2026) — Nâng Cấp Bảo Mật & Tính Năng Nurse
+
+- Nâng cấp PatientLock với `requireTarget: true`, bịt hoàn toàn lỗ hổng short-circuit và thêm guard cho `fillAllDrugs()`.
+- Chuẩn hóa Message Bus cho Vật Tư, sử dụng `HIS.Message` với `requestId` để chặn lỗi dữ liệu trả về sai luồng/cũ.
+- Sửa lỗi điểm Chỉ vàng ảo, chỉ cộng khi HIS phản hồi `success`.
+- Phục hồi và hoàn thiện chức năng "Copy danh sách VT" trên UI mới.
 
 ### v1.3.2 (16/04/2026) — Hotfix Linter Vật Tư
 

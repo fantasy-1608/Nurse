@@ -9,6 +9,7 @@ if (!target || !['nurse', 'ddt'].includes(target)) {
 }
 
 const config = require(`./config.${target}.js`);
+const pkg = require('../package.json');
 const srcDir = path.join(__dirname, '../src');
 const distDir = path.join(__dirname, `../dist/${target === 'nurse' ? 'Nurse' : 'DDT'}`);
 
@@ -38,6 +39,7 @@ function copyDir(src, dest) {
                 content = content.replace(/__EXT_EMOJI__/g, config.extEmoji);
                 content = content.replace(/__EXT_PREFIX__/g, config.extPrefix);
                 content = content.replace(/__EXT_FOOTER_TEXT__/g, config.extFooterText);
+                content = content.replace(/__EXT_VERSION__/g, pkg.version);
                 
                 // Thay thế chuỗi mảng JSON cho SUCCESS_MESSAGES
                 content = content.replace(/'__EXT_SUCCESS_MESSAGES__'/g, JSON.stringify(config.extSuccessMessages, null, 8));

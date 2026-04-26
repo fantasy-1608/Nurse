@@ -47,7 +47,16 @@ HIS.Message = (function () {
         'QUYEN_FILL_ERROR',
         'QUYEN_FORM_PATIENT_CONTEXT',
         'QUYEN_FORM_FOCUSED',
-        'QUYEN_FORM_CLOSED'
+        'QUYEN_FORM_CLOSED',
+        'QUYEN_REQ_VATTU_DATA',
+        'QUYEN_VATTU_DATA_RESULT',
+        'QUYEN_FILL_VT_ITEM',
+        'QUYEN_VT_FILL_RESULT',
+        'QUYEN_VT_SEND_ENTER',
+        'QUYEN_VT_ENTER_RESULT',
+        'QUYEN_VT_PHYSICAL_ENTER_PRESSED',
+        'QUYEN_ROLE_BLOCK',
+        'QUYEN_HIS_ENV'
     ];
 
     // Set for O(1) lookup

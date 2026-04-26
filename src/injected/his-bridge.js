@@ -1249,7 +1249,8 @@
                 fetchVatTuData(
                     event.data.khambenhId   || _currentKhambenhId,
                     event.data.benhnhanId   || _currentBenhnhanId,
-                    event.data.hosobenhanid || _currentHosobenhanid
+                    event.data.hosobenhanid || _currentHosobenhanid,
+                    event.data.requestId
                 );
                 break;
             case 'QUYEN_FILL_VT_ITEM':
@@ -1439,10 +1440,10 @@
     // Lấy danh sách thuốc (type '7;') và VT đã có (type 8) rồi
     // dispatch QUYEN_VATTU_DATA_RESULT về content script
     // ==========================================
-    function fetchVatTuData(khambenhId, benhnhanId, hosobenhanid) {
+    function fetchVatTuData(khambenhId, benhnhanId, hosobenhanid, requestId) {
         if (!khambenhId) {
             log.warn('🧰 fetchVatTuData: thiếu khambenhId');
-            window.postMessage({ type: 'QUYEN_VATTU_DATA_RESULT', drugs: [], existingVT: [] }, location.origin);
+            window.postMessage({ type: 'QUYEN_VATTU_DATA_RESULT', requestId: requestId, drugs: [], existingVT: [] }, location.origin);
             return;
         }
 
@@ -1561,6 +1562,7 @@
                 log.debug('🧰 VT data ready: drugs=' + allDrugs.length + ' existingVT=' + allExistVT.length);
                 window.postMessage({
                     type:       'QUYEN_VATTU_DATA_RESULT',
+                    requestId:  requestId,
                     drugs:      allDrugs,
                     existingVT: allExistVT
                 }, location.origin);
@@ -1605,6 +1607,7 @@
         var sl       = data.sl       || 1;
         var cachdung = data.cachdung || '';
         var doctor   = data.doctor   || '';
+        var requestId = data.requestId || '';
 
         // ★ BẬT GUARD: Chặn chuyển BN trong suốt quá trình fill
         _vtFillInProgress = true;
@@ -1612,7 +1615,7 @@
         function postResult(ok, err) {
             _vtFillInProgress = false;
             window.postMessage({
-                type: 'QUYEN_VT_FILL_RESULT', success: ok, ma: ma, error: err || ''
+                type: 'QUYEN_VT_FILL_RESULT', requestId: requestId, success: ok, ma: ma, error: err || ''
             }, location.origin);
         }
 
@@ -1706,7 +1709,7 @@
                 if (addBtn) {
                     log.debug('🧰 Auto click "Thêm vật tư"');
                     addBtn.click();
-                    window.top.postMessage({ type: 'QUYEN_VT_PHYSICAL_ENTER_PRESSED', ma: ma }, '*');
+                    window.top.postMessage({ type: 'QUYEN_VT_PHYSICAL_ENTER_PRESSED', ma: ma }, location.origin);
                 } else {
                     log.warn('🧰 Không tìm thấy nút Thêm vật tư');
                 }

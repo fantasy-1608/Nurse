@@ -520,12 +520,7 @@ const QuyenUI = (function () {
         // Lọc chỉ thuốc ngày hôm nay
         const today = new Date();
         const todayStr = ('0' + today.getDate()).slice(-2) + '/' + ('0' + (today.getMonth() + 1)).slice(-2) + '/' + today.getFullYear();
-        const todayDrugs = ivDrugs.filter(function (drug) {
-            if (!drug.prescriptionDate) return true; // Giữ nếu không có ngày
-            // ★ BUG-12: Normalize format — chấp nhận DD/MM/YYYY hoặc YYYY-MM-DD
-            const pDate = drug.prescriptionDate.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
-            return pDate === todayStr;
-        });
+        const todayDrugs = ivDrugs.filter(isTodayPrescription);
 
         if (todayDrugs.length === 0) {
             const msg = ivDrugs.length > 0
@@ -581,7 +576,7 @@ const QuyenUI = (function () {
                     }
 
                     // ★ Lớp 2: BN trong form có khớp BN đã chọn không?
-                    const lockResult = HIS.PatientLock.verifyCurrentForm();
+                    const lockResult = HIS.PatientLock.verifyCurrentForm({ requireTarget: true });
                     if (!lockResult.ok) {
                         showToast('🚫 ' + lockResult.details, 'error');
                         QuyenLog.warn('🔒 Infusion fill BLOCKED:', lockResult.reason, lockResult.details);
@@ -660,18 +655,43 @@ const QuyenUI = (function () {
     }
 
     // ==========================================
+    // HELPER: KIỂM TRA THUỐC TRONG NGÀY
+    // ==========================================
+    function isTodayPrescription(drug) {
+        if (!drug || !drug.prescriptionDate) return true; // Giữ nếu không có ngày
+        const today = new Date();
+        const todayStr = ('0' + today.getDate()).slice(-2) + '/' + ('0' + (today.getMonth() + 1)).slice(-2) + '/' + today.getFullYear();
+        // Normalize format — chấp nhận DD/MM/YYYY hoặc YYYY-MM-DD
+        const pDate = drug.prescriptionDate.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
+        return pDate === todayStr;
+    }
+
+    // ==========================================
     // FILL ALL IV DRUGS
     // ==========================================
     // eslint-disable-next-line no-unused-vars
     function fillAllDrugs() {
+        // ★ Lớp 1: Đã chọn BN chưa?
+        if (typeof HIS === 'undefined' || !HIS.PatientLock || !HIS.PatientLock.hasSource()) {
+            showToast('🚫 Chưa chọn bệnh nhân! Hãy click chọn BN trong danh sách trước.', 'error');
+            QuyenLog.warn('🔒 Fill-All BLOCKED: no patient source');
+            return;
+        }
+
+        // ★ Lớp 2: BN trong form có khớp BN đã chọn không?
+        const lockResult = HIS.PatientLock.verifyCurrentForm({ requireTarget: true });
+        if (!lockResult.ok) {
+            showToast('🚫 ' + lockResult.details, 'error');
+            QuyenLog.warn('🔒 Fill-All BLOCKED:', lockResult.reason, lockResult.details);
+            updateLockIndicator();
+            return;
+        }
+
         const allIV = QuyenInfusionReader.getIVDrugs();
-        const today = new Date();
-        const todayStr = ('0' + today.getDate()).slice(-2) + '/' + ('0' + (today.getMonth() + 1)).slice(-2) + '/' + today.getFullYear();
-        const ivDrugs = allIV.filter(function (d) {
-            return !d.prescriptionDate || d.prescriptionDate === todayStr;
-        });
+        const ivDrugs = allIV.filter(isTodayPrescription);
+        
         if (ivDrugs.length === 0) {
-            showToast('Kh\u00f4ng c\u00f3 thu\u1ed1c truy\u1ec1n d\u1ecbch ng\u00e0y h\u00f4m nay!', 'warning');
+            showToast('Không có thuốc truyền dịch ngày hôm nay!', 'warning');
             return;
         }
 
@@ -681,9 +701,9 @@ const QuyenUI = (function () {
 
         if (result.success) {
             incrementFilledCount();
-            showToast(`\u2705 \u0110\u00e3 \u0111i\u1ec1n "${drug.name}" \u2014 ${getRandomThank()}`);
+            showToast(`✅ Đã điền "${drug.name}" — ${getRandomThank()}`);
         } else {
-            showToast(`\u274c L\u1ed7i: ${result.error}`, 'error');
+            showToast(`❌ Lỗi: ${result.error}`, 'error');
         }
     }
 

@@ -502,19 +502,27 @@ HIS.PatientLock = (function () {
         return docs;
     }
 
-    /**
-     * CONVENIENCE: verify against current DOM (với fallback targetHint)
-     * ★ FIX v3: Nếu không đọc được target (không có form nào mở), trả OK luôn
-     * vì không có gì để so sánh. Chỉ cảnh báo khi THỰC SỰ đọc được form khác BN.
-     */
-    function verifyCurrentForm() {
+    function verifyCurrentForm(options = {}) {
+        const reqTarget = !!options.requireTarget;
+
         let target = readTargetFromDOM();
-        // Fallback: dùng targetHint từ UI module nếu DOM reading thất bại
-        if (!target && _targetHint) {
+        
+        // Fallback: dùng targetHint từ UI module nếu DOM reading thất bại 
+        // VÀ không requireTarget. Nếu requireTarget (fill dữ liệu), không dùng _targetHint.
+        if (!target && _targetHint && !reqTarget) {
             target = _targetHint;
         }
-        // ★ FIX v3: Nếu hoàn toàn không có target → không có form nào mở
-        // → Không có gì để mismatch → trả OK (thay vì fail-closed gây false alarm)
+        
+        // Nếu requireTarget = true mà không có target -> Block
+        if (!target && reqTarget) {
+            return {
+                ok: false,
+                reason: 'NO_TARGET_REQUIRED',
+                details: 'Không đọc được thông tin BN trên form để điền dữ liệu. Xin hãy đợi form tải xong.'
+            };
+        }
+
+        // Nếu requireTarget = false mà không có target -> Bỏ qua
         if (!target) {
             return {
                 ok: true,
@@ -522,10 +530,7 @@ HIS.PatientLock = (function () {
                 details: 'Không có form nào đang mở. BN từ danh sách được chấp nhận.'
             };
         }
-        // ★ FIX v3: Nếu target khớp với source (đang chọn trong danh sách), short-circuit OK
-        if (_source && target.name && namesMatch(target.name, _source.name)) {
-            return { ok: true, reason: 'MATCH_SHORT_CIRCUIT', details: 'BN khớp (short-circuit).' };
-        }
+
         // Merge có điều kiện: chỉ merge hint khi cùng BN theo tên, tránh trộn context chéo BN
         if (target && _targetHint) {
             const targetHasAnyId = !!(target.khambenhId || target.hosobenhanid);

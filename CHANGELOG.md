@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-04-26
+
+### Added (v1.3.3)
+
+- **PatientLock Guard**: Mở rộng xác thực PatientLock, yêu cầu kiểm tra bắt buộc mục tiêu (ID/DOB) qua tùy chọn `requireTarget: true` khi ghi dữ liệu. Chặn hoàn toàn rủi ro cross-patient.
+- **Message Bus Request ID**: Thêm `requestId` cho luồng fetch và fill Vật Tư để xác thực gói tin.
+
+### Fixed (v1.3.3)
+
+- **Message Bus Validation**: Thay `window.postMessage` bằng `HIS.Message` trong các file con `vattu-engine.js` và `vattu-ui.js` để đảm bảo Envelope và Marker hợp lệ.
+- **Gamification Bug**: Điểm Chỉ Vàng chỉ được cộng khi server phản hồi lưu Vật tư thành công (trả về success), loại bỏ tình trạng cộng điểm ảo.
+- **UI Bug**: Fix lỗi chức năng copy danh sách vật tư không lấy được dữ liệu do checkbox bị loại bỏ. Khôi phục hoàn toàn tính năng chép danh sách.
+
 ## [1.3.2] - 2026-04-17
 
 ### Added (v1.3.2)

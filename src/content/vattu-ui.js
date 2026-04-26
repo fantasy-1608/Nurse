@@ -24,6 +24,9 @@ const QuyenVatTuUI = (function () {
     // ★ Safe Mode: chỉ hiện thông tin, không cho fill
     let _safeMode = false;
 
+    let _fillingRequestId = null; // tracking ID cho lượt fill hiện tại
+    let _pendingGoldCount = false; // theo dõi cờ cộng điểm khi Lưu
+
     // =========================================================
     // INIT
     // =========================================================
@@ -39,23 +42,37 @@ const QuyenVatTuUI = (function () {
             });
         }
 
-        window.addEventListener('message', function (event) {
-            if (!event.data) return;
-            if (event.data.type === 'QUYEN_PATIENT_SELECTED') {
+        HIS.Message.listen([
+            'QUYEN_PATIENT_SELECTED',
+            'QUYEN_VT_FILL_RESULT',
+            'QUYEN_VT_ENTER_RESULT',
+            'QUYEN_VT_PHYSICAL_ENTER_PRESSED'
+        ], function (data) {
+            if (data.type === 'QUYEN_PATIENT_SELECTED') {
                 _lastResult = null;
                 renderLoading('Đang tải dữ liệu thuốc...');
                 setTimeout(function () { refresh(); }, 800);
-            }
-            if (event.data.type === 'QUYEN_VT_FILL_RESULT') {
-                onFillResult(event.data);
-            }
-            if (event.data.type === 'QUYEN_VT_ENTER_RESULT') {
-                if (!event.data.success) {
-                    showToast('❌ ' + event.data.error, 'warning');
+            } else if (data.type === 'QUYEN_VT_FILL_RESULT') {
+                if (_fillingRequestId && data.requestId && data.requestId !== _fillingRequestId) return;
+                onFillResult(data);
+            } else if (data.type === 'QUYEN_VT_ENTER_RESULT') {
+                if (!data.success) {
+                    showToast('❌ ' + data.error, 'warning');
+                    _pendingGoldCount = false;
                 } else {
                     showToast('✅ Đã lưu phiếu VT', 'success');
+                    if (_pendingGoldCount) {
+                        _pendingGoldCount = false;
+                        if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.incrementFilledCount === 'function') {
+                            QuyenUI.incrementFilledCount();
+                        }
+                        if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.triggerGoldFlash === 'function') {
+                            QuyenUI.triggerGoldFlash();
+                        }
+                        showToast('✨ +1 Chỉ vàng!', 'success');
+                    }
                 }
-            } else if (event.data.type === 'QUYEN_VT_PHYSICAL_ENTER_PRESSED') {
+            } else if (data.type === 'QUYEN_VT_PHYSICAL_ENTER_PRESSED') {
                 if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.incrementFilledCount === 'function') {
                     QuyenUI.incrementFilledCount();
                 }
@@ -336,13 +353,11 @@ const QuyenVatTuUI = (function () {
                         fillBtn.textContent = '✚ Điền';
                     }
                     // Gửi lệnh giả lập Enter tới HIS
-                    window.postMessage({ type: 'QUYEN_VT_SEND_ENTER' }, location.origin);
+                    HIS.Message.send('QUYEN_VT_SEND_ENTER');
                     showToast('Đang mô phỏng thao tác ấn Enter...', 'info');
                     
-                    // Thêm hiệu ứng +1 chỉ vàng khi nhấn Lưu
-                    if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.incrementFilledCount === 'function') {
-                        QuyenUI.incrementFilledCount();
-                    }
+                    // Cắm cờ chờ cộng điểm
+                    _pendingGoldCount = true;
                 });
             })(enterBtns[ei]);
         }
@@ -417,14 +432,15 @@ const QuyenVatTuUI = (function () {
 
         QuyenLog.info('🧰 Điền VT:', item.ma, '| SL:', sl, '| CD:', cachdung);
 
-        window.postMessage({
-            type:     'QUYEN_FILL_VT_ITEM',
+        _fillingRequestId = Date.now() + '_' + Math.random();
+        HIS.Message.send('QUYEN_FILL_VT_ITEM', {
+            requestId: _fillingRequestId,
             ma:       item.ma,
             ten:      item.ten,
             sl:       sl,
             cachdung: cachdung,
             doctor:   _doctorName,
-        }, location.origin);
+        });
 
         // Timeout fallback 12s — giải phóng queue nếu bridge không phản hồi
         setTimeout(function () {
@@ -489,46 +505,44 @@ const QuyenVatTuUI = (function () {
     function copyToClipboard(suggestedVT) {
         if (!suggestedVT || suggestedVT.length === 0) return;
 
-        const checkedItems = [];
+        const itemsToCopy = [];
         const rows = _container ? _container.querySelectorAll('.quyen-vt-suggest-row') : [];
         for (let i = 0; i < rows.length; i++) {
             const row  = rows[i];
             const idx  = parseInt(row.getAttribute('data-idx'), 10);
-            const chk  = row.querySelector('.quyen-vt-check');
             const slI  = row.querySelector('.quyen-vt-sl-input');
             const cdI  = row.querySelector('.quyen-vt-cachdung-input');
-            if (chk && chk.checked) {
-                const item = suggestedVT[idx];
-                if (item) {
-                    checkedItems.push({
-                        ma: item.ma, ten: item.ten, dvt: item.dvt, huong: item.huong,
-                        sl:       slI ? slI.value       : item.sl,
-                        cachdung: cdI ? cdI.value.trim(): item.cachdung,
-                    });
-                }
+            
+            const item = suggestedVT[idx];
+            if (item) {
+                itemsToCopy.push({
+                    ma: item.ma, ten: item.ten, dvt: item.dvt, huong: item.huong,
+                    sl:       slI ? slI.value       : item.sl,
+                    cachdung: cdI ? cdI.value.trim(): item.cachdung,
+                });
             }
         }
 
-        if (checkedItems.length === 0) { showToast('Không có VT nào được chọn!', 'warning'); return; }
+        if (itemsToCopy.length === 0) { showToast('Không có VT nào để copy!', 'warning'); return; }
 
         const today = new Date().toLocaleDateString('vi-VN');
         let text  = 'DANH SÁCH VẬT TƯ GỢI Ý — ' + today + '\n' + '═'.repeat(40) + '\n';
-        for (let n = 0; n < checkedItems.length; n++) {
-            const ci = checkedItems[n];
+        for (let n = 0; n < itemsToCopy.length; n++) {
+            const ci = itemsToCopy[n];
             text += (n + 1) + '. [' + ci.ma + '] ' + ci.ten + '\n';
             text += '   SL: ' + ci.sl + ' ' + ci.dvt + '  |  ' + ci.huong + '\n';
             if (ci.cachdung) text += '   Cách dùng: ' + ci.cachdung + '\n';
         }
-        text += '─'.repeat(40) + '\nTổng: ' + checkedItems.length + ' loại\n⚠️ Kiểm tra lại trước khi lập phiếu';
+        text += '─'.repeat(40) + '\nTổng: ' + itemsToCopy.length + ' loại\n⚠️ Kiểm tra lại trước khi lập phiếu';
 
         navigator.clipboard.writeText(text).then(function () {
-            showToast('✅ Đã copy ' + checkedItems.length + ' VT!', 'success');
+            showToast('✅ Đã copy danh sách VT!', 'success');
         }).catch(function () {
             const ta = document.createElement('textarea');
             ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
             document.body.appendChild(ta); ta.select(); document.execCommand('copy');
             document.body.removeChild(ta);
-            showToast('✅ Đã copy!', 'success');
+            showToast('✅ Đã copy danh sách VT!', 'success');
         });
     }
 

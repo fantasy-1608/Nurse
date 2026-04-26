@@ -21,9 +21,8 @@ const QuyenVatTuEngine = (function () {
     // =========================================================
     let _currentPatient = null; // { name, khambenhId, benhnhanId, hosobenhanid }
 
-    window.addEventListener('message', function (event) {
-        if (!event.data || event.data.type !== 'QUYEN_PATIENT_SELECTED') return;
-        const p = event.data.patient || {};
+    HIS.Message.listen('QUYEN_PATIENT_SELECTED', function (data) {
+        const p = data.patient || {};
         _currentPatient = {
             name:          p.name          || '',
             khambenhId:    p.khambenhId    || '',
@@ -159,25 +158,25 @@ const QuyenVatTuEngine = (function () {
         }
 
         return new Promise(function (resolve, reject) {
+            const reqId = Date.now() + '_' + Math.random();
             const timeout = setTimeout(function () {
-                window.removeEventListener('message', onResult);
+                cleanup();
                 reject(new Error('Timeout khi đợi bridge VT data'));
             }, 15000);
 
-            function onResult(event) {
-                if (!event.data || event.data.type !== 'QUYEN_VATTU_DATA_RESULT') return;
+            const cleanup = HIS.Message.listen('QUYEN_VATTU_DATA_RESULT', function (data) {
+                if (data.requestId && data.requestId !== reqId) return;
                 clearTimeout(timeout);
-                window.removeEventListener('message', onResult);
-                resolve(event.data);
-            }
+                cleanup();
+                resolve(data);
+            });
 
-            window.addEventListener('message', onResult);
-            window.postMessage({
-                type: 'QUYEN_REQ_VATTU_DATA',
+            HIS.Message.send('QUYEN_REQ_VATTU_DATA', {
+                requestId:    reqId,
                 khambenhId:   patient.khambenhId,
                 benhnhanId:   patient.benhnhanId,
                 hosobenhanid: patient.hosobenhanid
-            }, location.origin);
+            });
         });
     }
 

@@ -955,7 +955,7 @@ const QuyenCareSheetUI = (function () {
         }
 
         // ★ Lớp 2: BN trong form có khớp BN đã chọn không?
-        const lockResult = HIS.PatientLock.verifyCurrentForm();
+        const lockResult = HIS.PatientLock.verifyCurrentForm({ requireTarget: true });
         if (!lockResult.ok) {
             setStatus('🚫 ' + lockResult.details, 'error');
             if (typeof QuyenUI !== 'undefined') {
@@ -1019,7 +1019,7 @@ const QuyenCareSheetUI = (function () {
 
             // ★ Copy cân nặng + sinh hiệu + Section 17 từ phiếu cũ (KHÔNG copy Section 4)
             try {
-                const lockCheck2 = (typeof HIS !== 'undefined' && HIS.PatientLock) ? HIS.PatientLock.verifyCurrentForm() : { ok: true };
+                const lockCheck2 = (typeof HIS !== 'undefined' && HIS.PatientLock) ? HIS.PatientLock.verifyCurrentForm({ requireTarget: true }) : { ok: true };
                 if (!lockCheck2.ok) {
                     QuyenLog.warn('⚠️ Skip fillSection4FromPrevious — BN đã thay đổi:', lockCheck2.details);
                     addExtensionStep('Bỏ qua copy phiếu cũ: BN thay đổi', 'error');
