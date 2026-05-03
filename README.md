@@ -1,4 +1,4 @@
-# 💉 Điều Dưỡng Extension v1.3.3
+# 💉 Điều Dưỡng Extension
 
 > Trợ lý tự động nhập liệu trên VNPT HIS cho Điều dưỡng viên
 

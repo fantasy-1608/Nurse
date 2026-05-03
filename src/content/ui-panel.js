@@ -3,7 +3,7 @@
  * Floating panel hiển thị y lệnh truyền dịch và nút điền tự động
  */
 
-/* global QuyenLog, QUYEN_CONFIG, getRandomThank, QuyenInfusionFiller, QuyenInfusionReader, QuyenCareSheetUI, QuyenVatTuUI, cancelAnimationFrame */
+/* global QuyenLog, QUYEN_CONFIG, getRandomThank, QuyenInfusionFiller, QuyenInfusionReader, QuyenCareSheetUI, QuyenVatTuUI, QuyenDemoUI, cancelAnimationFrame */
 /* exported QuyenUI */
 
 const QuyenUI = (function () {
@@ -14,7 +14,7 @@ const QuyenUI = (function () {
     let _isMinimized = false;
     let _filledToday = 0;
     let _currentPatientName = '';
-    let _activeTab = 'infusion'; // 'infusion' | 'caresheet' | 'vattu'
+    let _activeTab = 'infusion'; // 'infusion' | 'caresheet' | 'vattu' | 'demo'
     let _savedLeft = null, _savedTop = null;
     let _fillTrackerUnsub = null;  // ★ Fix: cleanup function cho FillTracker listener
 
@@ -139,6 +139,7 @@ const QuyenUI = (function () {
                 <button class="quyen-tab quyen-tab-active" data-tab="infusion" id="quyen-tab-infusion">✏️ Truyền dịch</button>
                 <button class="quyen-tab" data-tab="caresheet" id="quyen-tab-caresheet">📋 Phiếu CS</button>
                 <button class="quyen-tab" data-tab="vattu" id="quyen-tab-vattu">🧰 VT <span class="quyen-beta-badge">BETA</span></button>
+                <button class="quyen-tab" data-tab="demo" id="quyen-tab-demo">Demo</button>
             </div>
             <div class="quyen-panel-body" id="quyen-panel-body">
                 <div class="quyen-tab-content quyen-tab-content-active" id="quyen-tab-content-infusion">
@@ -157,6 +158,9 @@ const QuyenUI = (function () {
                 </div>
                 <div class="quyen-tab-content" id="quyen-tab-content-vattu">
                     <!-- VatTuUI sẽ render vào đây -->
+                </div>
+                <div class="quyen-tab-content" id="quyen-tab-content-demo">
+                    <!-- Demo UI sẽ render vào đây -->
                 </div>
             </div>
             <div class="quyen-footer">
@@ -196,6 +200,12 @@ const QuyenUI = (function () {
         const vtContainer = document.getElementById('quyen-tab-content-vattu');
         if (vtContainer && typeof QuyenVatTuUI !== 'undefined') {
             QuyenVatTuUI.init(vtContainer);
+        }
+
+        // Init Demo UI vào tab container (read-only)
+        const demoContainer = document.getElementById('quyen-tab-content-demo');
+        if (demoContainer && typeof QuyenDemoUI !== 'undefined') {
+            QuyenDemoUI.init(demoContainer);
         }
 
 
@@ -1101,7 +1111,7 @@ const QuyenUI = (function () {
         incrementFilledCount,
         /**
          * Chuyển tab trong panel
-         * @param {'infusion'|'caresheet'|'vattu'} tabName
+         * @param {'infusion'|'caresheet'|'vattu'|'demo'} tabName
          */
         switchTab,
         /**
