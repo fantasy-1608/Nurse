@@ -27,6 +27,8 @@
         error: (...args) => console.error('[__EXT_EMOJI__ Bridge]', ...args)
     };
 
+    // Mục đích: Spy đã được xoá sau khi hoàn thành diagnostic.
+
     // ★ BUG-16: Retry jQuery detection if not available at init time
     if (!_$) {
         let _jqRetryCount = 0;
@@ -43,7 +45,7 @@
         }, 500);
     }
 
-    log.debug('HIS Bridge v1.3.1 — __EXT_NAME__! __EXT_EMOJI__');
+    log.debug('HIS Bridge v__EXT_VERSION__ — __EXT_NAME__! __EXT_EMOJI__');
 
     // ★ 3.2: HIS Version Detection — ghi nhận version HIS đang chạy
     (function detectHISVersion() {
@@ -126,6 +128,8 @@
     let _currentKhambenhId = '';      // KHAMBENHID của BN đang chọn
     let _currentHosobenhanid = '';    // HOSOBENHANID của BN đang chọn
     let _currentBenhnhanId = '';      // BENHNHANID của BN đang chọn
+    let _currentFinanceContext = {};  // Field viện phí/tạm ứng lấy từ row bệnh nhân
+    let _currentPatientRowData = {};  // Raw rowData để fallback các field ẩn của jqGrid
 
     // CT_FORM_IDs cho Section 4 - Cơ quan bệnh + Cân nặng
     const SECTION4_IDS = ['1169', '1170', '1171', '1232'];
@@ -276,6 +280,15 @@
         _currentKhambenhId = khambenhId;
         _currentHosobenhanid = hosobenhanid;
         _currentBenhnhanId = benhnhanId;
+        _currentPatientRowData = Object.assign({}, rowData);
+        _currentFinanceContext = {
+            maBHYT: rowData.MA_BHYT || rowData.MABHYT || '',
+            doiTuongId: rowData.DOITUONGBENHNHANID || '',
+            doiTuong: rowData.TENDOITUONGBENHNHAN || rowData.DOITUONGBENHNHAN || '',
+            soNgayDieuTri: rowData.SONGAYDIEUTRI || '',
+            thoiGianVaoVien: rowData.THOIGIANVAOVIEN || '',
+            financeCore: rowData.TONGTIENDICHVUCORE || ''
+        };
         const thisSeq = _patientSeq;
         log.debug('👤 Patient selected:', rowId, '| seq:', thisSeq, '| KB:', khambenhId, '| name:', hoTen ? '(found)' : '(EMPTY!)');
 
@@ -399,7 +412,13 @@
                         gender: gioiTinh,
                         khambenhId: khambenhId,
                         benhnhanId: benhnhanId,
-                        hosobenhanid: hosobenhanid
+                        hosobenhanid: hosobenhanid,
+                        maBHYT: _currentFinanceContext.maBHYT,
+                        doiTuongId: _currentFinanceContext.doiTuongId,
+                        doiTuong: _currentFinanceContext.doiTuong,
+                        soNgayDieuTri: _currentFinanceContext.soNgayDieuTri,
+                        thoiGianVaoVien: _currentFinanceContext.thoiGianVaoVien,
+                        financeCore: _currentFinanceContext.financeCore
                     },
                     vitals: vitals
                 }, window.location.origin);
@@ -930,6 +949,181 @@
         return '';
     }
 
+    function parseCareSheetDateTime(str) {
+        str = String(str || '').trim();
+        if (!str) return null;
+
+        const vn = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+        if (vn) {
+            return new Date(
+                parseInt(vn[3], 10),
+                parseInt(vn[2], 10) - 1,
+                parseInt(vn[1], 10),
+                parseInt(vn[4] || '0', 10),
+                parseInt(vn[5] || '0', 10),
+                parseInt(vn[6] || '0', 10)
+            );
+        }
+
+        const iso = str.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+        if (iso) {
+            return new Date(
+                parseInt(iso[1], 10),
+                parseInt(iso[2], 10) - 1,
+                parseInt(iso[3], 10),
+                parseInt(iso[4] || '0', 10),
+                parseInt(iso[5] || '0', 10),
+                parseInt(iso[6] || '0', 10)
+            );
+        }
+
+        const d = new Date(str);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    function extractDateTimeFromItems(items) {
+        const keys = ['NGAYTAO', 'NGAYSUA', 'NGAY', 'THOIGIAN', 'THOIGIANTAO', 'NGAYLAP', 'NGAY_LAP'];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i] || {};
+            for (let k = 0; k < keys.length; k++) {
+                const raw = item[keys[k]];
+                const parsed = parseCareSheetDateTime(raw);
+                if (parsed) return { raw: String(raw), date: parsed };
+            }
+        }
+        return { raw: '', date: null };
+    }
+
+    function getCurrentShiftInfo(now) {
+        now = now || new Date();
+        const h = now.getHours();
+        if (h >= 6 && h < 14) return { id: 'morning', label: 'ca sáng', start: 6, end: 14 };
+        if (h >= 14 && h < 22) return { id: 'afternoon', label: 'ca chiều', start: 14, end: 22 };
+        return { id: 'night', label: 'ca đêm', start: 22, end: 6 };
+    }
+
+    function isSameDay(a, b) {
+        return a && b && a.getFullYear() === b.getFullYear() &&
+            a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    }
+
+    function isInShift(date, shift, now) {
+        if (!date || !shift) return false;
+        now = now || new Date();
+        let start, end;
+        if (shift.id === 'night') {
+            start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 22, 0, 0, 0);
+            if (now.getHours() < 6) start.setDate(start.getDate() - 1);
+            end = new Date(start.getTime());
+            end.setDate(end.getDate() + 1);
+            end.setHours(6, 0, 0, 0);
+            return date >= start && date < end;
+        }
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), shift.start, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), shift.end, 0, 0, 0);
+        return date >= start && date < end;
+    }
+
+    function formatCareSheetDate(date, raw) {
+        if (!date) return raw || '';
+        const dd = ('0' + date.getDate()).slice(-2);
+        const mm = ('0' + (date.getMonth() + 1)).slice(-2);
+        const yyyy = date.getFullYear();
+        const hh = ('0' + date.getHours()).slice(-2);
+        const mi = ('0' + date.getMinutes()).slice(-2);
+        return dd + '/' + mm + '/' + yyyy + ' ' + hh + ':' + mi;
+    }
+
+    function sendDemoCareSheetStatus(requestId, status) {
+        window.postMessage({
+            type: 'QUYEN_DEMO_CARESHEET_STATUS_RESULT',
+            requestId: requestId,
+            status: status
+        }, location.origin);
+    }
+
+    function handleDemoCareSheetStatusRequest(seq, khambenhId, requestId) {
+        const reqSeq = (seq !== undefined && seq !== null) ? seq : _patientSeq;
+        const shift = getCurrentShiftInfo();
+
+        if (reqSeq !== _patientSeq) {
+            sendDemoCareSheetStatus(requestId, {
+                status: 'unknown',
+                currentShift: shift.label,
+                note: 'Dữ liệu BN đã đổi trong lúc đọc phiếu CS.',
+                forms: []
+            });
+            return;
+        }
+
+        if (khambenhId && _currentKhambenhId && String(khambenhId) !== String(_currentKhambenhId)) {
+            sendDemoCareSheetStatus(requestId, {
+                status: 'unknown',
+                currentShift: shift.label,
+                note: 'Mã khám bệnh không khớp, bỏ qua dữ liệu phiếu CS.',
+                forms: []
+            });
+            return;
+        }
+
+        const now = new Date();
+        const phieuIds = findPhieuIdsFromCareSheetGrid();
+        const forms = [];
+
+        const maxDemoFetch = Math.min(phieuIds.length, 12);
+        for (let i = 0; i < maxDemoFetch; i++) {
+            if (reqSeq !== _patientSeq) return;
+            const items = fetchCareSheetItems(phieuIds[i]);
+            if (!items || items.length === 0) {
+                forms.push({ phieuId: phieuIds[i], rawDate: '', display: '', inCurrentShift: false, isToday: false });
+                continue;
+            }
+            const dt = extractDateTimeFromItems(items);
+            forms.push({
+                phieuId: phieuIds[i],
+                rawDate: dt.raw,
+                display: formatCareSheetDate(dt.date, dt.raw),
+                ts: dt.date ? dt.date.getTime() : 0,
+                inCurrentShift: dt.date ? isInShift(dt.date, shift, now) : false,
+                isToday: dt.date ? isSameDay(dt.date, now) : false
+            });
+        }
+
+        forms.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+
+        const latest = forms.length > 0 ? forms[0] : null;
+        const hasCurrentShift = forms.some(function (f) { return f.inCurrentShift; });
+        const hasToday = forms.some(function (f) { return f.isToday; });
+        const hasAnyDate = forms.some(function (f) { return !!f.ts; });
+
+        let status = 'unknown';
+        let note = 'Chưa xác định được phiếu trong ' + shift.label + '.';
+        if (hasCurrentShift) {
+            status = 'ok_current_shift';
+            note = 'Đã thấy phiếu chăm sóc trong ' + shift.label + '.';
+        } else if (hasToday) {
+            status = 'today_other_shift';
+            note = 'Có phiếu chăm sóc hôm nay nhưng chưa thấy trong ' + shift.label + '.';
+        } else if (hasAnyDate) {
+            status = 'missing_today';
+            note = 'Chưa thấy phiếu chăm sóc hôm nay.';
+        } else if (forms.length > 0) {
+            status = 'unknown';
+            note = 'Có phiếu CS nhưng không đọc được ngày giờ.';
+        } else {
+            status = 'missing_today';
+            note = 'Chưa thấy phiếu chăm sóc nào trong danh sách hiện tại.';
+        }
+
+        sendDemoCareSheetStatus(requestId, {
+            status: status,
+            currentShift: shift.label,
+            note: note,
+            latestDisplay: latest ? latest.display : '',
+            forms: forms.slice(0, 8)
+        });
+    }
+
     /**
      * Chọn iframe phiếu chăm sóc "đúng nhất":
      * - URL liên quan NTU02D204/ThemPhieu
@@ -1241,6 +1435,12 @@
                 break;
             case 'QUYEN_REQ_CARESHEET_SEC4':
                 handleCareSheetSec4Request(event.data.seq, event.data.khambenhId, event.data.requestId);
+                break;
+            case 'QUYEN_REQ_DEMO_CARESHEET_STATUS':
+                handleDemoCareSheetStatusRequest(event.data.seq, event.data.khambenhId, event.data.requestId);
+                break;
+            case 'QUYEN_REQ_ADVANCE_PAYMENT':
+                fetchAdvancePaymentData(event.data);
                 break;
             case 'QUYEN_REQ_VITALS':
                 fetchVitalsFromHIS();
@@ -1591,6 +1791,808 @@
             onBothDone();
         };
         xhr2.send();
+    }
+
+    // ==========================================
+    // ADVANCE PAYMENT DATA — read-only viện phí/tạm ứng
+    // HunterAI discovered VPI01T001.05/.06 for fee and advance summary.
+    // ==========================================
+    function fetchAdvancePaymentData(data) {
+        const requestId = data.requestId || '';
+        const reqSeq = data.seq;
+        const khambenhId = data.khambenhId || _currentKhambenhId || '';
+        const benhnhanId = data.benhnhanId || _currentBenhnhanId || '';
+        const hosobenhanid = data.hosobenhanid || _currentHosobenhanid || '';
+        const financeCore = data.financeCore || _currentFinanceContext.financeCore || '';
+
+        // ★ Đọc TIEPNHANID và KHOAID từ grid row — đây là params đúng cho VPI SPs
+        const _gridRow = _currentPatientRowData || {};
+        const tiepnhanId = _gridRow.TIEPNHANID || '';
+        const khoaId = _gridRow.KHOAID || '-1';
+
+        function post(payload) {
+            window.postMessage(Object.assign({
+                type: 'QUYEN_ADVANCE_PAYMENT_RESULT',
+                requestId: requestId,
+                seq: _patientSeq,
+                khambenhId: _currentKhambenhId,
+                financeCore: financeCore
+            }, payload), location.origin);
+        }
+
+        if (reqSeq !== undefined && reqSeq !== null && reqSeq !== _patientSeq) {
+            post({ error: 'Dữ liệu BN đã đổi trong lúc đọc viện phí.' });
+            return;
+        }
+
+        if (!khambenhId) {
+            post({ error: 'Thiếu khambenhId để đọc viện phí.' });
+            return;
+        }
+
+        if (!_jsonrpc || !_jsonrpc.AjaxJson || typeof _jsonrpc.AjaxJson.ajaxCALL_SP_O !== 'function') {
+            post({ error: 'jsonrpc chưa sẵn sàng để đọc viện phí.' });
+            return;
+        }
+
+        log.debug('💰 Advance request | KB=' + khambenhId + ' BN=' + benhnhanId + ' TP=' + tiepnhanId + ' Khoa=' + khoaId + ' core=' + (financeCore ? 'yes' : 'no'));
+
+        function parseResult(raw) {
+            if (!raw) return null;
+            let parsed = raw;
+            try {
+                if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+            } catch (e) {
+                return null;
+            }
+            if (parsed && parsed.result !== undefined) {
+                parsed = parsed.result;
+                try {
+                    if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+                } catch (e2) {
+                    return null;
+                }
+            }
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed && typeof parsed === 'object') return [parsed];
+            return null;
+        }
+
+        function callFeeSP(spName) {
+            // ★ TIEPNHANID-based calls (từ traffic capture của HIS thật)
+            if (tiepnhanId) {
+                // [1] VPI01T005.01 / VPI01T001.05 / VPI01T001.06 via paging với TIEPNHANID
+                const uuid0 = (_jsonrpc && _jsonrpc.AjaxJson && _jsonrpc.AjaxJson.uuid) ? _jsonrpc.AjaxJson.uuid : '';
+                try {
+                    const pd = JSON.stringify({ func: 'ajaxExecuteQueryPaging', uuid: uuid0, params: [spName], options: [{ name: '[0]', value: String(tiepnhanId) }] });
+                    const xr0 = new XMLHttpRequest();
+                    xr0.open('GET', '/vnpthis/RestService?postData=' + encodeURIComponent(pd) + '&_search=false&rows=500&page=1&sidx=&sord=asc', false);
+                    xr0.send();
+                    if (xr0.status === 200) {
+                        const r0 = parseResult(xr0.responseText);
+                        if (r0 && r0.length > 0) { log.debug('💰 ' + spName + ' ok via TIEPNHANID paging [' + tiepnhanId + ']'); return r0; }
+                    }
+                } catch(e0) { log.debug('💰 ' + spName + ' TIEPNHANID paging lỗi: ' + e0.message); }
+
+                // [2] VPI01T004.01 format: ajaxCALL_SP_O với "TIEPNHANID$-1"
+                try {
+                    const body2 = JSON.stringify({ func: 'ajaxCALL_SP_O', uuid: uuid0, params: [spName, tiepnhanId + '$-1', 0], options: [] });
+                    const xr2 = new XMLHttpRequest();
+                    xr2.open('POST', '/vnpthis/RestService', false);
+                    xr2.setRequestHeader('Content-Type', 'application/json');
+                    xr2.send(body2);
+                    if (xr2.status === 200) {
+                        const r2 = parseResult(xr2.responseText);
+                        if (r2 && r2.length > 0) { log.debug('💰 ' + spName + ' ok via TIEPNHANID$-1 [' + tiepnhanId + ']'); return r2; }
+                    }
+                } catch(e2) { log.debug('💰 ' + spName + ' TIEPNHANID$-1 lỗi: ' + e2.message); }
+
+                // [3] dbCALL_SP_R format (VPI01T004.SP.11 style): params ["", spName, JSON, 0]
+                try {
+                    const jsonParams = JSON.stringify({ TIEPNHANID: String(tiepnhanId), KHOAID: String(khoaId) });
+                    const body3 = JSON.stringify({ func: 'dbCALL_SP_R', uuid: uuid0, params: ['', spName, jsonParams, 0], options: [] });
+                    const xr3 = new XMLHttpRequest();
+                    xr3.open('POST', '/vnpthis/RestService', false);
+                    xr3.setRequestHeader('Content-Type', 'application/json');
+                    xr3.send(body3);
+                    if (xr3.status === 200) {
+                        const r3 = parseResult(xr3.responseText);
+                        if (r3 && r3.length > 0) { log.debug('💰 ' + spName + ' ok via dbCALL_SP_R TIEPNHANID [' + tiepnhanId + ']'); return r3; }
+                    }
+                } catch(e3b) { log.debug('💰 ' + spName + ' dbCALL_SP_R lỗi: ' + e3b.message); }
+
+                // [4] TIEPNHANID + KHOAID paging (VPI01T006 style)
+                try {
+                    const jsonOpt = JSON.stringify({ TIEPNHANID: String(tiepnhanId), KHOAID: String(khoaId) });
+                    const pd4 = JSON.stringify({ func: 'ajaxExecuteQueryPaging', uuid: uuid0, params: [spName], options: [{ name: '[0]', value: jsonOpt }] });
+                    const xr4 = new XMLHttpRequest();
+                    xr4.open('GET', '/vnpthis/RestService?postData=' + encodeURIComponent(pd4) + '&_search=false&rows=500&page=1&sidx=&sord=asc', false);
+                    xr4.send();
+                    if (xr4.status === 200) {
+                        const r4 = parseResult(xr4.responseText);
+                        if (r4 && r4.length > 0) { log.debug('💰 ' + spName + ' ok via TIEPNHANID+KHOAID paging'); return r4; }
+                    }
+                } catch(e4b) { log.debug('💰 ' + spName + ' TIEPNHANID+KHOAID paging lỗi: ' + e4b.message); }
+            }
+
+            // ★ Fallback: session-based (VPI01T001.05/06 params-only, works khi panel mở)
+            const uuid2 = (_jsonrpc && _jsonrpc.AjaxJson && _jsonrpc.AjaxJson.uuid) ? _jsonrpc.AjaxJson.uuid : '';
+            const pagingOptionSets = [
+                [{ name: '[0]', value: String(khambenhId) }],
+                [{ name: '[0]', value: String(khambenhId) }, { name: '[1]', value: String(benhnhanId || '') }],
+                [{ name: '[0]', value: String(khambenhId) }, { name: '[1]', value: String(benhnhanId || '') }, { name: '[2]', value: String(hosobenhanid || '') }],
+                [{ name: 'KHAMBENHID', value: String(khambenhId) }],
+                [{ name: 'KHAMBENHID', value: String(khambenhId) }, { name: 'BENHNHANID', value: String(benhnhanId || '') }]
+            ];
+            for (let pi = 0; pi < pagingOptionSets.length; pi++) {
+                try {
+                    const postData = JSON.stringify({ func: 'ajaxExecuteQueryPaging', uuid: uuid2, params: [spName], options: pagingOptionSets[pi] });
+                    const pgXhr = new XMLHttpRequest();
+                    pgXhr.open('GET', '/vnpthis/RestService?postData=' + encodeURIComponent(postData) + '&_search=false&rows=500&page=1&sidx=&sord=asc', false);
+                    pgXhr.send();
+                    if (pgXhr.status === 200) {
+                        const pgRows = parseResult(pgXhr.responseText);
+                        if (pgRows && pgRows.length > 0) {
+                            log.debug('💰 ' + spName + ' ok via paging option-set #' + (pi + 1));
+                            return pgRows;
+                        }
+                    }
+                } catch (pe) {
+                    log.debug('💰 ' + spName + ' paging #' + (pi + 1) + ' lỗi: ' + pe.message);
+                }
+            }
+
+            const candidates = [
+                '',
+                String(khambenhId),
+                String(benhnhanId || ''),
+                String(hosobenhanid || ''),
+                JSON.stringify({ KHAMBENHID: khambenhId }),
+                JSON.stringify({ BENHNHANID: benhnhanId }),
+                JSON.stringify({ HOSOBENHANID: hosobenhanid }),
+                JSON.stringify({ KHAMBENHID: khambenhId, BENHNHANID: benhnhanId, HOSOBENHANID: hosobenhanid }),
+                JSON.stringify({ khambenhId: khambenhId, benhnhanId: benhnhanId, hosobenhanid: hosobenhanid })
+            ];
+
+            for (let i = 0; i < candidates.length; i++) {
+                try {
+                    const raw = _jsonrpc.AjaxJson.ajaxCALL_SP_O(spName, candidates[i], 0);
+                    const rows = parseResult(raw);
+                    if (rows && rows.length > 0) {
+                        log.debug('💰 ' + spName + ' ok via candidate #' + (i + 1));
+                        return rows;
+                    }
+                } catch (e) {
+                    log.debug('💰 ' + spName + ' candidate #' + (i + 1) + ' lỗi: ' + e.message);
+                }
+            }
+            return [];
+        }
+
+        function parseMoneyText(text) {
+            const cleaned = String(text || '').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+            const n = Number(cleaned);
+            return isFinite(n) ? n : 0;
+        }
+
+        function scrapeFinanceFromDOM() {
+            const docs = getAllDocuments();
+            let partialCandidate = null;
+            function readByStableIds(doc) {
+                function isVisible(el) {
+                    if (!el) return false;
+                    try {
+                        const rect = el.getBoundingClientRect();
+                        const style = doc.defaultView && doc.defaultView.getComputedStyle ? doc.defaultView.getComputedStyle(el) : null;
+                        return rect.width > 0 && rect.height > 0 &&
+                            (!style || (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'));
+                    } catch (e) {
+                        return false;
+                    }
+                }
+
+                function getText(id) {
+                    const matches = Array.prototype.slice.call(doc.querySelectorAll('[id="' + id + '"]'));
+                    const visible = matches.filter(isVisible);
+                    const candidates = visible.length ? visible : matches;
+                    for (let i = candidates.length - 1; i >= 0; i--) {
+                        const text = (candidates[i].textContent || candidates[i].innerText || '').trim();
+                        if (text) return text;
+                    }
+                    return '';
+                }
+                const tong = parseMoneyText(getText('lblTONGTIENDV'));
+                const bh = parseMoneyText(getText('lblBHYT_THANHTOAN'));
+                const bnTra = parseMoneyText(getText('lblVIENPHI'));
+                const tamUng = parseMoneyText(getText('lblTAMUNG'));
+                const mienGiam = parseMoneyText(getText('lblMIENGIAM'));
+                const daNop = parseMoneyText(getText('lblDANOP'));
+                const chenhLech = parseMoneyText(getText('lblCHENHLECH'));
+                const nopThem = parseMoneyText(getText('lblNOPTHEM'));
+                const hasUsefulFinance = (tong || bh || bnTra || chenhLech || nopThem) && (tamUng || daNop || tong);
+                if (!hasUsefulFinance) {
+                    if (tamUng) {
+                        log.debug('💰 DOM id viện phí chỉ thấy tạm ứng=' + tamUng + ', chưa đủ để tính nhắc ứng');
+                        return {
+                            isPartial: true,
+                            detail05: [],
+                            detail06: [{ TAMUNG: String(tamUng) }],
+                            patientContext: {
+                                maBHYT: _currentFinanceContext.maBHYT || '',
+                                doiTuong: _currentFinanceContext.doiTuong || ''
+                            }
+                        };
+                    }
+                    return null;
+                }
+
+                log.debug('💰 DOM id viện phí visible: tamUng=' + tamUng + ' tong=' + tong + ' bh=' + bh + ' bnTra=' + bnTra + ' chenh=' + chenhLech);
+                return {
+                    isStableVisible: true,
+                    detail05: [{
+                        TONGTIENDV: String(tong),
+                        BNTRA: String(bnTra || Math.max(0, tong - bh - mienGiam)),
+                        T_BNTT: String(bnTra || Math.max(0, tong - bh - mienGiam)),
+                        TAMUNG_CONLAI: String(chenhLech),
+                        CON_TAMUNG_BD: String(tamUng),
+                        BHYT_THANHTOAN: String(bh),
+                        MIENGIAMDV: String(mienGiam),
+                        DANOP: String(daNop),
+                        CHUADONG_GK: String(nopThem),
+                        TYLE_BHYT: bh > 0 ? '1' : '0'
+                    }],
+                    detail06: [{
+                        TONGTIENDV: String(tong),
+                        VIENPHI: String(bnTra || Math.max(0, tong - bh - mienGiam)),
+                        TAMUNG: String(tamUng),
+                        DANOP: String(daNop),
+                        MIENGIAM: String(mienGiam),
+                        TIEN_PHAINOP: String(nopThem),
+                        CHENHLECH: String(chenhLech)
+                    }],
+                    patientContext: {
+                        maBHYT: _currentFinanceContext.maBHYT || '',
+                        doiTuong: _currentFinanceContext.doiTuong || ''
+                    }
+                };
+            }
+
+            function collectTextRects(doc) {
+                const items = [];
+                try {
+                    const walker = doc.createTreeWalker(doc.body || doc, NodeFilter.SHOW_TEXT);
+                    while (walker.nextNode()) {
+                        const node = walker.currentNode;
+                        const text = String(node.nodeValue || '').replace(/\s+/g, ' ').trim();
+                        if (!text) continue;
+                        try {
+                            const range = doc.createRange();
+                            range.selectNodeContents(node);
+                            const rects = Array.prototype.slice.call(range.getClientRects());
+                            range.detach();
+                            for (let r = 0; r < rects.length; r++) {
+                                const rect = rects[r];
+                                if (rect.width < 1 || rect.height < 1) continue;
+                                items.push({
+                                    text: text,
+                                    x: rect.left,
+                                    y: rect.top,
+                                    right: rect.right,
+                                    bottom: rect.bottom,
+                                    w: rect.width,
+                                    h: rect.height
+                                });
+                            }
+                        } catch (e2) { /* ignore text node */ }
+                    }
+                } catch (e) { /* ignore doc */ }
+                return items;
+            }
+
+            function readByVisibleText(doc) {
+                const body = doc.body;
+                if (!body) return null;
+                const text = String(body.innerText || body.textContent || '');
+                if (text.indexOf('Tạm ứng') < 0 || text.indexOf('Tổng') < 0) return null;
+
+                function moneyAfter(label) {
+                    const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const re = new RegExp(escaped + '[\\s\\S]{0,320}?([0-9][0-9.,]*\\s*đ)', 'i');
+                    const m = text.match(re);
+                    if (m) return parseMoneyText(m[1]);
+
+                    const lines = text.split(/\n+/).map(function (line) {
+                        return line.replace(/\s+/g, ' ').trim();
+                    }).filter(Boolean);
+                    const needle = label.toLowerCase();
+                    for (let i = 0; i < lines.length; i++) {
+                        if (lines[i].toLowerCase().indexOf(needle) < 0) continue;
+                        for (let j = i; j < Math.min(lines.length, i + 8); j++) {
+                            const money = lines[j].match(/[0-9][0-9.,]*\s*đ/i);
+                            if (money) return parseMoneyText(money[0]);
+                        }
+                    }
+                    return 0;
+                }
+
+                const tamUng = moneyAfter('Tạm ứng');
+                const tong = moneyAfter('Tổng');
+                const bh = moneyAfter('Bảo hiểm thanh toán');
+                const daNop = moneyAfter('Đã nộp');
+                if (!tamUng || !tong) return null;
+
+                const bnTra = Math.max(0, tong - bh);
+                const tamUngConLai = Math.max(0, tamUng + daNop - bnTra);
+                const tienPhaiNop = Math.max(0, bnTra - tamUng - daNop);
+                const maBHYTMatch = text.match(/Mã thẻ BHYT\s+([A-Z0-9]{8,})/i);
+                const doiTuongMatch = text.match(/Đối tượng\s+([^\n\r]+)/i);
+
+                log.debug('💰 DOM text viện phí: tamUng=' + tamUng + ' tong=' + tong + ' bh=' + bh + ' daNop=' + daNop);
+                return {
+                    detail05: [{
+                        TONGTIENDV: String(tong),
+                        BNTRA: String(bnTra),
+                        T_BNTT: String(bnTra),
+                        TAMUNG_CONLAI: String(tamUngConLai),
+                        CON_TAMUNG_BD: String(tamUng),
+                        BHYT_THANHTOAN: String(bh),
+                        DANOP: String(daNop),
+                        TYLE_BHYT: bh > 0 ? '1' : '0'
+                    }],
+                    detail06: [{
+                        TONGTIENDV: String(tong),
+                        VIENPHI: String(bnTra),
+                        TAMUNG: String(tamUng),
+                        DANOP: String(daNop),
+                        HOANUNG: String(tamUngConLai),
+                        TIEN_PHAINOP: String(tienPhaiNop),
+                        CHENHLECH: String(tienPhaiNop)
+                    }],
+                    patientContext: {
+                        maBHYT: maBHYTMatch ? maBHYTMatch[1] : (_currentFinanceContext.maBHYT || ''),
+                        doiTuong: doiTuongMatch ? doiTuongMatch[1].trim().split(/\s{2,}/)[0] : (_currentFinanceContext.doiTuong || '')
+                    }
+                };
+            }
+
+            function readByElementRects(doc) {
+                const body = doc.body;
+                if (!body) return null;
+                const text = String(body.innerText || body.textContent || '');
+                if (text.indexOf('Tạm ứng') < 0 || text.indexOf('Tổng') < 0) return null;
+
+                const els = [];
+                try {
+                    const nodes = body.querySelectorAll('label, span, div, td, th, p, font, b');
+                    for (let i = 0; i < nodes.length; i++) {
+                        const el = nodes[i];
+                        const t = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                        if (!t || t.length > 260) continue;
+                        const rect = el.getBoundingClientRect();
+                        if (!rect || rect.width < 1 || rect.height < 1) continue;
+                        els.push({
+                            text: t,
+                            x: rect.left,
+                            y: rect.top,
+                            right: rect.right,
+                            bottom: rect.bottom,
+                            w: rect.width,
+                            h: rect.height
+                        });
+                    }
+                } catch (e) {
+                    return null;
+                }
+
+                function norm(s) {
+                    return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                }
+
+                function findElementLabel(label) {
+                    const needle = norm(label);
+                    const found = els.filter(function (item) {
+                        const t = norm(item.text);
+                        return t === needle || t.indexOf(needle) >= 0;
+                    });
+                    found.sort(function (a, b) { return a.y - b.y || a.x - b.x; });
+                    return found[0] || null;
+                }
+
+                function moneyNear(label) {
+                    const labelEl = findElementLabel(label);
+                    if (!labelEl) return 0;
+                    const inlineAfter = labelEl.text.match(new RegExp(String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*([0-9][0-9.,]*\\s*đ)', 'i'));
+                    if (inlineAfter) return parseMoneyText(inlineAfter[1]);
+                    const anyInline = labelEl.text.match(/[0-9][0-9.,]*\s*đ/i);
+                    if (anyInline && norm(labelEl.text).indexOf(norm(label)) >= 0) return parseMoneyText(anyInline[0]);
+
+                    const labelMid = labelEl.y + (labelEl.h / 2);
+                    const candidates = els.filter(function (item) {
+                        if (!/[0-9][0-9.,]*\s*đ/i.test(item.text)) return false;
+                        if (item === labelEl) return false;
+                        const itemMid = item.y + (item.h / 2);
+                        const dy = Math.abs(itemMid - labelMid);
+                        return dy < 45;
+                    }).map(function (item) {
+                        const m = item.text.match(/[0-9][0-9.,]*\s*đ/i);
+                        return {
+                            value: parseMoneyText(m ? m[0] : item.text),
+                            dy: Math.abs((item.y + (item.h / 2)) - labelMid),
+                            dx: Math.abs(item.x - labelEl.x)
+                        };
+                    }).filter(function (item) {
+                        return item.value > 0 || item.dy < 20;
+                    });
+                    candidates.sort(function (a, b) { return a.dy - b.dy || a.dx - b.dx; });
+                    return candidates.length ? candidates[0].value : 0;
+                }
+
+                const tamUng = moneyNear('Tạm ứng');
+                const tong = moneyNear('Tổng');
+                const bh = moneyNear('Bảo hiểm thanh toán');
+                const daNop = moneyNear('Đã nộp');
+                if (!tamUng || !tong) return null;
+
+                const bnTra = Math.max(0, tong - bh);
+                const tamUngConLai = Math.max(0, tamUng + daNop - bnTra);
+                const tienPhaiNop = Math.max(0, bnTra - tamUng - daNop);
+                const maBHYTMatch = text.match(/Mã thẻ BHYT\s+([A-Z0-9]{8,})/i);
+                const doiTuongMatch = text.match(/Đối tượng\s+([^\n\r]+)/i);
+
+                log.debug('💰 DOM element viện phí: tamUng=' + tamUng + ' tong=' + tong + ' bh=' + bh + ' daNop=' + daNop);
+                return {
+                    detail05: [{
+                        TONGTIENDV: String(tong),
+                        BNTRA: String(bnTra),
+                        T_BNTT: String(bnTra),
+                        TAMUNG_CONLAI: String(tamUngConLai),
+                        CON_TAMUNG_BD: String(tamUng),
+                        BHYT_THANHTOAN: String(bh),
+                        DANOP: String(daNop),
+                        TYLE_BHYT: bh > 0 ? '1' : '0'
+                    }],
+                    detail06: [{
+                        TONGTIENDV: String(tong),
+                        VIENPHI: String(bnTra),
+                        TAMUNG: String(tamUng),
+                        DANOP: String(daNop),
+                        HOANUNG: String(tamUngConLai),
+                        TIEN_PHAINOP: String(tienPhaiNop),
+                        CHENHLECH: String(tienPhaiNop)
+                    }],
+                    patientContext: {
+                        maBHYT: maBHYTMatch ? maBHYTMatch[1] : (_currentFinanceContext.maBHYT || ''),
+                        doiTuong: doiTuongMatch ? doiTuongMatch[1].trim().split(/\s{2,}/)[0] : (_currentFinanceContext.doiTuong || '')
+                    }
+                };
+            }
+
+            function normalizeLabelText(text) {
+                return String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            }
+
+            function findLabel(items, label, exact) {
+                const needle = normalizeLabelText(label);
+                const matches = items.filter(function (item) {
+                    const t = normalizeLabelText(item.text);
+                    return exact ? t === needle : t.indexOf(needle) >= 0;
+                });
+                matches.sort(function (a, b) { return a.y - b.y || a.x - b.x; });
+                return matches[0] || null;
+            }
+
+            function isMoneyText(text) {
+                return /[0-9][0-9.,]*\s*đ/i.test(String(text || ''));
+            }
+
+            function findMoneyNearLabel(items, label, exact) {
+                const labelItem = findLabel(items, label, exact);
+                if (!labelItem) return 0;
+                const labelY = labelItem.y + (labelItem.h / 2);
+                const candidates = items.filter(function (item) {
+                    if (!isMoneyText(item.text)) return false;
+                    const dy = Math.abs((item.y + (item.h / 2)) - labelY);
+                    const dx = item.x - labelItem.right;
+                    return dy < 18 && dx > -20;
+                }).map(function (item) {
+                    const m = String(item.text).match(/[0-9][0-9.,]*\s*đ/i);
+                    return {
+                        item: item,
+                        value: parseMoneyText(m ? m[0] : item.text),
+                        dy: Math.abs((item.y + (item.h / 2)) - labelY),
+                        dx: Math.abs(item.x - labelItem.right)
+                    };
+                }).filter(function (x) {
+                    return x.value > 0 || /0\s*đ/i.test(x.item.text);
+                });
+                candidates.sort(function (a, b) { return a.dy - b.dy || a.dx - b.dx; });
+                return candidates.length ? candidates[0].value : 0;
+            }
+
+            function hasFinanceCluster(items) {
+                const labels = ['Tạm ứng', 'Tổng', 'Bảo hiểm thanh toán', 'Đã nộp'];
+                let found = 0;
+                for (let i = 0; i < labels.length; i++) {
+                    if (findLabel(items, labels[i], labels[i] !== 'Bảo hiểm thanh toán')) found++;
+                }
+                return found >= 3;
+            }
+
+            for (let i = 0; i < docs.length; i++) {
+                try {
+                    const stable = readByStableIds(docs[i]);
+                    if (stable && stable.isPartial) partialCandidate = partialCandidate || stable;
+                    if (stable && !stable.isPartial) return stable;
+
+                    const body = docs[i].body;
+                    if (!body) continue;
+                    const text = body.innerText || body.textContent || '';
+                    if (text.indexOf('Tạm ứng') < 0 || text.indexOf('Tổng') < 0) continue;
+
+                    const elementFinance = readByElementRects(docs[i]);
+                    if (elementFinance) return elementFinance;
+
+                    const visibleTextFinance = readByVisibleText(docs[i]);
+                    if (visibleTextFinance) return visibleTextFinance;
+
+                    const rectItems = collectTextRects(docs[i]);
+                    if (!hasFinanceCluster(rectItems)) continue;
+                    const tamUng = findMoneyNearLabel(rectItems, 'Tạm ứng', true);
+                    const tong = findMoneyNearLabel(rectItems, 'Tổng', true);
+                    const baoHiemThanhToan = findMoneyNearLabel(rectItems, 'Bảo hiểm thanh toán', false);
+                    const daNop = findMoneyNearLabel(rectItems, 'Đã nộp', true);
+                    if (!tamUng && !tong && !baoHiemThanhToan && !daNop) continue;
+                    if (!tamUng && tong) {
+                        log.debug('💰 DOM viện phí thấy Tổng nhưng chưa thấy Tạm ứng, bỏ qua để tránh kết luận sai');
+                        continue;
+                    }
+
+                    const bnTra = Math.max(0, tong - baoHiemThanhToan);
+                    const tamUngConLai = Math.max(0, tamUng + daNop - bnTra);
+                    const tienPhaiNop = Math.max(0, bnTra - tamUng - daNop);
+                    const maBHYTMatch = text.match(/Mã thẻ BHYT\s+([A-Z0-9]{8,})/i);
+                    const doiTuongMatch = text.match(/Đối tượng\s+([^\n\r]+)/i);
+
+                    log.debug('💰 DOM viện phí: tamUng=' + tamUng + ' tong=' + tong + ' bh=' + baoHiemThanhToan + ' daNop=' + daNop);
+                    return {
+                        detail05: [{
+                            BNTRA: String(bnTra),
+                            T_BNTT: String(bnTra),
+                            TAMUNG_CONLAI: String(tamUngConLai),
+                            BHYT_THANHTOAN: String(baoHiemThanhToan),
+                            DANOP: String(daNop),
+                            TYLE_BHYT: baoHiemThanhToan > 0 ? '1' : '0'
+                        }],
+                        detail06: [{
+                            TONGTIENDV: String(tong),
+                            VIENPHI: String(bnTra),
+                            TAMUNG: String(tamUng),
+                            DANOP: String(daNop),
+                            TIEN_PHAINOP: String(tienPhaiNop),
+                            CHENHLECH: String(tienPhaiNop)
+                        }],
+                        patientContext: {
+                            maBHYT: maBHYTMatch ? maBHYTMatch[1] : (_currentFinanceContext.maBHYT || ''),
+                            doiTuong: doiTuongMatch ? doiTuongMatch[1].trim().split(/\s{2,}/)[0] : (_currentFinanceContext.doiTuong || '')
+                        }
+                    };
+                } catch (e) {
+                    log.debug('💰 DOM finance scrape lỗi: ' + e.message);
+                }
+            }
+            return partialCandidate;
+        }
+
+        function getSelectedGridFinanceContext() {
+            try {
+                if (!_$) return null;
+                const grid = _$('#grdBenhNhan');
+                if (!grid.length || typeof grid.jqGrid !== 'function') return null;
+                const selRow = grid.jqGrid('getGridParam', 'selrow');
+                if (!selRow) return null;
+
+                // ★ Đọc full row data (bao gồm hidden fields) từ jqGrid internal
+                let fullRow = null;
+                try { fullRow = grid.jqGrid('getLocalRow', selRow); } catch(le) { /* ignore */ }
+                if (!fullRow || !Object.keys(fullRow).length) {
+                    try {
+                        const allData = grid.jqGrid('getGridParam', 'data') || [];
+                        const selId = String(selRow);
+                        for (let di = 0; di < allData.length; di++) {
+                            const rd = allData[di];
+                            if (String(rd.id || rd.KHAMBENHID || '') === selId) {
+                                fullRow = rd;
+                                break;
+                            }
+                        }
+                    } catch(de) { /* ignore */ }
+                }
+                const row = Object.assign({}, fullRow || {}, grid.jqGrid('getRowData', selRow) || {});
+                const keys = Object.keys(row);
+                log.debug('💰 Grid full row keys:', keys.join(', '));
+
+                // ★ Tìm finance fields trong full row
+                const financeKeys = keys.filter(function(k) {
+                    return /TONG|VIENPHI|TAMUNG|BNTRA|BHYT|TIEN|DANOP|CHENHLECH/i.test(k);
+                });
+                if (financeKeys.length) {
+                    log.debug('💰 Finance fields trong grid:', JSON.stringify(financeKeys.reduce(function(acc, k) { acc[k] = row[k]; return acc; }, {})));
+                }
+
+                return {
+                    row: row,
+                    context: {
+                        maBHYT: row.MA_BHYT || row.MABHYT || row.MA_BHYT_VIEW || _currentFinanceContext.maBHYT || '',
+                        doiTuongId: row.DOITUONGBENHNHANID || _currentFinanceContext.doiTuongId || '',
+                        doiTuong: row.TENDOITUONGBENHNHAN || row.DOITUONGBENHNHAN || _currentFinanceContext.doiTuong || '',
+                        soNgayDieuTri: row.SONGAYDIEUTRI || _currentFinanceContext.soNgayDieuTri || '',
+                        thoiGianVaoVien: row.THOIGIANVAOVIEN || _currentFinanceContext.thoiGianVaoVien || '',
+                        financeCore: row.TONGTIENDICHVUCORE || row.TONGTIENDICHVU || row.TONGTIENDV_CORE ||
+                                     _currentFinanceContext.financeCore || ''
+                    }
+                };
+            } catch (e) {
+                log.debug('💰 Grid finance fallback lỗi: ' + e.message);
+                return null;
+            }
+        }
+
+        function coreToRows(coreText) {
+            const parts = String(coreText || '').split(';');
+            if (parts.length < 11) return null;
+            function n(idx) { return String(parts[idx] || '0'); }
+            return {
+                detail05: [{
+                    TONGTIENDV: n(0),
+                    BNTRA: n(1),
+                    T_BNTT: n(1),
+                    TAMUNG_CONLAI: String(Math.max(0, Number(n(4)) - Number(n(1)))),
+                    CON_TAMUNG_BD: n(4),
+                    CHUADONG_GK: n(10),
+                    TYLE_BHYT: '0'
+                }],
+                detail06: [{
+                    TONGTIENDV: n(0),
+                    VIENPHI: n(0),
+                    TAMUNG: n(4),
+                    TIEN_PHAINOP: n(10),
+                    CHENHLECH: n(8)
+                }]
+            };
+        }
+
+        function firstFeeRow(rows) {
+            return rows && rows.length > 0 ? (rows[0] || {}) : {};
+        }
+
+        function hasUsableFeeRows(rows05, rows06) {
+            const row05 = firstFeeRow(rows05);
+            const row06 = firstFeeRow(rows06);
+            const total = parseMoneyText(row05.TONGTIENDV || row06.TONGTIENDV);
+            const patientPay = parseMoneyText(row05.BNTRA || row05.T_BNTT || row06.BNTRA || row06.VIENPHI);
+            const insurancePay = parseMoneyText(row05.BHYT_THANHTOAN || row06.BHYT_THANHTOAN);
+            return total > 0 || patientPay > 0 || insurancePay > 0;
+        }
+
+        function feeSnapshot(rows05, rows06) {
+            const row05 = firstFeeRow(rows05);
+            const row06 = firstFeeRow(rows06);
+            return {
+                total: parseMoneyText(row05.TONGTIENDV || row06.TONGTIENDV),
+                patientPay: parseMoneyText(row05.BNTRA || row05.T_BNTT || row06.BNTRA || row06.VIENPHI),
+                insurancePay: parseMoneyText(row05.BHYT_THANHTOAN || row06.BHYT_THANHTOAN),
+                advance: parseMoneyText(row06.TAMUNG || row05.CON_TAMUNG_BD),
+                paid: parseMoneyText(row05.DANOP || row06.DANOP)
+            };
+        }
+
+        function feeSnapshotsMismatch(a, b) {
+            if (!a || !b) return false;
+            const keys = ['total', 'patientPay', 'insurancePay', 'advance', 'paid'];
+            for (let i = 0; i < keys.length; i++) {
+                const key = keys[i];
+                if (a[key] > 0 && b[key] > 0 && Math.abs(a[key] - b[key]) > 1) return true;
+            }
+            return false;
+        }
+
+        try {
+            // ★ Thử các SPs mới phát hiện từ HIS traffic trước
+            let detail05 = null;
+            let detail06 = null;
+
+            if (tiepnhanId) {
+                // VPI01T005.01 — SP thanh toán/tạm ứng thật sự của HIS (từ traffic capture)
+                const vpi005raw = callFeeSP('VPI01T005.01');
+                if (vpi005raw && vpi005raw.length > 0) {
+                    log.debug('💰 VPI01T005.01 response:', JSON.stringify(vpi005raw[0]).substring(0, 200));
+                    detail05 = vpi005raw; // Gán tạm, sẽ re-map nếu cần
+                }
+                // VPI01T004.SP.11 — SP khác từ dialog lịch sử thanh toán
+                if (!detail05 || !detail05.length) {
+                    const vpi004sp11 = callFeeSP('VPI01T004.SP.11');
+                    if (vpi004sp11 && vpi004sp11.length > 0) {
+                        log.debug('💰 VPI01T004.SP.11 response:', JSON.stringify(vpi004sp11[0]).substring(0, 200));
+                        detail06 = vpi004sp11;
+                    }
+                }
+            }
+
+            // Fallback: SPs cũ (VPI01T001.05/06) — session-dependent
+            if (!detail05 || !detail05.length) detail05 = callFeeSP('VPI01T001.05');
+            if (!detail06 || !detail06.length) detail06 = callFeeSP('VPI01T001.06');
+            const domFinance = scrapeFinanceFromDOM();
+            const gridFinance = getSelectedGridFinanceContext();
+            const mergedContext = Object.assign({}, _currentFinanceContext, gridFinance ? gridFinance.context : {}, domFinance ? domFinance.patientContext : {});
+            const coreRows = coreToRows(mergedContext.financeCore || financeCore);
+            const hasApiDetail05 = detail05 && detail05.length > 0;
+            const hasApiDetail06 = detail06 && detail06.length > 0;
+            const apiHasUsableFee = hasUsableFeeRows(detail05, detail06);
+            const apiSnapshot = feeSnapshot(detail05, detail06);
+            const domSnapshot = domFinance && !domFinance.isPartial ? feeSnapshot(domFinance.detail05, domFinance.detail06) : null;
+            if (domFinance && domFinance.isStableVisible && !domFinance.isPartial) {
+                detail05 = domFinance.detail05;
+                detail06 = domFinance.detail06;
+                log.debug('💰 Ưu tiên popup viện phí visible theo stable id');
+            } else if (domFinance && !domFinance.isPartial && (!apiHasUsableFee || !hasApiDetail05 || !hasApiDetail06 || feeSnapshotsMismatch(apiSnapshot, domSnapshot))) {
+                detail05 = domFinance.detail05;
+                detail06 = domFinance.detail06;
+                log.debug('💰 Fallback dữ liệu DOM viện phí đang hiển thị vì API thiếu/lệch chi tiết chi phí');
+            }
+            if (domFinance && domFinance.isPartial) {
+                if (!detail05 || detail05.length === 0) detail05 = domFinance.detail05;
+                if (!detail06 || detail06.length === 0) detail06 = domFinance.detail06;
+            }
+            if (coreRows && (!detail05 || detail05.length === 0)) detail05 = coreRows.detail05;
+            if (coreRows && (!detail06 || detail06.length === 0)) detail06 = coreRows.detail06;
+            log.debug('💰 Advance result | detail05=' + (detail05 ? detail05.length : 0) + ' detail06=' + (detail06 ? detail06.length : 0) + ' core=' + (mergedContext.financeCore ? 'yes' : 'no'));
+            post({
+                detail05: detail05,
+                detail06: detail06,
+                patientContext: mergedContext,
+                rowDataKeys: Object.keys((gridFinance && gridFinance.row) || _currentPatientRowData || {})
+            });
+
+            // ★ AUTO-UPDATE: Nếu kết quả chưa đủ (thiếu tổng chi phí),
+            // poll mỗi 1.5s trong 30s để phát hiện khi panel THÔNG TIN ĐIỀU TRỊ mở ra.
+            const resultHasTotal = hasUsableFeeRows(detail05, detail06);
+            if (!resultHasTotal && reqSeq === _patientSeq) {
+                const obsKhambenhId = khambenhId;
+                const obsPatientSeq = _patientSeq;
+                let pollCount = 0;
+                const MAX_POLLS = 20; // 20 × 1.5s = 30s
+                const pollId = setInterval(function() {
+                    pollCount++;
+                    // Dừng nếu BN đã đổi hoặc hết số lần poll
+                    if (obsPatientSeq !== _patientSeq || pollCount > MAX_POLLS) {
+                        clearInterval(pollId);
+                        if (pollCount > MAX_POLLS) {
+                            log.debug('💰 Panel poll: timeout 30s, hủy theo dõi viện phí');
+                        }
+                        return;
+                    }
+                    const reDom = scrapeFinanceFromDOM();
+                    if (reDom && !reDom.isPartial && hasUsableFeeRows(reDom.detail05, reDom.detail06)) {
+                        clearInterval(pollId);
+                        log.debug('💰 Panel poll #' + pollCount + ': panel mở, gửi cập nhật viện phí đầy đủ');
+                        const reGrid = getSelectedGridFinanceContext();
+                        const reMerged = Object.assign({}, _currentFinanceContext, reGrid ? reGrid.context : {}, reDom.patientContext || {});
+                        window.postMessage({
+                            type: 'QUYEN_FINANCE_PANEL_UPDATE',
+                            khambenhId: obsKhambenhId,
+                            detail05: reDom.detail05,
+                            detail06: reDom.detail06,
+                            patientContext: reMerged,
+                            rowDataKeys: Object.keys((reGrid && reGrid.row) || _currentPatientRowData || {})
+                        }, location.origin);
+                    }
+                }, 1500);
+                log.debug('💰 Panel poll: bắt đầu theo dõi panel viện phí (30s, mỗi 1.5s)');
+            }
+
+        } catch (e3) {
+            post({ error: e3.message || String(e3) });
+        }
     }
 
     // ==========================================
@@ -2788,5 +3790,5 @@
     })();
 
     // ★ AUDIT FIX: Thêm bridgeVersion để content script có thể kiểm tra compatibility
-    window.postMessage({ type: 'QUYEN_BRIDGE_READY', status: 'ready', bridgeVersion: '1.3.1' }, window.location.origin);
+    window.postMessage({ type: 'QUYEN_BRIDGE_READY', status: 'ready', bridgeVersion: '__EXT_VERSION__' }, window.location.origin);
 })();
