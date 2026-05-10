@@ -68,13 +68,13 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 
 ```bash
 # Build bản Điều Dưỡng (triển khai chính)
-npm run build:ddt
+pnpm run build:ddt
 
 # Build bản Chị Quyên (🌸)
-npm run build:nurse
+pnpm run build:nurse
 
 # Build cả 2 + đóng gói zip
-npm run build:all
+pnpm run build:all
 ```
 
 Kết quả nằm trong `dist/DDT` và `dist/Nurse`.
@@ -235,10 +235,10 @@ Xem chi tiết tại [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 # Build + zip + tạo GitHub Release
-npm run release
+pnpm run release
 ```
 
-Quy trình: `npm version patch` → `git push` → `npm run release`
+Quy trình: `pnpm version patch` → `git push` → `pnpm run release`
 
 ---
 

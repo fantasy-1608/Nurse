@@ -4,7 +4,7 @@ const path = require('path');
 
 const target = process.argv[2];
 if (!target || !['nurse', 'ddt'].includes(target)) {
-    console.error('❌ Vui lòng chỉ định target: npm run build:nurse hoặc npm run build:ddt');
+    console.error('❌ Vui lòng chỉ định target: pnpm run build:nurse hoặc pnpm run build:ddt');
     process.exit(1);
 }
 

@@ -44,4 +44,4 @@ console.log(`\n✅ Hoàn tất! Các file zip nằm tại thư mục dist-zip/:`
 console.log(`   📁 DDT-v${version}.zip`);
 console.log(`   📁 Nurse-v${version}.zip`);
 console.log(`\n💡 Để tạo GitHub Release, chạy:`);
-console.log(`   npm run release\n`);
+console.log(`   pnpm run release\n`);
