@@ -8,7 +8,7 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node test/demo-tab.test.js",
+    "test": "node test/no-demo-tab.test.js",
     "build:nurse": "node build/build.js nurse",
     "build:ddt": "node build/build.js ddt",
     "build:all": "node build/release.js",
@@ -17,5 +17,8 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {
+    "gitnexus": "^1.6.5"
+  }
 }

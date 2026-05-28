@@ -57,8 +57,6 @@
                 "content/caresheet-ui.js",
                 "content/vattu-engine.js",
                 "content/vattu-ui.js",
-                "content/demo-engine.js",
-                "content/demo-ui.js",
                 "content/ui-panel.js",
                 "content/content.js"
             ],
