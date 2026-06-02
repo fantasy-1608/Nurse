@@ -1,0 +1,31 @@
+module,scenario,case_ref,department,machine_ref,his_role,extension_version,package_file,package_sha256,build_hash_recorded,result,severity,audit_attempt,audit_result,patient_mismatch_blocked,safe_mode_checked,kill_switch_checked,rollback_checked,external_network_ok,phi_in_audit,fast_path_enabled,notes
+infusion,normal_fill,infusion_case_001,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,khong ghi PHI
+infusion,patient_switch,infusion_case_002,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,true,false,false,false,true,false,false,mismatch bi chan
+infusion,hidden_old_form,infusion_case_003,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,true,false,false,false,true,false,false,form cu bi chan
+infusion,slow_network,infusion_case_004,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,mang cham da verify
+infusion,form_not_loaded,infusion_case_005,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,false,false,true,false,false,form chua tai bi chan
+infusion,non_nurse_user,infusion_case_006,KHOA_PILOT,MAY_PILOT_01,bac_si,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,false,false,true,false,false,vai tro khong phai dieu duong bi chan
+infusion,safe_mode,infusion_case_007,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,true,false,false,true,false,false,safe mode chan
+infusion,kill_switch,infusion_case_008,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,true,false,true,false,false,khoa khan cap chan
+infusion,rollback,infusion_case_009,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,true,true,false,false,rollback da kiem
+infusion,external_network,infusion_case_010,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,khong co request ngoai vncare
+caresheet,normal_fill,caresheet_case_001,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,khong ghi PHI
+caresheet,patient_switch,caresheet_case_002,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,true,false,false,false,true,false,false,mismatch bi chan
+caresheet,hidden_old_form,caresheet_case_003,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,true,false,false,false,true,false,false,form cu bi chan
+caresheet,slow_network,caresheet_case_004,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,mang cham da verify
+caresheet,form_not_loaded,caresheet_case_005,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,false,false,true,false,false,form chua tai bi chan
+caresheet,non_nurse_user,caresheet_case_006,KHOA_PILOT,MAY_PILOT_01,bac_si,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,false,false,true,false,false,vai tro khong phai dieu duong bi chan
+caresheet,safe_mode,caresheet_case_007,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,true,false,false,true,false,false,safe mode chan
+caresheet,kill_switch,caresheet_case_008,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,true,false,true,false,false,khoa khan cap chan
+caresheet,rollback,caresheet_case_009,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,true,true,false,false,rollback da kiem
+caresheet,external_network,caresheet_case_010,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,khong co request ngoai vncare
+vattu,normal_fill,vattu_case_001,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,khong ghi PHI
+vattu,patient_switch,vattu_case_002,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,true,false,false,false,true,false,false,mismatch bi chan
+vattu,hidden_old_form,vattu_case_003,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,true,false,false,false,true,false,false,form cu bi chan
+vattu,slow_network,vattu_case_004,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,mang cham da verify
+vattu,form_not_loaded,vattu_case_005,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,false,false,true,false,false,form chua tai bi chan
+vattu,non_nurse_user,vattu_case_006,KHOA_PILOT,MAY_PILOT_01,bac_si,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,false,false,true,false,false,vai tro khong phai dieu duong bi chan
+vattu,safe_mode,vattu_case_007,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,true,false,false,true,false,false,safe mode chan
+vattu,kill_switch,vattu_case_008,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,BLOCKED,P2,true,false,false,false,true,false,true,false,false,khoa khan cap chan
+vattu,rollback,vattu_case_009,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,true,true,false,false,rollback da kiem
+vattu,external_network,vattu_case_010,KHOA_PILOT,MAY_PILOT_01,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,PASS,P2,true,true,false,false,false,false,true,false,false,khong co request ngoai vncare

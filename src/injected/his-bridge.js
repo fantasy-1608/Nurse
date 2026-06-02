@@ -20,12 +20,129 @@
 
     let _$ = window['$'] || window['jQuery'];
     const _jsonrpc = window['jsonrpc'];
+    var _patientSeq = 0;
+    var _currentKhambenhId = '';
+    var _currentHosobenhanid = '';
+    var _currentBenhnhanId = '';
+    var _currentPatientRowData = {};
+
+    const BRIDGE_MARKER = '__quyen_ext__';
+    const BRIDGE_DEBUG = window.__QUYEN_BRIDGE_DEBUG__ === true;
+    const ALLOWED_TYPES = {
+        QUYEN_BRIDGE_READY: true,
+        QUYEN_CARESHEET_SEC4_DATA: true,
+        QUYEN_COMBOGRID_CLICK: true,
+        QUYEN_COMBOGRID_CLICK_RESULT: true,
+        QUYEN_CONFIG: true,
+        QUYEN_DRUG_LIST_RESULT: true,
+        QUYEN_FILL_COMBOGRID: true,
+        QUYEN_IFRAME_DRUGS: true,
+        QUYEN_KEYBOARD_SELECT: true,
+        QUYEN_KEYBOARD_SELECT_RESULT: true,
+        QUYEN_PATIENT_INFO_RESULT: true,
+        QUYEN_PATIENT_SELECTED: true,
+        QUYEN_REQ_CALL_SP: true,
+        QUYEN_REQ_CARESHEET_SEC4: true,
+        QUYEN_REQ_DRUG_LIST: true,
+        QUYEN_REQ_PATIENT_INFO: true,
+        QUYEN_REQ_VATTU_DATA: true,
+        QUYEN_REQ_VITALS: true,
+        QUYEN_SP_RESULT: true,
+        QUYEN_TRIGGER_CHANGE: true,
+        QUYEN_TRIGGER_SEARCH: true,
+        QUYEN_TYPE_TEXT: true,
+        QUYEN_VITALS_RESULT: true,
+        QUYEN_WAKE_UP_GRID: true,
+        QUYEN_FILL_ERROR: true,
+        QUYEN_FORM_PATIENT_CONTEXT: true,
+        QUYEN_FORM_FOCUSED: true,
+        QUYEN_FORM_CLOSED: true,
+        QUYEN_VATTU_DATA_RESULT: true,
+        QUYEN_FILL_VT_ITEM: true,
+        QUYEN_VT_FILL_RESULT: true,
+        QUYEN_VT_SEND_ENTER: true,
+        QUYEN_VT_ENTER_RESULT: true,
+        QUYEN_VT_PHYSICAL_ENTER_PRESSED: true,
+        QUYEN_ROLE_BLOCK: true,
+        QUYEN_HIS_ENV: true
+    };
+
+    function redactLogValue(value) {
+        if (value === null || value === undefined) return value;
+        if (typeof value === 'string') {
+            return value
+                .replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, '[DOB]')
+                .replace(/\b\d{6,}\b/g, '[ID]')
+                .replace(/\b[A-ZÀ-Ỹ][A-ZÀ-Ỹa-zà-ỹ]+(?:\s+[A-ZÀ-Ỹ][A-ZÀ-Ỹa-zà-ỹ]+){1,5}\b/g, '[NAME]');
+        }
+        if (typeof value === 'object') {
+            if (Array.isArray(value)) return value.map(redactLogValue);
+            const out = {};
+            Object.keys(value).forEach(function (key) {
+                if (/name|hoten|ngaysinh|dob|khambenh|hosobenh|benhnhan|token|password/i.test(key)) {
+                    out[key] = '[REDACTED]';
+                } else {
+                    out[key] = redactLogValue(value[key]);
+                }
+            });
+            return out;
+        }
+        return value;
+    }
+
+    function safeArgs(args) {
+        return Array.prototype.slice.call(args || []).map(redactLogValue);
+    }
 
     const log = {
-        debug: (...args) => console.log('[__EXT_EMOJI__ Bridge]', ...args),
-        warn: (...args) => console.warn('[__EXT_EMOJI__ Bridge]', ...args),
-        error: (...args) => console.error('[__EXT_EMOJI__ Bridge]', ...args)
+        debug: (...args) => { if (BRIDGE_DEBUG) console.log('[__EXT_EMOJI__ Bridge]', ...safeArgs(args)); },
+        warn: (...args) => console.warn('[__EXT_EMOJI__ Bridge]', ...safeArgs(args)),
+        error: (...args) => console.error('[__EXT_EMOJI__ Bridge]', ...safeArgs(args))
     };
+
+    function getBridgePatientContext() {
+        return {
+            seq: _patientSeq || 0,
+            khambenhId: _currentKhambenhId || '',
+            hosobenhanid: _currentHosobenhanid || ''
+        };
+    }
+
+    function postToContent(type, payload) {
+        if (!ALLOWED_TYPES[type]) {
+            log.warn('Blocked postToContent unknown type:', type);
+            return false;
+        }
+        payload = payload || {};
+        const envelope = Object.assign({}, payload, {
+            _q: BRIDGE_MARKER,
+            type: type,
+            ts: Date.now(),
+            source: 'bridge',
+            module: payload.module || '',
+            requestId: payload.requestId || '',
+            nonce: Math.random().toString(36).slice(2, 12)
+        });
+        const ctx = getBridgePatientContext();
+        if (ctx.seq && envelope.seq === undefined) envelope.seq = ctx.seq;
+        if (ctx.khambenhId && !envelope.khambenhId) envelope.khambenhId = ctx.khambenhId;
+        if (ctx.hosobenhanid && !envelope.hosobenhanid) envelope.hosobenhanid = ctx.hosobenhanid;
+        window.postMessage(envelope, window.location.origin);
+        return true;
+    }
+
+    function isValidIncoming(event) {
+        if (!event || event.origin !== window.location.origin) return false;
+        const data = event.data || {};
+        if (!data.type || !ALLOWED_TYPES[data.type]) return false;
+        if (data._q !== BRIDGE_MARKER) {
+            log.warn('Blocked legacy incoming message without marker:', data.type);
+            return false;
+        }
+        if (data.source && data.source !== 'content') return false;
+        if (data.ts && Math.abs(Date.now() - Number(data.ts)) > 5 * 60 * 1000) return false;
+        return true;
+    }
 
     // Mục đích: Spy đã được xoá sau khi hoàn thành diagnostic.
 
@@ -57,19 +174,17 @@
             const jqVersion = (window.jQuery && window.jQuery.fn && window.jQuery.fn.jquery) || 'n/a';
             log.debug('HIS Version:', hisVersion, '| jQuery:', jqVersion);
 
-            window.postMessage({
-                type: 'QUYEN_HIS_ENV',
+            postToContent('QUYEN_HIS_ENV', {
                 hisVersion: hisVersion,
-                jqVersion: jqVersion,
-                userAgent: navigator.userAgent.substring(0, 100),
-            }, location.origin);
+                jqVersion: jqVersion
+            });
         } catch (e) { log.warn('HIS version detection failed:', e.message); }
     })();
 
     // ★ AUDIT FIX: Chỉ cho phép Điều dưỡng dùng (USER_GROUP_ID == "5")
     if (window.userInfo && window.userInfo.USER_GROUP_ID && window.userInfo.USER_GROUP_ID !== "5") {
-        log.warn('⛔️ TỪ CHỐI TRUY CẬP: Nurse Extension chỉ được phép sử dụng bởi Điều Dưỡng (Group: 5). Account: ' + window.userInfo.FULL_NAME + ' - Group: ' + window.userInfo.USER_GROUP_ID);
-        window.postMessage({ type: 'QUYEN_ROLE_BLOCK', role: window.userInfo.USER_GROUP_ID, name: window.userInfo.FULL_NAME }, window.location.origin);
+        log.warn('TỪ CHỐI TRUY CẬP: Nurse Extension chỉ được phép sử dụng bởi Điều Dưỡng. Group:', window.userInfo.USER_GROUP_ID);
+        postToContent('QUYEN_ROLE_BLOCK', { role: window.userInfo.USER_GROUP_ID });
         return; // Dừng toàn bộ hoạt động của bridge
     }
 
@@ -124,11 +239,7 @@
 
     // ★ SAFETY v2: Sequence counter + Patient ID tracking
     // Mỗi lần chọn BN mới → _patientSeq++ → mọi async response phải khớp seq
-    let _patientSeq = 0;              // Tăng mỗi khi chọn BN mới
-    let _currentKhambenhId = '';      // KHAMBENHID của BN đang chọn
-    let _currentHosobenhanid = '';    // HOSOBENHANID của BN đang chọn
-    let _currentBenhnhanId = '';      // BENHNHANID của BN đang chọn
-    let _currentPatientRowData = {};  // Raw rowData để fallback các field ẩn của jqGrid
+    // Patient state initialized near the top because bridge-ready messages can be posted before hooks run.
 
     // CT_FORM_IDs cho Section 4 - Cơ quan bệnh + Cân nặng
     const SECTION4_IDS = ['1169', '1170', '1171', '1232'];
@@ -394,8 +505,7 @@
                 log.debug('👤 Vitals loaded:', Object.keys(vitals).length, 'fields');
 
                 // Broadcast to content script (kèm seq để validate)
-                window.postMessage({
-                    type: 'QUYEN_PATIENT_SELECTED',
+                postToContent('QUYEN_PATIENT_SELECTED', {
                     seq: thisSeq,
                     patient: {
                         name: hoTen,
@@ -406,7 +516,7 @@
                         hosobenhanid: hosobenhanid
                     },
                     vitals: vitals
-                }, window.location.origin);
+                });
 
                 // ★ SAFETY v2: Auto-fetch Section 4+17 — polling thay vì fixed timeout
                 // Đợi iframe care sheet reload xong (check mỗi 500ms, tối đa 5s)
@@ -639,10 +749,9 @@
             log.debug('📋 AJAX snoop — seq:', snoopSeq, '| KB:', snoopKB, '| Sec4:', Object.keys(sec4).length, 'ô, Sec17:', Object.keys(sec17).length, 'mục');
 
             // ★ Auto-switch panel tab → phiếu chăm sóc
-            window.postMessage({ type: 'QUYEN_FORM_FOCUSED', tab: 'caresheet' }, location.origin);
+            postToContent('QUYEN_FORM_FOCUSED', { tab: 'caresheet' });
 
-            window.postMessage({
-                type: 'QUYEN_CARESHEET_SEC4_DATA',
+            postToContent('QUYEN_CARESHEET_SEC4_DATA', {
                 seq: snoopSeq,
                 khambenhId: snoopKB,
                 data: sec4,
@@ -650,7 +759,7 @@
                 weight: weight,
                 height: height,
                 vitalsFromPrev: vitalsFromPrev
-            }, window.location.origin);
+            });
         }
     }
 
@@ -676,7 +785,7 @@
                 log.debug('💉 Đã bắt được', _capturedDrugs.length, 'thuốc:', _capturedDrugs);
 
                 // ★ Auto-switch panel tab → dịch truyền
-                window.postMessage({ type: 'QUYEN_FORM_FOCUSED', tab: 'infusion' }, location.origin);
+                postToContent('QUYEN_FORM_FOCUSED', { tab: 'infusion' });
 
                 // Gửi ngay cho content script
                 broadcastDrugs(_capturedDrugs);
@@ -707,8 +816,7 @@
         // 1. Có cache ĐÃ AGGREGATE → trả luôn (kèm seq + KB)
         if (_isFullyAggregated && _cachedCareSheetSec4 && Object.keys(_cachedCareSheetSec4).length > 0) {
             log.debug('📋 Trả Section 4+17 từ cache (đã aggregate):', _cachedCareSheetSec4, _cachedCareSheetSec17);
-            window.postMessage({
-                type: 'QUYEN_CARESHEET_SEC4_DATA',
+            postToContent('QUYEN_CARESHEET_SEC4_DATA', {
                 seq: reqSeq,
                 requestId: requestId,
                 khambenhId: _currentKhambenhId,
@@ -716,7 +824,7 @@
                 sec17: _cachedCareSheetSec17 || {},
                 weight: _cachedCareSheetWeight || '',
                 phieuId: _cachedPhieuId || ''
-            }, location.origin);
+            });
             return;
         }
 
@@ -724,7 +832,7 @@
         const phieuIds = findPhieuIdsFromCareSheetGrid();
         if (phieuIds.length === 0) {
             log.debug('📋 Không tìm thấy PHIEUID nào trong care sheet grid');
-            window.postMessage({ type: 'QUYEN_CARESHEET_SEC4_DATA', seq: reqSeq, requestId: requestId, khambenhId: _currentKhambenhId, data: {} }, location.origin);
+            postToContent('QUYEN_CARESHEET_SEC4_DATA', { seq: reqSeq, requestId: requestId, khambenhId: _currentKhambenhId, data: {} });
             return;
         }
 
@@ -754,7 +862,7 @@
 
         if (allPhieuData.length === 0) {
             log.warn('📋 Không lấy được dữ liệu từ bất kỳ phiếu cũ nào');
-            window.postMessage({ type: 'QUYEN_CARESHEET_SEC4_DATA', seq: reqSeq, requestId: requestId, khambenhId: _currentKhambenhId, data: {} }, location.origin);
+            postToContent('QUYEN_CARESHEET_SEC4_DATA', { seq: reqSeq, requestId: requestId, khambenhId: _currentKhambenhId, data: {} });
             return;
         }
 
@@ -893,8 +1001,7 @@
 
         log.debug('📋 Tổng hợp xong: seq=' + aggSeq + ' | KB=' + _currentKhambenhId + ' | Sec4=' + Object.keys(mergedSec4).length + ' ô, Sec17=' + Object.keys(mergedSec17).length + ' mục, từ ' + recentDates.length + ' ngày');
 
-        window.postMessage({
-            type: 'QUYEN_CARESHEET_SEC4_DATA',
+        postToContent('QUYEN_CARESHEET_SEC4_DATA', {
             seq: aggSeq,
             requestId: requestId,
             khambenhId: _currentKhambenhId,
@@ -905,7 +1012,7 @@
             vitalsFromPrev: mergedVitals,
             patientName: patientName,
             phieuId: mergedPhieuId
-        }, location.origin);
+        });
     }
 
     /**
@@ -1272,12 +1379,11 @@
         if (hasData) _cachedCareSheetSec4 = sec4;
         if (weight) _cachedCareSheetWeight = weight;
 
-        window.postMessage({
-            type: 'QUYEN_CARESHEET_SEC4_DATA',
+        postToContent('QUYEN_CARESHEET_SEC4_DATA', {
             seq: _patientSeq,
             khambenhId: _currentKhambenhId,
             data: sec4, sec17: sec17, weight: weight, height: height, phieuId: phieuId
-        }, location.origin);
+        });
 
         return hasData;
     }
@@ -1286,8 +1392,7 @@
     // MESSAGE HANDLER
     // ==========================================
     window.addEventListener('message', function (event) {
-        if (event.origin !== window.location.origin) return;
-        if (!event.data || !event.data.type) return;
+        if (!isValidIncoming(event)) return;
 
         try {
         switch (event.data.type) {
@@ -1432,7 +1537,7 @@
     function fetchVitalsFromHIS() {
         if (!_jsonrpc) {
             log.warn('⚖️ Không có jsonrpc');
-            window.postMessage({ type: 'QUYEN_VITALS_RESULT', vitals: {} }, location.origin);
+            postToContent('QUYEN_VITALS_RESULT', { vitals: {} });
             return;
         }
 
@@ -1440,7 +1545,7 @@
         const khambenhId = findCurrentKhamBenhId();
         if (!khambenhId) {
             log.warn('⚖️ Không tìm thấy KHAMBENHID');
-            window.postMessage({ type: 'QUYEN_VITALS_RESULT', vitals: {} }, location.origin);
+            postToContent('QUYEN_VITALS_RESULT', { vitals: {} });
             return;
         }
 
@@ -1473,7 +1578,7 @@
         }
 
         log.debug('⚖️ Vitals result:', vitals);
-        window.postMessage({ type: 'QUYEN_VITALS_RESULT', vitals: vitals }, location.origin);
+        postToContent('QUYEN_VITALS_RESULT', { vitals: vitals });
     }
 
     function findCurrentKhamBenhId() {
@@ -1532,7 +1637,7 @@
     function fetchVatTuData(khambenhId, benhnhanId, hosobenhanid, requestId) {
         if (!khambenhId) {
             log.warn('🧰 fetchVatTuData: thiếu khambenhId');
-            window.postMessage({ type: 'QUYEN_VATTU_DATA_RESULT', requestId: requestId, drugs: [], existingVT: [] }, location.origin);
+            postToContent('QUYEN_VATTU_DATA_RESULT', { requestId: requestId, drugs: [], existingVT: [] });
             return;
         }
 
@@ -1649,12 +1754,11 @@
 
             function finalize() {
                 log.debug('🧰 VT data ready: drugs=' + allDrugs.length + ' existingVT=' + allExistVT.length);
-                window.postMessage({
-                    type:       'QUYEN_VATTU_DATA_RESULT',
+                postToContent('QUYEN_VATTU_DATA_RESULT', {
                     requestId:  requestId,
                     drugs:      allDrugs,
                     existingVT: allExistVT
-                }, location.origin);
+                });
             }
         }
 
@@ -1697,15 +1801,14 @@
         var cachdung = data.cachdung || '';
         var doctor   = data.doctor   || '';
         var requestId = data.requestId || '';
+        var fastPathEnabled = data.fastPathEnabled === true || window.__QUYEN_VATTU_FAST_PATH_ENABLED__ === true;
 
         // ★ BẬT GUARD: Chặn chuyển BN trong suốt quá trình fill
         _vtFillInProgress = true;
 
         function postResult(ok, err) {
             _vtFillInProgress = false;
-            window.postMessage({
-                type: 'QUYEN_VT_FILL_RESULT', requestId: requestId, success: ok, ma: ma, error: err || ''
-            }, location.origin);
+            postToContent('QUYEN_VT_FILL_RESULT', { requestId: requestId, success: ok, ma: ma, error: err || '', verified: ok === true });
         }
 
         // ── 1. Tìm form VT (chỉ lấy element ĐANG HIỂN THỊ) ──
@@ -1787,6 +1890,14 @@
                 if (slInput) { triggerInput(slInput, String(sl)); log.debug('🧰 SL =', sl); }
                 if (cdInput && cachdung) { cdInput.focus(); triggerInput(cdInput, cachdung); log.debug('🧰 GhiChu = "' + cachdung + '"'); }
 
+                var verifyErrors = [];
+                if (slInput && String(slInput.value || '').trim() !== String(sl)) verifyErrors.push('số lượng');
+                if (vtInput && ten && String(vtInput.value || '').trim().length < 2) verifyErrors.push('vật tư');
+                if (verifyErrors.length > 0) {
+                    postResult(false, 'Không xác minh được trường: ' + verifyErrors.join(', '));
+                    return;
+                }
+
                 var addBtn = null;
                 var allBtns2 = vtDoc.querySelectorAll('button, input[type="button"], a.btn, .btn');
                 for (var bi = 0; bi < allBtns2.length; bi++) {
@@ -1798,7 +1909,7 @@
                 if (addBtn) {
                     log.debug('🧰 Auto click "Thêm vật tư"');
                     addBtn.click();
-                    window.top.postMessage({ type: 'QUYEN_VT_PHYSICAL_ENTER_PRESSED', ma: ma }, location.origin);
+                    postToContent('QUYEN_VT_PHYSICAL_ENTER_PRESSED', { ma: ma });
                 } else {
                     log.warn('🧰 Không tìm thấy nút Thêm vật tư');
                 }
@@ -1835,7 +1946,7 @@
 
             // ── PHƯƠNG PHÁP 2: DATA INJECTION (FAST PATH) ──
             var injected = false;
-            if (widget) {
+            if (widget && fastPathEnabled) {
                 try {
                     log.debug('🧰 🚀 Thử Data Injection (Method 2)...');
                     
@@ -1859,6 +1970,8 @@
                     log.warn('🧰 ⚠️ Data Injection thất bại, chuyển Fallback Method 1...', injErr.message);
                     injected = false;
                 }
+            } else if (widget) {
+                log.debug('🧰 Fast Path đang tắt theo policy rollout, dùng luồng gõ/click.');
             }
 
             // ── PHƯƠNG PHÁP 1: FALLBACK ──
@@ -2052,7 +2165,7 @@
         }
         if (!vtDoc) {
             log.warn('🧰 handleVtSendEnter: Không tìm thấy phiếu VT');
-            window.postMessage({ type: 'QUYEN_VT_ENTER_RESULT', success: false, error: 'Chưa mở phiếu VT' }, location.origin);
+            postToContent('QUYEN_VT_ENTER_RESULT', { success: false, error: 'Chưa mở phiếu VT' });
             return;
         }
 
@@ -2075,7 +2188,7 @@
         if (addBtn) {
             log.debug('🧰 Click nút "Thêm vật tư":', addBtn.textContent || addBtn.id);
             addBtn.click();
-            window.postMessage({ type: 'QUYEN_VT_ENTER_RESULT', success: true }, location.origin);
+            postToContent('QUYEN_VT_ENTER_RESULT', { success: true });
             return;
         }
 
@@ -2086,14 +2199,14 @@
                 if (typeof vtWin[fnNames[fi]] === 'function') {
                     log.debug('🧰 Gọi hàm HIS:', fnNames[fi]);
                     try { vtWin[fnNames[fi]](); } catch (e) { log.warn('🧰 Lỗi gọi', fnNames[fi], e.message); }
-                    window.postMessage({ type: 'QUYEN_VT_ENTER_RESULT', success: true }, location.origin);
+                    postToContent('QUYEN_VT_ENTER_RESULT', { success: true });
                     return;
                 }
             }
         }
 
         log.warn('🧰 Không tìm được nút "Thêm vật tư" trong form');
-        window.postMessage({ type: 'QUYEN_VT_ENTER_RESULT', success: false, error: 'Không tìm thấy nút Thêm vật tư' }, location.origin);
+        postToContent('QUYEN_VT_ENTER_RESULT', { success: false, error: 'Không tìm thấy nút Thêm vật tư' });
     }
 
     // ==========================================
@@ -2396,12 +2509,11 @@
     // BROADCAST DRUGS — Gửi thuốc cho content script
     // ==========================================
     function broadcastDrugs(drugs) {
-        window.postMessage({
-            type: 'QUYEN_DRUG_LIST_RESULT',
+        postToContent('QUYEN_DRUG_LIST_RESULT', {
             drugs: drugs,
             count: drugs.length,
             source: 'auto-capture'
-        }, window.location.origin);
+        });
     }
 
     // ==========================================
@@ -2709,8 +2821,16 @@
     // GENERIC SP CALL
     // ==========================================
     function callSP(spName, params, requestId) {
+        const ALLOWED_SP_CALLS = {
+            'NT.006': true,
+            'NTU02D204.06': true
+        };
         try {
             if (!_jsonrpc) { sendResult('QUYEN_SP_RESULT', { error: 'no jsonrpc' }, requestId); return; }
+            if (!ALLOWED_SP_CALLS[spName]) {
+                sendResult('QUYEN_SP_RESULT', { error: 'SP_NOT_ALLOWED', spName: spName }, requestId);
+                return;
+            }
             const paramStr = (typeof params === 'object') ? JSON.stringify(params) : params;
             const result = _jsonrpc.AjaxJson.ajaxCALL_SP_O(spName, paramStr, 0);
             let finalResult = result;
@@ -2722,7 +2842,7 @@
     }
 
     function sendResult(type, data, requestId) {
-        window.postMessage({ type, ...data, requestId }, window.location.origin);
+        postToContent(type, Object.assign({}, data || {}, { requestId: requestId }));
     }
 
     // ★ Polling phát hiện form đang mở — URL-based với key chính xác từ HIS
@@ -2748,7 +2868,7 @@
                         catch(e3) { continue; }
                         if (_lastTab !== 'vattu') {
                             _lastTab = 'vattu';
-                            window.postMessage({ type: 'QUYEN_FORM_FOCUSED', tab: 'vattu' }, location.origin);
+                            postToContent('QUYEN_FORM_FOCUSED', { tab: 'vattu' });
 
                             // ★ Auto-fill BS kê đơn + chọn Kho VT khi mở form
                             var vtFormDoc = allDocs[ddi];
@@ -2845,7 +2965,7 @@
                     if (tab) {
                         if (_lastTab !== tab) {
                             _lastTab = tab;
-                            window.postMessage({ type: 'QUYEN_FORM_FOCUSED', tab: tab }, location.origin);
+                            postToContent('QUYEN_FORM_FOCUSED', { tab: tab });
                         }
                         return;
                     }
@@ -2857,7 +2977,7 @@
                             if (tab2) {
                                 if (_lastTab !== tab2) {
                                     _lastTab = tab2;
-                                    window.postMessage({ type: 'QUYEN_FORM_FOCUSED', tab: tab2 }, location.origin);
+                                    postToContent('QUYEN_FORM_FOCUSED', { tab: tab2 });
                                 }
                                 return;
                             }
@@ -2868,7 +2988,7 @@
             // Không còn form → thu gọn (chỉ fire khi vừa chuyển từ có → không)
             if (_lastTab !== null) {
                 _lastTab = null;
-                window.postMessage({ type: 'QUYEN_FORM_CLOSED' }, location.origin);
+                postToContent('QUYEN_FORM_CLOSED', {});
             }
         }
 
@@ -2877,5 +2997,5 @@
     })();
 
     // ★ AUDIT FIX: Thêm bridgeVersion để content script có thể kiểm tra compatibility
-    window.postMessage({ type: 'QUYEN_BRIDGE_READY', status: 'ready', bridgeVersion: '__EXT_VERSION__' }, window.location.origin);
+    postToContent('QUYEN_BRIDGE_READY', { status: 'ready', bridgeVersion: '__EXT_VERSION__' });
 })();

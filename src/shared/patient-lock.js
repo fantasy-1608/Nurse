@@ -47,7 +47,7 @@ HIS.PatientLock = (function () {
         if (!na || !nb) return false;
         if (na === nb) return true;
 
-        // Một bên chứa bên kia (VD: "NGUYỄN THỊ MỸ LỆ" vs "Nguyễn Thị Mỹ Lệ — 63 tuổi — Nữ")
+        // Một bên chứa bên kia (VD: tên trong HIS vs tên kèm tuổi/giới tính)
         if (na.includes(nb) || nb.includes(na)) return true;
         
         // Bỏ dấu tiếng Việt để so sánh (VD: NGUYÊN == NGUYỄN)
@@ -368,7 +368,7 @@ HIS.PatientLock = (function () {
                 while (walker.nextNode()) {
                     const text = walker.currentNode.textContent || '';
 
-                    // Pattern 1: Care sheet title — "HIS-Thêm phiếu (TRẦN THỊ NHƯ Ý/ 2001/ Nữ)"
+                    // Pattern 1: Care sheet title — "HIS-Thêm phiếu (Tên BN/ năm sinh/ giới tính)"
                     const csMatch = text.match(/(?:HIS|Tạo Phiếu)[^(]*\(([^/)]+)\s*\/\s*([^/)]+)?\s*\//i);
                     if (csMatch && !careName) {
                         // ★ FIX v4: Kiểm tra visibility trước khi chấp nhận
@@ -377,7 +377,7 @@ HIS.PatientLock = (function () {
                         careDob = (csMatch[2] || '').trim();
                     }
 
-                    // Pattern 2: Header — "2603171231 | NGUYỄN THỊ MỸ LỆ | 01/01/1963"
+                    // Pattern 2: Header — "mã khám | tên bệnh nhân | ngày sinh"
                     const infMatch = text.match(/(\d{10})\s*\|\s*([A-ZÀ-Ỹ][A-ZÀ-Ỹa-zà-ỹ\s]+)\s*\|\s*(\d{2}\/\d{2}\/\d{4})/);
                     if (infMatch) {
                         // ★ FIX v4: Kiểm tra visibility trước khi chấp nhận

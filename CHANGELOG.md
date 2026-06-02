@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-05-29
+
+### Added
+
+- Central `HIS.Privacy`, `HIS.Audit` and `HIS.Safety` controls for PHI redaction, pseudonymous audit and fail-closed auto-fill.
+- Local release policy with version allowlist, optional expiry/build hash and popup kill switch for manual hospital rollout.
+- Release artifacts now include `sha256.txt` and `release-policy.json`.
+- Release gate script checks manifest permissions, external URLs, legacy risky storage keys, package hashes and release policy.
+- Pilot evidence gate validates hospital pilot CSV for 20 cases/module, required scenarios, package hashes, audit/no-PHI, network, kill switch and rollback.
+- Audit export gate validates popup audit CSV for required columns, pseudonymous PatientRef/ItemRef, build hash and PHI absence.
+- Rollout inventory gate validates machine inventory, installer evidence, package hashes, release policy, debug/fast-path lockout, kill switch and rollback before hospital-wide release.
+- Security rollout documents: `SECURITY_POLICY.md`, `PRIVACY_IMPACT_ASSESSMENT.md`, `COMPLIANCE_MATRIX.md`, `RELEASE_CHECKLIST.md`, `ROLLBACK_CHECKLIST.md` and `HOSPITAL_RELEASE_READINESS_REPORT.md`.
+
+### Changed
+
+- Removed GitHub/update host permissions and external popup font loading for offline/manual hospital deployment.
+- Safe Mode and audit guard now cover Truyền dịch, Phiếu chăm sóc and Vật tư.
+- Vật tư fast path is feature-flagged off by default and queue stops on failure/timeout.
+- Gamified wording replaced with professional operation counts and review-before-save messages.
+- Care Sheet UI preferences now use `chrome.storage.local` instead of page `localStorage`.
+
+### Security
+
+- Message bus and injected bridge require strict envelope marker/source/timestamp/requestId.
+- Legacy raw `QUYEN_*` messages without marker are blocked.
+- Error/debug/audit paths redact PHI and remove legacy risky storage keys on privacy migration.
+- Removed the unused packaged crypto/API-key module so release ZIPs do not contain legacy `geminiApiKey` handling.
+
 ## [1.3.3] - 2026-04-26
 
 ### Added (v1.3.3)
@@ -52,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance:** MutationObserver thu nhỏ scope — bỏ `characterData`, chỉ react trên IFRAME/DIV/DIALOG
 - **Performance:** NT.006 chuyển từ sync XHR → async — không còn block UI khi chọn bệnh nhân
 - **Performance:** Thêm `visibilitychange` handler — pause intervals/observers khi tab ẩn
-- **Security:** GitHub permissions chuyển sang `optional_host_permissions` (principle of least privilege)
+- **Security:** Giảm quyền host update ngoài HIS theo principle of least privilege.
 - **Security:** PBKDF2 iterations tăng từ 100,000 → 600,000 (OWASP 2025)
 - **Security:** Message bus listener errors được log thay vì nuốt im
 - **Reliability:** 72 empty catch blocks → tất cả đều log lỗi qua `console.debug`
@@ -99,4 +127,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core infusion automation
 - Care sheet template filling
 - Floating UI panel
-- Auto-update notification (GitHub Releases)
+- Manual internal release notification.

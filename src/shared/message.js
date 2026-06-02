@@ -16,6 +16,8 @@ HIS.Message = (function () {
     // MARKER — phân biệt message của extension với bên ngoài
     // ==========================================
     const MARKER = '__quyen_ext__';
+    const SOURCES = { content: true, bridge: true, popup: true };
+    const RESERVED_KEYS = { _q: true, type: true, ts: true, source: true, nonce: true };
 
     // ==========================================
     // ALLOWLIST — chỉ chấp nhận message types đã đăng ký
@@ -82,24 +84,37 @@ HIS.Message = (function () {
      * @param {string} type - QUYEN_* message type
      * @param {Object} payload - dữ liệu gửi kèm
      */
+    function _makeRequestId(type) {
+        return String(type || 'msg').toLowerCase() + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    }
+
     function send(type, payload) {
+        if (!_allowedSet[type]) {
+            if (HIS.Logger) HIS.Logger.warn('Message', 'Blocked unknown message type:', type);
+            return false;
+        }
+
+        payload = (payload && typeof payload === 'object') ? payload : {};
         const envelope = {
             _q: MARKER,
             type: type,
-            ts: Date.now()
+            ts: Date.now(),
+            source: payload.source || 'content',
+            requestId: payload.requestId || _makeRequestId(type),
+            module: payload.module || '',
+            nonce: Math.random().toString(36).slice(2, 12)
         };
 
-        // Merge payload vào envelope (tương thích code cũ đọc event.data.xxx)
-        if (payload && typeof payload === 'object') {
-            const keys = Object.keys(payload);
-            for (let i = 0; i < keys.length; i++) {
-                envelope[keys[i]] = payload[keys[i]];
-            }
+        const keys = Object.keys(payload);
+        for (let i = 0; i < keys.length; i++) {
+            if (RESERVED_KEYS[keys[i]]) continue;
+            envelope[keys[i]] = payload[keys[i]];
         }
 
-        // Dùng location.origin thay vì '*'
-        const target = _expectedOrigin || '*';
+        const target = _expectedOrigin || (window.location && window.location.origin) || '';
+        if (!target) return false;
         window.postMessage(envelope, target);
+        return envelope.requestId;
     }
 
     // ==========================================
@@ -120,8 +135,8 @@ HIS.Message = (function () {
             // 1. Origin check
             if (_expectedOrigin && event.origin !== _expectedOrigin) return;
 
-            // 2. Có data?
-            if (!event.data || !event.data.type) return;
+            // 2. Envelope hợp lệ?
+            if (!isValid(event)) return;
 
             // 3. Type match?
             let matched = false;
@@ -153,24 +168,22 @@ HIS.Message = (function () {
         // Type in allowlist
         if (!_allowedSet[event.data.type]) return false;
 
-        // New envelope path (ưu tiên): message có marker chuẩn
-        if (event.data._q === MARKER) return true;
+        if (event.data._q !== MARKER) {
+            if (HIS.Logger) HIS.Logger.warn('Message', 'Blocked legacy message without marker:', event.data.type);
+            return false;
+        }
 
-        // Legacy bridge path:
-        // his-bridge.js (page context) vẫn gửi postMessage raw, không có _q.
-        // Chỉ chấp nhận nếu là QUYEN_* và phát từ chính window hiện tại.
-        const isLegacyType = typeof event.data.type === 'string' && event.data.type.indexOf('QUYEN_') === 0;
-        const sameWindowSource = !event.source || event.source === window;
-        if (isLegacyType && sameWindowSource) return true;
+        if (event.data.source && !SOURCES[event.data.source]) return false;
+        if (event.data.ts && Math.abs(Date.now() - Number(event.data.ts)) > 5 * 60 * 1000) return false;
 
-        return false;
+        return true;
     }
 
     /**
      * Target origin cho postMessage (thay '*')
      */
     function getTargetOrigin() {
-        return _expectedOrigin || '*';
+        return _expectedOrigin || (window.location && window.location.origin) || '';
     }
 
     // ==========================================

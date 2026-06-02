@@ -2,7 +2,7 @@
  * __EXT_EMOJI__ __EXT_NAME__ — Vật Tư Engine
  * Đọc danh sách thuốc từ HIS → áp dụng 5 quy luật → gợi ý VT cần dùng
  *
- * Quy luật rút ra từ dữ liệu thực tế 5 bệnh nhân (12/04/2026):
+ * Quy luật rút ra từ pilot nội bộ đã redact:
  *   Rule 1 – Base    : Bất kỳ thuốc Tiêm → GA2501 + KI318
  *   Rule 2 – TMC/IM  : Thuốc đường Tiêm (không TTM) → BO535 (+ BO534 nếu nhỏ)
  *   Rule 3 – TTM     : Thuốc Tiêm truyền → BO560 × số chai + NA148

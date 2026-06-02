@@ -1,0 +1,2 @@
+department,machine_ref,windows_user_ref,his_user_ref,his_role,extension_version,package_file,package_sha256,build_hash_recorded,release_policy_allowed,release_policy_expires_at,installed_by,installed_at,kill_switch_tested,rollback_tested,safe_mode_default,debug_mode_enabled,fast_path_enabled,external_network_ok,status,notes
+KHOA_PILOT,MAY_001,win_user_001,his_user_001,dieu_duong,1.3.4,Nurse-v1.3.4.zip,<sha256>,<sha256>,true,2099-12-31,it_001,2026-05-31T08:00:00+07:00,true,true,true,false,false,true,ACTIVE,khong ghi ten BN hoac ma that

@@ -14,6 +14,7 @@ const QuyenCareSheetUI = (function () {
     let _container = null;
     let _customValues = {};
     let _customSectionFilter = null; // null = show all; array = show only these indices
+    let _fillMode = 'full';
 
     // ==========================================
     // INIT
@@ -24,14 +25,41 @@ const QuyenCareSheetUI = (function () {
         QuyenLog.info('📋 Care Sheet UI initialized');
     }
 
+    function getStorageLocal(callback) {
+        try {
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                callback(chrome.storage.local);
+                return;
+            }
+        } catch (e) { /* ignore */ }
+        callback(null);
+    }
+
+    function loadPreferences(callback) {
+        getStorageLocal(function (storage) {
+            if (!storage) {
+                callback({ fillMode: _fillMode, customSections: _customSectionFilter });
+                return;
+            }
+            storage.get(['quyen_cs_fillmode', 'quyen_cs_custom_secs'], function (data) {
+                _fillMode = data.quyen_cs_fillmode || 'full';
+                _customSectionFilter = Array.isArray(data.quyen_cs_custom_secs) ? data.quyen_cs_custom_secs : null;
+                callback({ fillMode: _fillMode, customSections: _customSectionFilter });
+            });
+        });
+    }
+
+    function savePreference(patch) {
+        getStorageLocal(function (storage) {
+            if (storage) storage.set(patch);
+        });
+    }
+
     // ==========================================
     // RENDER UI
     // ==========================================
     function renderUI() {
         if (!_container) return;
-
-        // Load saved fill mode from localStorage
-        const _fillMode = localStorage.getItem('quyen_cs_fillmode') || 'full';
 
         _container.innerHTML = `
             <div class="quyen-cs-wrapper">
@@ -114,6 +142,13 @@ const QuyenCareSheetUI = (function () {
         `;
 
         setupActions();
+        loadPreferences(function (prefs) {
+            const modeSelect = document.getElementById('quyen-cs-mode');
+            if (modeSelect) {
+                modeSelect.value = prefs.fillMode || 'full';
+                toggleCustomSections(modeSelect.value);
+            }
+        });
 
         // Load mẫu mặc định (sinh hiệu trống, phi sinh tồn có default)
         loadDefaultValues();
@@ -137,7 +172,7 @@ const QuyenCareSheetUI = (function () {
     window.addEventListener('message', function (event) {
         if (!event.data) return;
         // ★ SPRINT C: Origin + type validation
-        if (typeof HIS !== 'undefined' && HIS.Message && !HIS.Message.isValid(event)) return;
+        if (typeof HIS === 'undefined' || !HIS.Message || !HIS.Message.isValid(event)) return;
 
         // Khi Bridge phát hiện chọn BN mới (từ grid)
         if (event.data.type === 'QUYEN_PATIENT_SELECTED') {
@@ -477,7 +512,7 @@ const QuyenCareSheetUI = (function () {
                     const walker = docs[d].createTreeWalker(docs[d].body || docs[d], NodeFilter.SHOW_TEXT);
                     while (walker.nextNode()) {
                         const text = walker.currentNode.textContent || '';
-                        // Caresheet: "HIS-Thêm phiếu (TRẦN THỊ NHƯ Ý/ 2001/ Nữ)"
+                        // Caresheet: "HIS-Thêm phiếu (Tên BN/ năm sinh/ giới tính)"
                         const match = text.match(/HIS[^(]*\(([^)]+\/[^)]+)\)/);
                         if (match) {
                             const fromDOM = match[1].trim();
@@ -493,7 +528,7 @@ const QuyenCareSheetUI = (function () {
             }
 
             // Infusion page: header text split across DOM nodes → dùng innerText
-            // Format: "2603171231 | NGUYỄN THỊ MỸ LỆ | 01/01/1963 (63 Tuổi) | Nữ | ..."
+            // Format: "mã khám | tên BN | ngày sinh (tuổi) | giới tính | ..."
             for (let d2 = 0; d2 < docs.length; d2++) {
                 try {
                     const bodyText = (docs[d2].body || docs[d2]).innerText || '';
@@ -547,7 +582,7 @@ const QuyenCareSheetUI = (function () {
                 if (!_vitalsRequested && !_cachedVitals) {
                     _vitalsRequested = true;
                     addExtensionStep('Đang tìm dữ liệu sinh hiệu...', 'loading');
-                    window.postMessage({ type: 'QUYEN_REQ_VITALS' }, location.origin);
+                    HIS.Message.send('QUYEN_REQ_VITALS', { module: 'caresheet' });
                 }
             } else if (el && (!el.textContent || el.textContent === 'Chọn bệnh nhân...')) {
                 // Only clear if it's already empty/default, to be safe
@@ -825,7 +860,8 @@ const QuyenCareSheetUI = (function () {
         const modeSelect = document.getElementById('quyen-cs-mode');
         if (modeSelect) {
             modeSelect.addEventListener('change', function () {
-                localStorage.setItem('quyen_cs_fillmode', this.value);
+                _fillMode = this.value;
+                savePreference({ quyen_cs_fillmode: this.value });
                 toggleCustomSections(this.value);
             });
             toggleCustomSections(modeSelect.value);
@@ -846,8 +882,7 @@ const QuyenCareSheetUI = (function () {
         }
 
         panel.style.display = 'block';
-        const rawSaved = localStorage.getItem('quyen_cs_custom_secs');
-        const saved = rawSaved ? JSON.parse(rawSaved) : null;
+        const saved = _customSectionFilter;
         const sections = CARESHEET_CONFIG.SECTIONS;
         let html = '<div style="display:flex;flex-wrap:wrap;gap:3px;">';
         for (let i = 0; i < sections.length; i++) {
@@ -875,9 +910,9 @@ const QuyenCareSheetUI = (function () {
                 panel.querySelectorAll('.quyen-cs-sec-check:checked').forEach(function (c) {
                     checkedIndices.push(parseInt(c.getAttribute('data-sec')));
                 });
-                localStorage.setItem('quyen_cs_custom_secs', JSON.stringify(checkedIndices));
                 // ★ Update filter and immediately re-render the edit panel
                 _customSectionFilter = checkedIndices;
+                savePreference({ quyen_cs_custom_secs: checkedIndices });
                 if (Object.keys(_customValues).length > 0) renderEditableFields();
             });
         });
@@ -977,9 +1012,10 @@ const QuyenCareSheetUI = (function () {
                 // Mục 0-6 (Thông tin chung + sections 1-6)
                 allowedSections = [0, 1, 2, 3, 4, 5, 6];
             } else {
-                // Custom: from localStorage (xử lý đúng mảng rỗng [])
-                const rawSaved = localStorage.getItem('quyen_cs_custom_secs');
-                allowedSections = rawSaved ? JSON.parse(rawSaved) : CARESHEET_CONFIG.SECTIONS.map(function (_, i) { return i; });
+                // Custom: from chrome.storage.local (xử lý đúng mảng rỗng [])
+                allowedSections = Array.isArray(_customSectionFilter)
+                    ? _customSectionFilter
+                    : CARESHEET_CONFIG.SECTIONS.map(function (_, i) { return i; });
             }
 
             // Get allowed field keys from selected sections
@@ -1003,67 +1039,96 @@ const QuyenCareSheetUI = (function () {
             QuyenLog.info('📋 Fill mode: ' + mode + ', sections: ' + allowedSections.join(',') + ', fields: ' + Object.keys(valuesToFill).length);
         }
 
-        setStatus('⏳ Đang điền...', 'info');
-        addExtensionStep('Bắt đầu điền ' + Object.keys(valuesToFill).length + ' mục cơ bản...', 'loading');
+        function runCareSheetFill() {
+            setStatus('⏳ Đang điền...', 'info');
+            addExtensionStep('Bắt đầu điền ' + Object.keys(valuesToFill).length + ' mục cơ bản...', 'loading');
 
-        const result = QuyenCareSheetFiller.fillCustomValues(valuesToFill);
-
-        if (result.success) {
-            setStatus(`✅ Đã điền ${result.filledCount} mục thành công! __EXT_EMOJI__`, 'success');
-            showMeritAnimation();
-            if (typeof QuyenUI !== 'undefined') {
-                QuyenUI.showToast(`✅ Đã điền phiếu chăm sóc — ${result.filledCount} mục! __EXT_EMOJI__`);
-                QuyenUI.incrementFilledCount();
+            const result = QuyenCareSheetFiller.fillCustomValues(valuesToFill);
+            if (typeof HIS !== 'undefined' && HIS.Safety) {
+                HIS.Safety.auditResult('CARESHEET_FILL_RESULT', {
+                    module: 'caresheet',
+                    fillMode: mode,
+                    result: result.success ? 'OK' : 'ERROR',
+                    reason: result.error || '',
+                    filledCount: result.filledCount || 0
+                });
             }
 
+            if (result.success) {
+                setStatus(`✅ Đã điền ${result.filledCount} mục thành công! __EXT_EMOJI__`, 'success');
+                showMeritAnimation();
+                if (typeof QuyenUI !== 'undefined') {
+                    QuyenUI.showToast(`✅ Đã điền phiếu chăm sóc — ${result.filledCount} mục! __EXT_EMOJI__`);
+                    QuyenUI.incrementFilledCount();
+                }
 
-            // ★ Copy cân nặng + sinh hiệu + Section 17 từ phiếu cũ (KHÔNG copy Section 4)
-            try {
-                const lockCheck2 = (typeof HIS !== 'undefined' && HIS.PatientLock) ? HIS.PatientLock.verifyCurrentForm({ requireTarget: true }) : { ok: true };
-                if (!lockCheck2.ok) {
-                    QuyenLog.warn('⚠️ Skip fillSection4FromPrevious — BN đã thay đổi:', lockCheck2.details);
-                    addExtensionStep('Bỏ qua copy phiếu cũ: BN thay đổi', 'error');
-                } else {
-                    addExtensionStep('Đang copy dữ liệu phiếu cũ...', 'loading');
-                    // ★ Loại bỏ Section 4 (index 4) + Section 17 (index 16 trong filler) — tránh nhầm BN
-                    // Chỉ copy: cân nặng, sinh hiệu từ phiếu cũ
-                    let sec4Allowed = allowedSections;
-                    if (sec4Allowed === null) {
-                        // Chế độ đầy đủ → cho phép tất cả TRỪ section 4 (index 4)
-                        sec4Allowed = CARESHEET_CONFIG.SECTIONS.map(function(_, i) { return i; }).filter(function(i) { return i !== 4; });
+                // ★ Copy cân nặng + sinh hiệu + Section 17 từ phiếu cũ (KHÔNG copy Section 4)
+                try {
+                    const lockCheck2 = (typeof HIS !== 'undefined' && HIS.PatientLock) ? HIS.PatientLock.verifyCurrentForm({ requireTarget: true }) : { ok: true };
+                    if (!lockCheck2.ok) {
+                        QuyenLog.warn('⚠️ Skip fillSection4FromPrevious — BN đã thay đổi:', lockCheck2.details);
+                        addExtensionStep('Bỏ qua copy phiếu cũ: BN thay đổi', 'error');
                     } else {
-                        // Chế độ đơn giản/tùy chọn → loại bỏ section 4 nếu có
-                        sec4Allowed = sec4Allowed.filter(function(i) { return i !== 4; });
-                    }
-                    const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious(sec4Allowed);
-                    function showSec4Result(r) {
-                         if (r && r.success) {
-                            let msg = '📋 Phiếu cũ #' + (r.phieuId || '?') + ' → ' + r.filledCount + ' ô';
-                            if (r.sec17Count) msg += ' + Sec17: ' + r.sec17Count + ' mục';
-                            if (r.weight) msg += ' | Cân nặng: ' + r.weight + 'kg';
-                            setStatus('✅ Đã điền ' + result.filledCount + ' mục + ' + msg, 'success');
-                            addExtensionStep('Hoàn tất copy phiếu cũ (' + r.filledCount + ' ô)', 'done');
-                            if (typeof QuyenUI !== 'undefined') QuyenUI.showToast(msg);
+                        addExtensionStep('Đang copy dữ liệu phiếu cũ...', 'loading');
+                        let sec4Allowed = allowedSections;
+                        if (sec4Allowed === null) {
+                            sec4Allowed = CARESHEET_CONFIG.SECTIONS.map(function(_, i) { return i; }).filter(function(i) { return i !== 4; });
                         } else {
-                            addExtensionStep('Không có dữ liệu phiếu cũ để copy', 'done');
+                            sec4Allowed = sec4Allowed.filter(function(i) { return i !== 4; });
+                        }
+                        const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious(sec4Allowed);
+                        function showSec4Result(r) {
+                             if (r && r.success) {
+                                let msg = '📋 Phiếu cũ #' + (r.phieuId || '?') + ' → ' + r.filledCount + ' ô';
+                                if (r.sec17Count) msg += ' + Sec17: ' + r.sec17Count + ' mục';
+                                if (r.weight) msg += ' | Cân nặng: ' + r.weight + 'kg';
+                                setStatus('✅ Đã điền ' + result.filledCount + ' mục + ' + msg, 'success');
+                                addExtensionStep('Hoàn tất copy phiếu cũ (' + r.filledCount + ' ô)', 'done');
+                                if (typeof QuyenUI !== 'undefined') QuyenUI.showToast(msg);
+                            } else {
+                                addExtensionStep('Không có dữ liệu phiếu cũ để copy', 'done');
+                            }
+                        }
+                        if (sec4Result && sec4Result.then) {
+                            sec4Result.then(showSec4Result);
+                        } else {
+                            showSec4Result(sec4Result);
                         }
                     }
-                    if (sec4Result && sec4Result.then) {
-                        sec4Result.then(showSec4Result);
-                    } else {
-                        showSec4Result(sec4Result);
-                    }
+                } catch (e) {
+                    QuyenLog.warn('⚠️ Không thể copy dữ liệu phiếu cũ:', e);
                 }
-            } catch (e) {
-                QuyenLog.warn('⚠️ Không thể copy dữ liệu phiếu cũ:', e);
+            } else {
+                const errorCount = result.errors ? result.errors.length : 0;
+                const errorMsg = result.error || (result.errors ? result.errors.slice(0, 3).join(', ') : '');
+                setStatus(`⚠️ Điền ${result.filledCount || 0} mục, ${errorCount} lỗi: ${errorMsg}`, 'warning');
+                if (typeof QuyenUI !== 'undefined') {
+                    QuyenUI.showToast(`⚠️ ${errorMsg}`, 'warning');
+                }
             }
+        }
+
+        if (typeof HIS !== 'undefined' && HIS.Safety) {
+            HIS.Safety.guardAutoFill('CARESHEET_FILL_ATTEMPT', {
+                module: 'caresheet',
+                fillMode: mode,
+                sections: allowedSections ? allowedSections.join(',') : 'full',
+                filledCount: Object.keys(valuesToFill).length,
+                requestId: 'caresheet_' + Date.now()
+            }).then(runCareSheetFill).catch(function (err) {
+                const reason = err && err.message === 'SAFE_MODE'
+                    ? 'Safe Mode đang bật — đã chặn tự động điền.'
+                    : (err && err.message === 'KILL_SWITCH'
+                        ? 'Khóa khẩn cấp đang bật — đã chặn tự động điền.'
+                        : 'Không ghi được audit — đã chặn tự động điền.');
+                setStatus('🚫 ' + reason, 'error');
+                if (typeof QuyenUI !== 'undefined') QuyenUI.showToast('🚫 ' + reason, 'error');
+            });
         } else {
-            const errorCount = result.errors ? result.errors.length : 0;
-            const errorMsg = result.error || (result.errors ? result.errors.slice(0, 3).join(', ') : '');
-            setStatus(`⚠️ Điền ${result.filledCount || 0} mục, ${errorCount} lỗi: ${errorMsg}`, 'warning');
-            if (typeof QuyenUI !== 'undefined') {
-                QuyenUI.showToast(`⚠️ ${errorMsg}`, 'warning');
-            }
+            const reason = 'Không nạp được lớp an toàn/audit — đã chặn tự động điền.';
+            setStatus('🚫 ' + reason, 'error');
+            if (typeof QuyenUI !== 'undefined') QuyenUI.showToast('🚫 ' + reason, 'error');
+            QuyenLog.warn('🔒 CareSheet fill BLOCKED: safety guard unavailable');
         }
     }
 
@@ -1157,7 +1222,7 @@ const QuyenCareSheetUI = (function () {
     }
 
     // ==========================================
-    // MERIT ANIMATION — "+1 công đức" bay lên
+    // OPERATION COUNT ANIMATION
     // ==========================================
     function showMeritAnimation() {
         const fillBtn = document.getElementById('quyen-btn-cs-fill');
@@ -1166,7 +1231,7 @@ const QuyenCareSheetUI = (function () {
         const rect = fillBtn.getBoundingClientRect();
         const el = document.createElement('div');
         el.className = 'quyen-merit-float';
-        el.textContent = '+1 chỉ vàng ✨';
+        el.textContent = '+1 thao tác';
         el.style.left = rect.left + rect.width / 2 + 'px';
         el.style.top = rect.top + 'px';
         document.body.appendChild(el);

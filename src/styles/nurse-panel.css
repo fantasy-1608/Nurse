@@ -1,10 +1,7 @@
 /*
  * __EXT_EMOJI__ __EXT_NAME__ — Nurse Panel CSS
- * Thiết kế ấm áp, gradient hồng/tím, font Quicksand
+ * Panel hỗ trợ nhập liệu trên VNPT HIS
  */
-
-/* Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap');
 
 /* ==========================================
    FLOATING PANEL
@@ -21,7 +18,7 @@
         0 8px 32px rgba(233, 30, 99, 0.15),
         0 2px 8px rgba(0, 0, 0, 0.08),
         inset 0 1px 0 rgba(255, 255, 255, 0.8);
-    font-family: 'Quicksand', 'Segoe UI', Tahoma, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
     font-size: 13px;
     z-index: 99999;
     overflow: hidden;
@@ -1244,11 +1241,11 @@
     transform: rotate(180deg);
 }
 
-/* MERIT ANIMATION — "+1 chỉ vàng" */
+/* OPERATION COUNT ANIMATION */
 .quyen-merit-float {
     position: fixed;
     pointer-events: none;
-    font-family: 'Quicksand', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
     font-size: 16px;
     font-weight: 700;
     color: #5c3c00;

@@ -55,22 +55,22 @@
     });
 
     test('PatientLock.setSourceContext + verify match', function () {
-        HIS.PatientLock.setSourceContext({ name: 'NGUYỄN VĂN A', khambenhId: '12345', dob: '01/01/1990' });
-        HIS.PatientLock.setTargetHint({ name: 'NGUYỄN VĂN A', khambenhId: '12345', dob: '01/01/1990' });
+        HIS.PatientLock.setSourceContext({ name: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA A', khambenhId: 'PHI_FIXTURE_ID_1', dob: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA 01/01/1990' });
+        HIS.PatientLock.setTargetHint({ name: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA A', khambenhId: 'PHI_FIXTURE_ID_1', dob: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA 01/01/1990' });
         const r = HIS.PatientLock.verifyCurrentForm();
         return r.ok === true;
     });
 
     test('PatientLock.verify — name mismatch → blocked', function () {
-        HIS.PatientLock.setSourceContext({ name: 'NGUYỄN VĂN A', khambenhId: '12345', dob: '01/01/1990' });
-        HIS.PatientLock.setTargetHint({ name: 'TRẦN VĂN B', khambenhId: '99999', dob: '02/02/1985' });
+        HIS.PatientLock.setSourceContext({ name: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA A', khambenhId: 'PHI_FIXTURE_ID_1', dob: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA 01/01/1990' });
+        HIS.PatientLock.setTargetHint({ name: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA B', khambenhId: 'PHI_FIXTURE_ID_2', dob: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA 02/02/1985' });
         const r = HIS.PatientLock.verifyCurrentForm();
         return r.ok === false;
     });
 
     test('PatientLock — fuzzy name match', function () {
-        HIS.PatientLock.setSourceContext({ name: 'NGUYỄN VĂN A', dob: '1990' });
-        HIS.PatientLock.setTargetHint({ name: 'Nguyễn Văn A', dob: '01/01/1990' });
+        HIS.PatientLock.setSourceContext({ name: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA A', dob: '1990' });
+        HIS.PatientLock.setTargetHint({ name: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA A - 34 tuoi', dob: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA 01/01/1990' });
         const r = HIS.PatientLock.verifyCurrentForm();
         return r.ok === true;
     });
@@ -92,8 +92,13 @@
     });
 
     test('HIS.Message.isValid — accept valid type', function () {
-        const fakeEvent = { data: { type: 'QUYEN_BRIDGE_READY' }, origin: location.origin };
+        const fakeEvent = { data: { _q: HIS.Message.MARKER, type: 'QUYEN_BRIDGE_READY', ts: Date.now(), source: 'bridge' }, origin: location.origin };
         return HIS.Message.isValid(fakeEvent) === true;
+    });
+
+    test('HIS.Message.isValid — reject legacy raw QUYEN_*', function () {
+        const fakeEvent = { data: { type: 'QUYEN_BRIDGE_READY' }, origin: location.origin };
+        return HIS.Message.isValid(fakeEvent) === false;
     });
 
     test('postMessage uses location.origin (no *)', function () {

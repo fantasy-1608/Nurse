@@ -4,7 +4,7 @@
  * 
  * ⚠️ SAFETY (Sprint A):
  *   - Production mode (mặc định): auto-redact PHI, mute debug()
- *   - Debug mode: bật qua popup toggle, hiện full log (CHỈ dùng khi test)
+ *   - Debug mode: bật tạm thời qua popup, vẫn redact PHI
  * 
  * Cách dùng:
  *   HIS.Logger.info('Scanner', 'Đã quét xong');
@@ -19,13 +19,20 @@ HIS.Logger = {
     // MODE: 'production' (default) | 'debug'
     // ==========================================
     _mode: 'production',
+    _debugExpiresAt: 0,
 
-    setDebugMode(enabled) {
-        this._mode = enabled ? 'debug' : 'production';
-        console.log(`%c🏥 [HIS] Logger mode: ${this._mode}`, 'color: #f59e0b; font-weight: bold;');
+    setDebugMode(enabled, expiresAt) {
+        const now = Date.now();
+        this._debugExpiresAt = enabled ? (expiresAt || (now + 15 * 60 * 1000)) : 0;
+        this._mode = (enabled && this._debugExpiresAt > now) ? 'debug' : 'production';
+        console.log(`%c🏥 [HIS] Logger mode: ${this._mode} (PHI redaction always on)`, 'color: #f59e0b; font-weight: bold;');
     },
 
     isDebugMode() {
+        if (this._mode === 'debug' && this._debugExpiresAt && this._debugExpiresAt <= Date.now()) {
+            this._mode = 'production';
+            this._debugExpiresAt = 0;
+        }
         return this._mode === 'debug';
     },
 
@@ -42,8 +49,9 @@ HIS.Logger = {
     ],
 
     _redactPHI(args) {
-        if (this._mode === 'debug') return args; // Debug mode: không redact
-
+        if (typeof HIS !== 'undefined' && HIS.Privacy && HIS.Privacy.redactArgs) {
+            return HIS.Privacy.redactArgs(args);
+        }
         return args.map(arg => {
             if (typeof arg !== 'string') {
                 // Redact JSON-serialized objects
@@ -103,18 +111,19 @@ HIS.Logger = {
     },
 
     debug(module, ...args) {
-        // ⚠️ PRODUCTION: mute debug hoàn toàn
-        if (this._mode !== 'debug') return;
-        console.debug(`%c${this._getPrefix()}[${module}]`, this._style('#8b5cf6'), ...args);
+        // ⚠️ PRODUCTION: mute debug hoàn toàn. Debug vẫn redact PHI.
+        if (!this.isDebugMode()) return;
+        const safe = this._redactPHI(args);
+        console.debug(`%c${this._getPrefix()}[${module}][DEBUG-PHI-REDACTED]`, this._style('#8b5cf6'), ...safe);
     },
 
     group(module, label) {
-        if (this._mode !== 'debug') return;
+        if (!this.isDebugMode()) return;
         console.groupCollapsed(`${this._getPrefix()}[${module}] ${label}`);
     },
 
     groupEnd() {
-        if (this._mode !== 'debug') return;
+        if (!this.isDebugMode()) return;
         console.groupEnd();
     },
 
@@ -132,14 +141,16 @@ try {
     const _chrome = /** @type {any} */ (window).chrome;
     if (_chrome && _chrome.storage && _chrome.storage.onChanged) {
         _chrome.storage.onChanged.addListener(function (changes) {
-            if (changes.debugMode) {
-                HIS.Logger.setDebugMode(changes.debugMode.newValue === true);
+            if (changes.debugMode || changes.debugModeUntil) {
+                _chrome.storage.local.get(['debugMode', 'debugModeUntil'], function (data) {
+                    HIS.Logger.setDebugMode(data.debugMode === true, data.debugModeUntil || 0);
+                });
             }
         });
         // Load initial state
-        _chrome.storage.local.get('debugMode', function (data) {
+        _chrome.storage.local.get(['debugMode', 'debugModeUntil'], function (data) {
             if (data && data.debugMode === true) {
-                HIS.Logger.setDebugMode(true);
+                HIS.Logger.setDebugMode(true, data.debugModeUntil || 0);
             }
         });
     }

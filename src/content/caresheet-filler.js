@@ -348,7 +348,7 @@ const QuyenCareSheetFiller = (function () {
     window.addEventListener('message', function (event) {
         if (!event.data || event.data.type !== 'QUYEN_CARESHEET_SEC4_DATA') return;
         // ★ SPRINT C: Origin validation
-        if (typeof HIS !== 'undefined' && HIS.Message && !HIS.Message.isValid(event)) return;
+        if (typeof HIS === 'undefined' || !HIS.Message || !HIS.Message.isValid(event)) return;
 
         // ★ SAFETY v2: Validate seq + khambenhId — drop nếu nhầm BN
         const msgSeq = event.data.seq;
@@ -436,12 +436,12 @@ const QuyenCareSheetFiller = (function () {
         // Chưa có cache → request Bridge
         const reqId = 'cs4_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
         QuyenLog.info('📋 Yêu cầu Bridge gửi Section 4... reqId=' + reqId);
-        window.postMessage({
-            type: 'QUYEN_REQ_CARESHEET_SEC4',
+        HIS.Message.send('QUYEN_REQ_CARESHEET_SEC4', {
             requestId: reqId,
             seq: _currentPatientSeq,
-            khambenhId: _currentKhambenhId
-        }, location.origin);
+            khambenhId: _currentKhambenhId,
+            module: 'caresheet'
+        });
 
         // Chờ response (tối đa 3 giây)
         return new Promise(function (resolve) {
@@ -624,7 +624,7 @@ const QuyenCareSheetFiller = (function () {
         if (tasks.length === 0) return;
 
         QuyenLog.info('🏥 Gửi ' + tasks.length + ' Section 17 fields đến Bridge (direct set)...');
-        window.postMessage({ type: 'QUYEN_FILL_COMBOGRID', tasks: tasks }, location.origin);
+        HIS.Message.send('QUYEN_FILL_COMBOGRID', { tasks: tasks, module: 'caresheet' });
     }
 
     // ==========================================

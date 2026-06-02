@@ -348,11 +348,11 @@ const QuyenInfusionFiller = (function () {
         if (attempt > 15) {
             QuyenLog.warn('❌ Đã chờ 3 giây nhưng vẫn không tìm thấy form truyền dịch (chưa mở phiếu?)');
             // Thông báo lội lên UI
-            window.postMessage({
-                type: 'QUYEN_FILL_ERROR',
+            HIS.Message.send('QUYEN_FILL_ERROR', {
                 reason: 'FORM_NOT_FOUND',
-                drugName: drug ? drug.name : ''
-            }, location.origin);
+                drugName: drug ? drug.name : '',
+                module: 'infusion'
+            });
             return;
         }
         setTimeout(function () {
@@ -1205,14 +1205,9 @@ const QuyenInfusionFiller = (function () {
      * Dùng '*' vì cross-origin iframe không thể biết target origin.
      */
     function postToBridge(msg) {
-        try {
-            // Ưu tiên gửi lên top window (nơi bridge chạy)
-            if (window.top && window.top !== window) {
-                window.top.postMessage(msg, window.location.origin);
-                return;
-            }
-        } catch (e) {
-            // Cross-origin top → fallback gửi trên window hiện tại
+        if (typeof HIS !== 'undefined' && HIS.Message && msg && msg.type) {
+            HIS.Message.send(msg.type, Object.assign({ module: 'infusion' }, msg));
+            return;
         }
         window.postMessage(msg, location.origin);
     }
@@ -1386,13 +1381,13 @@ const QuyenInfusionFiller = (function () {
             setTimeout(function () { toast.remove(); }, 600);
         }, 4000);
 
-        // ★ "+1 công đức" bay lên ★
+        // Operation count feedback
         const fillBtn = document.querySelector('.quyen-btn-fill-all, .quyen-btn-fill');
         if (fillBtn) {
             const rect = fillBtn.getBoundingClientRect();
             const merit = document.createElement('div');
             merit.className = 'quyen-merit-float';
-            merit.textContent = '+1 chỉ vàng ✨';
+            merit.textContent = '+1 thao tác';
             merit.style.left = rect.left + rect.width / 2 + 'px';
             merit.style.top = rect.top + 'px';
             document.body.appendChild(merit);

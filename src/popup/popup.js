@@ -1,6 +1,6 @@
 /**
  * __EXT_EMOJI__ __EXT_SHORT_NAME__ — Popup Script
- * ★ Activation lock + 2 toggles + Auto-update notification
+ * ★ Activation lock + local rollout controls
  */
 
 // ★ SHA-256 hash của mã kích hoạt (không lưu plaintext)
@@ -107,10 +107,12 @@ function showMainUI() {
     loadSafeMode();
     loadDebugMode();
     showCurrentVersion();
-    checkUpdateStatus();
-    setupUpdateButton();
+    showReleaseStatus();
+    setupKillSwitch();
     showErrorCount();
     setupErrorExport();
+    showAuditCount();
+    setupAuditExport();
 }
 
 // ==========================================
@@ -182,70 +184,81 @@ function loadSafeMode() {
 // DEBUG MODE TOGGLE
 // ==========================================
 function loadDebugMode() {
-    chrome.storage.local.get('debugMode', function (data) {
+    chrome.storage.local.get(['debugMode', 'debugModeUntil'], function (data) {
         const toggle = document.getElementById('debug-mode-toggle');
         if (!toggle) return;
 
-        toggle.checked = data.debugMode === true;
+        const active = data.debugMode === true && (!data.debugModeUntil || data.debugModeUntil > Date.now());
+        toggle.checked = active;
+        if (data.debugMode === true && !active) chrome.storage.local.set({ debugMode: false, debugModeUntil: 0 });
 
         toggle.addEventListener('change', function () {
-            chrome.storage.local.set({ debugMode: toggle.checked });
+            const debugUntil = toggle.checked ? Date.now() + 15 * 60 * 1000 : 0;
+            chrome.storage.local.set({
+                debugMode: toggle.checked,
+                debugModeUntil: debugUntil
+            });
         });
     });
 }
 
 // ==========================================
-// UPDATE NOTIFICATION
+// LOCAL RELEASE POLICY
 // ==========================================
-function checkUpdateStatus() {
-    chrome.storage.local.get('quyen_update', function (data) {
-        const updateInfo = data.quyen_update;
-        if (!updateInfo || !updateInfo.hasUpdate) return;
+function reasonLabel(reason) {
+    const labels = {
+        OK: 'Được phép chạy',
+        KILL_SWITCH: 'Đã khóa khẩn cấp',
+        VERSION_NOT_ALLOWED: 'Version không nằm trong allowlist',
+        VERSION_EXPIRED: 'Version đã hết hạn'
+    };
+    return labels[reason] || reason || 'Không rõ';
+}
 
-        showUpdateBanner(updateInfo);
+function showReleaseStatus() {
+    const statusEl = document.getElementById('release-status');
+    if (!statusEl) return;
+
+    chrome.runtime.sendMessage({ type: 'CHECK_RELEASE_POLICY' }, function (status) {
+        if (chrome.runtime.lastError || !status) {
+            statusEl.textContent = 'Không đọc được release policy';
+            statusEl.className = 'release-status release-status-warn';
+            return;
+        }
+        const hash = status.policy && status.policy.buildHash ? ' · hash ' + status.policy.buildHash.substring(0, 12) : '';
+        statusEl.textContent = 'v' + status.version + ' · ' + reasonLabel(status.reason) + hash;
+        statusEl.className = status.ok ? 'release-status release-status-ok' : 'release-status release-status-block';
     });
 }
 
-function showUpdateBanner(info) {
-    const banner = document.getElementById('update-banner');
-    const desc = document.getElementById('update-desc');
-    const btn = document.getElementById('update-btn');
-    if (!banner || !desc || !btn) return;
+function setupKillSwitch() {
+    const toggle = document.getElementById('kill-switch-toggle');
+    if (!toggle) return;
 
-    desc.textContent = 'v' + info.currentVersion + ' → v' + info.latestVersion;
-    btn.href = info.releaseUrl || info.downloadUrl || '#';
-    banner.classList.add('show');
-}
+    chrome.storage.local.get('quyen_kill_switch', function (data) {
+        toggle.checked = data.quyen_kill_switch === true;
+    });
 
-function setupUpdateButton() {
-    const checkBtn = document.getElementById('check-update-btn');
-    if (!checkBtn) return;
-
-    checkBtn.addEventListener('click', function () {
-        checkBtn.textContent = '⏳ Đang kiểm tra...';
-        checkBtn.style.pointerEvents = 'none';
-
-        chrome.runtime.sendMessage({ type: 'CHECK_UPDATE' }, function (response) {
-            if (chrome.runtime.lastError) {
-                checkBtn.textContent = '❌ Lỗi kết nối';
-                setTimeout(function () {
-                    checkBtn.textContent = '🔄 Kiểm tra cập nhật';
-                    checkBtn.style.pointerEvents = '';
-                }, 2000);
-                return;
-            }
-
-            if (response && response.hasUpdate) {
-                showUpdateBanner(response);
-                checkBtn.textContent = '🆕 Có bản mới!';
-            } else {
-                checkBtn.textContent = '✅ Đã là bản mới nhất';
-            }
-
-            setTimeout(function () {
-                checkBtn.textContent = '🔄 Kiểm tra cập nhật';
-                checkBtn.style.pointerEvents = '';
-            }, 3000);
+    toggle.addEventListener('change', function () {
+        const update = { quyen_kill_switch: toggle.checked };
+        if (toggle.checked) update.quyen_enabled = false;
+        chrome.storage.local.set(update, function () {
+            const enabledToggle = document.getElementById('toggle-enabled');
+            if (enabledToggle && toggle.checked) enabledToggle.checked = false;
+            showReleaseStatus();
+            chrome.tabs.query({ url: '*://*.vncare.vn/*' }, function (tabs) {
+                for (let i = 0; i < tabs.length; i++) {
+                    chrome.tabs.sendMessage(tabs[i].id, {
+                        type: 'QUYEN_RELEASE_POLICY_CHANGED'
+                    }).catch(function () { /* tab not ready */ });
+                    if (toggle.checked) {
+                        chrome.tabs.sendMessage(tabs[i].id, {
+                            type: 'QUYEN_TOGGLE_EXTENSION',
+                            enabled: false
+                        }).catch(function () { /* tab not ready */ });
+                    }
+                }
+            });
         });
     });
 }
@@ -254,11 +267,22 @@ function setupUpdateButton() {
 // ★ ERROR LOG EXPORT
 // ==========================================
 function showErrorCount() {
-    chrome.storage.local.get('quyen_error_log', function (data) {
-        const errors = data.quyen_error_log || [];
+    chrome.storage.local.get('quyen_runtime_health_v1', function (data) {
+        const health = data.quyen_runtime_health_v1 || {};
         const badge = document.getElementById('error-count-badge');
-        if (badge && errors.length > 0) {
-            badge.textContent = errors.length;
+        if (badge && health.count > 0) {
+            badge.textContent = health.count;
+            badge.style.display = 'inline';
+        }
+    });
+}
+
+function showAuditCount() {
+    chrome.storage.local.get('quyen_audit_log', function (data) {
+        const entries = data.quyen_audit_log || [];
+        const badge = document.getElementById('audit-count-badge');
+        if (badge && entries.length > 0) {
+            badge.textContent = entries.length;
             badge.style.display = 'inline';
         }
     });
@@ -269,30 +293,59 @@ function setupErrorExport() {
     if (!btn) return;
 
     btn.addEventListener('click', function () {
-        chrome.storage.local.get('quyen_error_log', function (data) {
-            const errors = data.quyen_error_log || [];
-            if (errors.length === 0) {
-                btn.textContent = '✅ Không có lỗi nào!';
-                setTimeout(function () { btn.innerHTML = '🐛 Xuất nhật ký lỗi'; }, 2000);
+        chrome.storage.local.get('quyen_runtime_health_v1', function (data) {
+            const health = data.quyen_runtime_health_v1 || {};
+            const count = health.count || 0;
+            btn.textContent = count > 0 ? ('Runtime đã chặn ' + count + ' lỗi') : 'Runtime ổn định';
+            setTimeout(function () { btn.textContent = 'Trạng thái lỗi runtime'; }, 2000);
+        });
+    });
+}
+
+function csvEscape(val) {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    if (str.indexOf(',') >= 0 || str.indexOf('"') >= 0 || str.indexOf('\n') >= 0) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+function setupAuditExport() {
+    const btn = document.getElementById('export-audit-btn');
+    if (!btn) return;
+
+    btn.addEventListener('click', function () {
+        chrome.storage.local.get('quyen_audit_log', function (data) {
+            const entries = data.quyen_audit_log || [];
+            if (entries.length === 0) {
+                btn.textContent = '✅ Chưa có audit';
+                setTimeout(function () { btn.innerHTML = '📋 Xuất audit <span id="audit-count-badge" style="background:#2563eb;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:none;">0</span>'; }, 2000);
                 return;
             }
 
-            const manifest = chrome.runtime.getManifest();
-            let text = '🐛 ERROR LOG — ' + manifest.name + ' v' + manifest.version + '\n';
-            text += 'Exported: ' + new Date().toLocaleString('vi-VN') + '\n';
-            text += '═'.repeat(50) + '\n\n';
-
-            for (let i = 0; i < errors.length; i++) {
-                const e = errors[i];
-                text += '[' + (e.ts || '') + '] ' + (e.type || '') + '\n';
-                text += '  ' + (e.msg || '') + '\n';
-                if (e.file) text += '  File: ' + e.file + (e.line ? ':' + e.line : '') + '\n';
-                text += '\n';
+            const headers = ['Thời gian', 'Hành động', 'Module', 'PatientRef', 'ItemRef', 'RequestId', 'Phiên bản', 'Build hash', 'Kết quả', 'Lý do', 'Số mục'];
+            const rows = [headers.join(',')];
+            for (let i = 0; i < entries.length; i++) {
+                const e = entries[i];
+                rows.push([
+                    csvEscape(e.ts),
+                    csvEscape(e.action),
+                    csvEscape(e.module),
+                    csvEscape(e.patientRef),
+                    csvEscape(e.itemRef),
+                    csvEscape(e.requestId),
+                    csvEscape(e.extVersion),
+                    csvEscape(e.buildHash),
+                    csvEscape(e.result),
+                    csvEscape(e.reason),
+                    csvEscape(e.filledCount || 0)
+                ].join(','));
             }
 
-            navigator.clipboard.writeText(text).then(function () {
-                btn.textContent = '✅ Đã copy ' + errors.length + ' lỗi!';
-                setTimeout(function () { btn.innerHTML = '🐛 Xuất nhật ký lỗi'; }, 2000);
+            navigator.clipboard.writeText('\uFEFF' + rows.join('\n')).then(function () {
+                btn.textContent = '✅ Đã copy ' + entries.length + ' audit!';
+                setTimeout(function () { btn.innerHTML = '📋 Xuất audit <span id="audit-count-badge" style="background:#2563eb;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:inline;">' + entries.length + '</span>'; }, 2000);
             });
         });
     });

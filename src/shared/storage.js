@@ -5,7 +5,6 @@
  * Cách dùng:
  *   await HIS.Storage.get('myKey');
  *   await HIS.Storage.set('myKey', value);
- *   await HIS.Storage.getLocal('dailyStats');
  */
 
 window.HIS = window.HIS || {};
@@ -68,47 +67,6 @@ HIS.Storage = {
     async getWithDefault(key, defaultValue) {
         const result = await this.get(key);
         return result[key] !== undefined ? result[key] : defaultValue;
-    },
-
-    /**
-     * Get/set from localStorage (cho dữ liệu không cần sync)
-     */
-    getLocal(key) {
-        try {
-            const value = localStorage.getItem(key);
-            return value ? JSON.parse(value) : null;
-        } catch (e) {
-            return null;
-        }
-    },
-
-    setLocal(key, value) {
-        try {
-            localStorage.setItem(key, JSON.stringify(value));
-        } catch (e) {
-            if (HIS.Logger) HIS.Logger.warn('Storage', 'localStorage write failed:', e);
-        }
-    },
-
-    /**
-     * Daily counter helper — đếm số lần thực hiện theo ngày
-     * @param {string} key
-     * @returns {{ count: number, date: string }}
-     */
-    getDailyCount(key) {
-        const today = new Date().toDateString();
-        const data = this.getLocal(key);
-        if (data && data.date === today) {
-            return data;
-        }
-        return { count: 0, date: today };
-    },
-
-    incrementDailyCount(key) {
-        const data = this.getDailyCount(key);
-        data.count++;
-        this.setLocal(key, data);
-        return data.count;
     }
 };
 

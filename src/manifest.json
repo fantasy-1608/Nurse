@@ -6,18 +6,13 @@
     "author": "Huỳnh Trung Anh",
     "permissions": [
         "activeTab",
-        "storage",
-        "alarms"
+        "storage"
     ],
     "background": {
         "service_worker": "background/background.js"
     },
     "host_permissions": [
         "*://*.vncare.vn/*"
-    ],
-    "optional_host_permissions": [
-        "https://api.github.com/*",
-        "https://github.com/*"
     ],
     "action": {
         "default_popup": "popup/popup.html",
@@ -40,6 +35,7 @@
             ],
             "js": [
                 "shared/constants.js",
+                "shared/privacy.js",
                 "shared/logger.js",
                 "shared/utils.js",
                 "shared/storage.js",
@@ -47,6 +43,8 @@
                 "shared/his-selectors.js",
                 "shared/patient-lock.js",
                 "shared/message.js",
+                "shared/audit.js",
+                "shared/safety.js",
                 "shared/fill-tracker.js",
                 "shared/ui-components.js",
                 "content/constants.js",

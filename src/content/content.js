@@ -10,23 +10,19 @@
 (function () {
     'use strict';
 
-    // ★ Error reporting: ghi lỗi vào chrome.storage để debug từ xa
+    // Runtime health only. Do not persist stack/message/path because they can contain PHI.
     function _persistError(type, msg, file, line) {
         try {
             if (typeof chrome === 'undefined' || !chrome.storage) return;
-            chrome.storage.local.get('quyen_error_log', function (data) {
-                const log = data.quyen_error_log || [];
-                log.push({
-                    ts: new Date().toISOString(),
-                    type: type,
-                    msg: String(msg || '').substring(0, 200),
-                    file: String(file || '').split('/').pop(),
-                    line: line || 0,
-                    url: location.href.substring(0, 100)
+            chrome.storage.local.get('quyen_runtime_health_v1', function (data) {
+                const health = data.quyen_runtime_health_v1 || {};
+                chrome.storage.local.set({
+                    quyen_runtime_health_v1: {
+                        lastTs: new Date().toISOString(),
+                        lastType: String(type || 'ERROR').substring(0, 24),
+                        count: (health.count || 0) + 1
+                    }
                 });
-                // Max 50 entries — auto rotate
-                const trimmed = log.length > 50 ? log.slice(-50) : log;
-                chrome.storage.local.set({ quyen_error_log: trimmed });
             });
         } catch (e) { /* silent */ }
     }
@@ -37,7 +33,7 @@
             if (typeof QuyenLog !== 'undefined') {
                 QuyenLog.error('❌ [GlobalError]', event.message, '| File:', event.filename, '| Line:', event.lineno);
             } else {
-                console.error('[__EXT_EMOJI__ GlobalError]', event.message, event.filename, event.lineno);
+                console.error('[__EXT_EMOJI__ GlobalError] runtime error captured');
             }
             _persistError('ERROR', event.message, event.filename, event.lineno);
         } catch (e) { /* prevent infinite loop */ }
@@ -49,7 +45,7 @@
             if (typeof QuyenLog !== 'undefined') {
                 QuyenLog.error('❌ [UnhandledPromise]', reason);
             } else {
-                console.error('[__EXT_EMOJI__ UnhandledPromise]', reason);
+                console.error('[__EXT_EMOJI__ UnhandledPromise] runtime promise rejection captured');
             }
             _persistError('PROMISE', reason);
         } catch (e) { /* prevent infinite loop */ }
@@ -143,8 +139,10 @@
     // LẮNG NGHE BLOCK ROLE TỪ CẦU NỐI BRIDGE
     // ==========================================
     window.addEventListener('message', function(event) {
+        if (typeof HIS === 'undefined' || !HIS.Message || !HIS.Message.isValid(event)) return;
+
         if (event.data && event.data.type === 'QUYEN_ROLE_BLOCK') {
-            QuyenLog.error('⛔️ TỪ CHỐI TRUY CẬP: Tiện ích chỉ dành cho Điều dưỡng (GROUP 5). Account: ' + event.data.name + ' - Nhóm: ' + event.data.role);
+            QuyenLog.error('TỪ CHỐI TRUY CẬP: Tiện ích chỉ dành cho Điều dưỡng. Nhóm:', event.data.role);
             
             // Xóa UI panel (ID thực của giao diện là quyen-panel)
             const panel = document.getElementById('quyen-panel');
@@ -158,7 +156,6 @@
                     quyen_his_env: {
                         hisVersion: event.data.hisVersion,
                         jqVersion: event.data.jqVersion,
-                        userAgent: event.data.userAgent,
                         extVersion: chrome.runtime.getManifest().version,
                         ts: new Date().toISOString()
                     }
@@ -173,8 +170,57 @@
     // ==========================================
     let _initialized = false;
 
+    function getCurrentVersion() {
+        try {
+            return chrome.runtime.getManifest().version || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function normalizePolicy(policy) {
+        return {
+            allowedVersions: Array.isArray(policy && policy.allowedVersions) ? policy.allowedVersions.map(String) : [getCurrentVersion()],
+            expiresAt: policy && policy.expiresAt ? String(policy.expiresAt) : '',
+            buildHash: policy && policy.buildHash ? String(policy.buildHash) : '',
+            channel: policy && policy.channel ? String(policy.channel) : 'manual'
+        };
+    }
+
+    function evaluateReleasePolicy(data) {
+        const policy = normalizePolicy(data.quyen_release_policy);
+        const version = getCurrentVersion();
+        if (data.quyen_kill_switch === true) return { ok: false, reason: 'KILL_SWITCH', policy: policy };
+        if (policy.allowedVersions.indexOf(version) < 0) return { ok: false, reason: 'VERSION_NOT_ALLOWED', policy: policy };
+        if (policy.expiresAt && Date.now() > Date.parse(policy.expiresAt)) return { ok: false, reason: 'VERSION_EXPIRED', policy: policy };
+        return { ok: true, reason: 'OK', policy: policy };
+    }
+
+    function stopForReleasePolicy(status) {
+        _initialized = false;
+        const panel = document.getElementById('quyen-panel');
+        if (panel) panel.remove();
+        QuyenLog.warn('🔒 Extension bị khóa theo release policy:', status.reason);
+    }
+
+    function withReleasePolicy(callback) {
+        chrome.storage.local.get(['quyen_release_policy', 'quyen_kill_switch'], function (policyData) {
+            const status = evaluateReleasePolicy(policyData || {});
+            if (!status.ok) {
+                stopForReleasePolicy(status);
+                return;
+            }
+            callback(status);
+        });
+    }
+
     function bootIfActivated() {
-        chrome.storage.local.get(['quyen_activated', 'quyen_enabled'], function (data) {
+        chrome.storage.local.get(['quyen_activated', 'quyen_enabled', 'quyen_release_policy', 'quyen_kill_switch'], function (data) {
+            const releaseStatus = evaluateReleasePolicy(data || {});
+            if (!releaseStatus.ok) {
+                stopForReleasePolicy(releaseStatus);
+                return;
+            }
             if (data.quyen_activated === true && data.quyen_enabled !== false) {
                 if (!_initialized) {
                     _initialized = true;
@@ -196,18 +242,23 @@
         if (msg && msg.type === 'QUYEN_ACTIVATION_CHANGED' && msg.activated === true) {
             QuyenLog.info('🔓 Đã kích hoạt! Khởi động extension...');
             if (!_initialized) {
-                _initialized = true;
-                try {
-                    initModules();
-                } catch (err) {
-                    QuyenLog.error('Lỗi khởi tạo:', err);
-                }
+                withReleasePolicy(function () {
+                    _initialized = true;
+                    try {
+                        initModules();
+                    } catch (err) {
+                        QuyenLog.error('Lỗi khởi tạo:', err);
+                    }
+                });
             }
         }
         // ★ v1.2.0 BugFix: Tắt thật sự khi toggle off — không chỉ ẩn UI
         if (msg && msg.type === 'QUYEN_TOGGLE_EXTENSION' && msg.enabled === false) {
             QuyenLog.info('🔒 Extension đã tắt bởi user. Dừng các module nền.');
             _initialized = false; // Cho phép re-init khi bật lại
+        }
+        if (msg && msg.type === 'QUYEN_RELEASE_POLICY_CHANGED') {
+            bootIfActivated();
         }
     });
 

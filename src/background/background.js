@@ -1,132 +1,106 @@
 /**
  * __EXT_EMOJI__ __EXT_NAME__ — Background Service Worker
- * Auto-update checker: kiểm tra phiên bản mới trên GitHub Releases
- * 
- * Hoạt động:
- *   1. Mỗi 6 giờ, gọi GitHub API lấy latest release
- *   2. So sánh version với manifest hiện tại
- *   3. Nếu có bản mới → lưu vào storage → popup hiện thông báo
+ * Local release policy only. No external update checks in hospital rollout.
  */
 
-const GITHUB_OWNER = 'fantasy-1608';
-const GITHUB_REPO = 'Nurse';
-// Check interval: 6 giờ (cấu hình trong chrome.alarms bên dưới)
+const RELEASE_POLICY_KEY = 'quyen_release_policy';
+const KILL_SWITCH_KEY = 'quyen_kill_switch';
 
-// ==========================================
-// CHECK FOR UPDATE
-// ==========================================
-async function checkForUpdate() {
-    try {
-        const response = await fetch(
-            `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
-            { headers: { 'Accept': 'application/vnd.github.v3+json' } }
-        );
+function currentVersion() {
+    return chrome.runtime.getManifest().version || '';
+}
 
-        if (!response.ok) {
-            console.log('[Update] GitHub API error:', response.status);
+function defaultReleasePolicy() {
+    return {
+        allowedVersions: [currentVersion()],
+        expiresAt: '',
+        buildHash: '',
+        channel: 'manual',
+        updatedAt: new Date().toISOString()
+    };
+}
+
+function normalizePolicy(policy) {
+    const base = defaultReleasePolicy();
+    if (!policy || typeof policy !== 'object') return base;
+    return {
+        allowedVersions: Array.isArray(policy.allowedVersions) ? policy.allowedVersions.map(String) : base.allowedVersions,
+        expiresAt: policy.expiresAt ? String(policy.expiresAt) : '',
+        buildHash: policy.buildHash ? String(policy.buildHash) : '',
+        channel: policy.channel ? String(policy.channel) : 'manual',
+        updatedAt: policy.updatedAt ? String(policy.updatedAt) : base.updatedAt
+    };
+}
+
+function evaluateReleasePolicy(policy, killSwitch) {
+    const version = currentVersion();
+    const normalized = normalizePolicy(policy);
+    const allowed = normalized.allowedVersions.indexOf(version) >= 0;
+    const expired = normalized.expiresAt ? Date.now() > Date.parse(normalized.expiresAt) : false;
+
+    if (killSwitch === true) {
+        return { ok: false, reason: 'KILL_SWITCH', version, policy: normalized };
+    }
+    if (!allowed) {
+        return { ok: false, reason: 'VERSION_NOT_ALLOWED', version, policy: normalized };
+    }
+    if (expired) {
+        return { ok: false, reason: 'VERSION_EXPIRED', version, policy: normalized };
+    }
+    return { ok: true, reason: 'OK', version, policy: normalized };
+}
+
+function ensureReleasePolicy(callback) {
+    chrome.storage.local.get([RELEASE_POLICY_KEY, KILL_SWITCH_KEY], function (data) {
+        const policy = normalizePolicy(data[RELEASE_POLICY_KEY]);
+        const updates = {};
+        if (!data[RELEASE_POLICY_KEY]) updates[RELEASE_POLICY_KEY] = policy;
+        if (typeof data[KILL_SWITCH_KEY] !== 'boolean') updates[KILL_SWITCH_KEY] = false;
+
+        function done() {
+            const evaluated = evaluateReleasePolicy(policy, data[KILL_SWITCH_KEY] === true);
+            if (callback) callback(evaluated);
+        }
+
+        if (Object.keys(updates).length > 0) {
+            chrome.storage.local.set(updates, done);
+        } else {
+            done();
+        }
+    });
+}
+
+function refreshBadge() {
+    ensureReleasePolicy(function (status) {
+        if (!status.ok) {
+            chrome.action.setBadgeText({ text: '!' });
+            chrome.action.setBadgeBackgroundColor({ color: '#d32f2f' });
             return;
         }
-
-        const release = await response.json();
-        const latestVersion = (release.tag_name || '').replace(/^v/, '');
-        const currentVersion = chrome.runtime.getManifest().version;
-
-        console.log(`[Update] Current: v${currentVersion}, Latest: v${latestVersion}`);
-
-        if (!latestVersion) return;
-
-        if (isNewerVersion(latestVersion, currentVersion)) {
-            // Tìm file zip phù hợp cho target này
-            const assets = release.assets || [];
-            let downloadUrl = release.html_url; // Fallback: trang release
-            
-            for (const asset of assets) {
-                const name = (asset.name || '').toLowerCase();
-                if (name.includes('.zip')) {
-                    downloadUrl = asset.browser_download_url;
-                    break;
-                }
-            }
-
-            const updateInfo = {
-                hasUpdate: true,
-                latestVersion: latestVersion,
-                currentVersion: currentVersion,
-                downloadUrl: downloadUrl,
-                releaseUrl: release.html_url,
-                releaseNotes: (release.body || '').substring(0, 300),
-                checkedAt: new Date().toISOString()
-            };
-
-            chrome.storage.local.set({ quyen_update: updateInfo });
-            console.log(`[Update] 🆕 Phiên bản mới: v${latestVersion}!`);
-
-            // Badge trên icon extension
-            chrome.action.setBadgeText({ text: '!' });
-            chrome.action.setBadgeBackgroundColor({ color: '#e91e63' });
-        } else {
-            // Không có update → xóa badge
-            chrome.storage.local.set({
-                quyen_update: {
-                    hasUpdate: false,
-                    currentVersion: currentVersion,
-                    latestVersion: latestVersion,
-                    checkedAt: new Date().toISOString()
-                }
-            });
-            chrome.action.setBadgeText({ text: '' });
-        }
-    } catch (error) {
-        console.error('[Update] Check failed:', error);
-    }
+        chrome.action.setBadgeText({ text: '' });
+    });
 }
 
-/**
- * So sánh semver: trả về true nếu `latest` > `current`
- */
-function isNewerVersion(latest, current) {
-    const partsA = latest.split('.').map(Number);
-    const partsB = current.split('.').map(Number);
-    
-    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-        const a = partsA[i] || 0;
-        const b = partsB[i] || 0;
-        if (a > b) return true;
-        if (a < b) return false;
-    }
-    return false;
-}
-
-// ==========================================
-// ALARM — Định kỳ kiểm tra
-// ==========================================
-chrome.alarms.create('check-update', {
-    delayInMinutes: 1,          // Lần đầu: sau 1 phút
-    periodInMinutes: 360        // Sau đó: mỗi 6 giờ
-});
-
-chrome.alarms.onAlarm.addListener(function (alarm) {
-    if (alarm.name === 'check-update') {
-        checkForUpdate();
-    }
-});
-
-// Kiểm tra ngay khi install/update extension
 chrome.runtime.onInstalled.addListener(function () {
-    console.log('[Update] Extension installed/updated — checking for updates...');
-    checkForUpdate();
+    ensureReleasePolicy(refreshBadge);
 });
 
-// Kiểm tra khi mở popup (user triggered)
+chrome.runtime.onStartup.addListener(function () {
+    refreshBadge();
+});
+
+chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== 'local') return;
+    if (changes[RELEASE_POLICY_KEY] || changes[KILL_SWITCH_KEY]) refreshBadge();
+});
+
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (msg && msg.type === 'CHECK_UPDATE') {
-        checkForUpdate().then(function () {
-            chrome.storage.local.get('quyen_update', function (data) {
-                sendResponse(data.quyen_update || {});
-            });
+    if (msg && msg.type === 'CHECK_RELEASE_POLICY') {
+        ensureReleasePolicy(function (status) {
+            sendResponse(status);
         });
-        return true; // async response
+        return true;
     }
 });
 
-console.log(`[Background] __EXT_EMOJI__ __EXT_NAME__ service worker loaded`);
+console.log('[Background] __EXT_EMOJI__ __EXT_NAME__ service worker loaded (local release policy)');

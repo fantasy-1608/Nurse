@@ -92,10 +92,10 @@ const QuyenInfusionReader = (function () {
     // ==========================================
     function requestDrugsFromBridge() {
         QuyenLog.info('🔍 Đang quét bảng thuốc...');
-        window.postMessage({
-            type: 'QUYEN_REQ_DRUG_LIST',
-            requestId: 'drug_' + Date.now()
-        }, window.location.origin);
+        HIS.Message.send('QUYEN_REQ_DRUG_LIST', {
+            requestId: 'drug_' + Date.now(),
+            module: 'infusion'
+        });
     }
 
     // ==========================================
@@ -104,7 +104,7 @@ const QuyenInfusionReader = (function () {
     function handleBridgeMessage(event) {
         if (!event.data) return;
         // ★ BUG-09: Origin + type validation (consistency with ui-panel & caresheet-ui)
-        if (typeof HIS !== 'undefined' && HIS.Message && !HIS.Message.isValid(event)) return;
+        if (typeof HIS === 'undefined' || !HIS.Message || !HIS.Message.isValid(event)) return;
 
         if (event.data.type === 'QUYEN_DRUG_LIST_RESULT' || event.data.type === 'QUYEN_IFRAME_DRUGS') {
             const drugs = event.data.drugs || [];

@@ -77,7 +77,19 @@ function getRandomThank() {
  * Logger
  */
 const QuyenLog = {
-    info: (...args) => QUYEN_CONFIG.DEBUG && console.log('[__EXT_PREFIX__]', ...args),
-    warn: (...args) => console.warn('[__EXT_PREFIX__]', ...args),
-    error: (...args) => console.error('[__EXT_PREFIX__]', ...args)
+    _safeArgs: function (args) {
+        if (typeof HIS !== 'undefined' && HIS.Privacy && HIS.Privacy.redactArgs) {
+            return HIS.Privacy.redactArgs(args);
+        }
+        return args;
+    },
+    info: function (...args) {
+        if (QUYEN_CONFIG.DEBUG) console.log('[__EXT_PREFIX__]', ...this._safeArgs(args));
+    },
+    warn: function (...args) {
+        console.warn('[__EXT_PREFIX__]', ...this._safeArgs(args));
+    },
+    error: function (...args) {
+        console.error('[__EXT_PREFIX__]', ...this._safeArgs(args));
+    }
 };

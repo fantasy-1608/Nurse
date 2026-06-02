@@ -2,9 +2,10 @@
  * HIS Shared — Audit Trail v1.0  (Sprint E)
  * Ghi nhật ký hành động fill vào chrome.storage.local.
  * Max 500 entries, auto-rotate.
+ * Không lưu tên BN/DOB/mã thật; mọi detail đi qua HIS.Privacy.
  *
  * Sử dụng:
- *   HIS.Audit.log('INFUSION_FILL', { drug: 'Paracetamol', patient: 'Nguyễn Văn A' });
+ *   HIS.Audit.log('INFUSION_FILL', { drug: 'Paracetamol', patient: 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA' });
  *   HIS.Audit.getToday(callback);
  *   HIS.Audit.exportCSV(callback);
  */
@@ -15,39 +16,51 @@ HIS.Audit = (function () {
     'use strict';
 
     var STORAGE_KEY = 'quyen_audit_log';
-    var MAX_ENTRIES = 500;
+    var MAX_ENTRIES = 1000;
+    var _buildHashCache = '';
 
     // ==========================================
     // LOG — ghi 1 entry
     // ==========================================
     function log(action, detail) {
-        var entry = {
-            ts: new Date().toISOString(),
-            action: action || 'UNKNOWN',
-            drug: (detail && detail.drug) || '',
-            patient: (detail && detail.patient) || '',
-            sections: (detail && detail.sections) || '',
-            duration: (detail && detail.duration) || '',
-            fillMode: (detail && detail.fillMode) || '',
-            result: (detail && detail.result) || 'OK',
-            filledCount: (detail && detail.filledCount) || 0
-        };
+        return new Promise(function (resolve, reject) {
+            var safeDetail = _sanitizeDetail(detail || {});
+            var entry = {
+                ts: new Date().toISOString(),
+                action: String(action || 'UNKNOWN').substring(0, 80),
+                module: safeDetail.module || '',
+                patientRef: safeDetail.patientRef || '',
+                itemRef: safeDetail.itemRef || '',
+                requestId: safeDetail.requestId || '',
+                result: safeDetail.result || 'OK',
+                reason: safeDetail.reason || '',
+                filledCount: safeDetail.filledCount || 0,
+                duration: safeDetail.duration || '',
+                fillMode: safeDetail.fillMode || '',
+                extVersion: _getExtensionVersion(),
+                buildHash: safeDetail.buildHash || _buildHashCache || '',
+                detail: safeDetail
+            };
 
-        _getEntries(function (entries) {
-            entries.push(entry);
+            _getEntries(function (entries) {
+                entries.push(entry);
 
-            // Auto-rotate: giữ max entries
-            if (entries.length > MAX_ENTRIES) {
-                entries = entries.slice(entries.length - MAX_ENTRIES);
-            }
+                if (entries.length > MAX_ENTRIES) {
+                    entries = entries.slice(entries.length - MAX_ENTRIES);
+                }
 
-            _saveEntries(entries);
+                _saveEntries(entries, function (ok, err) {
+                    if (!ok) {
+                        reject(new Error(err || 'AUDIT_WRITE_FAILED'));
+                        return;
+                    }
+                    if (typeof QuyenLog !== 'undefined') {
+                        QuyenLog.info('Audit:', action, entry.result);
+                    }
+                    resolve(entry);
+                });
+            }, reject);
         });
-
-        // Console log cho debug
-        if (typeof QuyenLog !== 'undefined') {
-            QuyenLog.info('📝 Audit: ' + action + ' — ' + (detail && detail.drug || ''));
-        }
     }
 
     // ==========================================
@@ -89,7 +102,7 @@ HIS.Audit = (function () {
     // ==========================================
     function exportCSV(callback) {
         _getEntries(function (entries) {
-            var headers = ['Thời gian', 'Hành động', 'Thuốc/Phiếu', 'Bệnh nhân', 'Mục', 'Thời lượng', 'Chế độ', 'Kết quả', 'Số mục'];
+            var headers = ['Thời gian', 'Hành động', 'Module', 'PatientRef', 'ItemRef', 'RequestId', 'Phiên bản', 'Build hash', 'Thời lượng', 'Chế độ', 'Kết quả', 'Lý do', 'Số mục'];
             var rows = [headers.join(',')];
 
             for (var i = 0; i < entries.length; i++) {
@@ -97,12 +110,16 @@ HIS.Audit = (function () {
                 rows.push([
                     _csvEscape(e.ts),
                     _csvEscape(e.action),
-                    _csvEscape(e.drug),
-                    _csvEscape(e.patient),
-                    _csvEscape(e.sections),
+                    _csvEscape(e.module),
+                    _csvEscape(e.patientRef),
+                    _csvEscape(e.itemRef),
+                    _csvEscape(e.requestId),
+                    _csvEscape(e.extVersion),
+                    _csvEscape(e.buildHash),
                     _csvEscape(e.duration),
                     _csvEscape(e.fillMode),
                     _csvEscape(e.result),
+                    _csvEscape(e.reason),
                     e.filledCount || 0
                 ].join(','));
             }
@@ -126,51 +143,72 @@ HIS.Audit = (function () {
     // ==========================================
     // INTERNAL
     // ==========================================
-    function _getEntries(callback) {
+    function _getEntries(callback, onError) {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             chrome.storage.local.get([STORAGE_KEY], function (result) {
+                if (chrome.runtime && chrome.runtime.lastError) {
+                    if (onError) onError(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
                 var entries = result[STORAGE_KEY] || [];
                 callback(entries);
             });
         } else {
-            // Fallback: localStorage (content script context)
-            try {
-                var data = localStorage.getItem(STORAGE_KEY);
-                callback(data ? JSON.parse(data) : []);
-            } catch (e) {
-                callback([]);
-            }
+            if (onError) onError(new Error('AUDIT_STORAGE_UNAVAILABLE'));
         }
     }
 
-    function _saveEntries(entries) {
+    function _saveEntries(entries, callback) {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             var obj = {};
             obj[STORAGE_KEY] = entries;
             chrome.storage.local.set(obj, function () {
-                // ★ BUG-17: Handle quota exceeded — trim oldest 20% and retry
                 if (chrome.runtime.lastError) {
                     var trimCount = Math.max(1, Math.floor(entries.length * 0.2));
                     var trimmed = entries.slice(trimCount);
                     if (HIS.Logger) HIS.Logger.warn('Audit', 'Quota exceeded, trimming ' + trimCount + ' oldest entries');
                     var obj2 = {};
                     obj2[STORAGE_KEY] = trimmed;
-                    chrome.storage.local.set(obj2);
+                    chrome.storage.local.set(obj2, function () {
+                        if (chrome.runtime.lastError) {
+                            if (callback) callback(false, chrome.runtime.lastError.message);
+                            return;
+                        }
+                        if (callback) callback(true);
+                    });
+                    return;
                 }
+                if (callback) callback(true);
             });
         } else {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-            } catch (e) {
-                // ★ BUG-17: LocalStorage quota exceeded — trim and retry
-                try {
-                    var trimCount = Math.max(1, Math.floor(entries.length * 0.2));
-                    var trimmed = entries.slice(trimCount);
-                    if (HIS.Logger) HIS.Logger.warn('Audit', 'LocalStorage quota exceeded, trimming ' + trimCount + ' oldest entries');
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
-                } catch (e2) { /* truly out of space */ }
-            }
+            if (callback) callback(false, 'AUDIT_STORAGE_UNAVAILABLE');
         }
+    }
+
+    function _sanitizeDetail(detail) {
+        if (typeof HIS !== 'undefined' && HIS.Privacy && HIS.Privacy.sanitizeAuditDetail) {
+            return HIS.Privacy.sanitizeAuditDetail(detail);
+        }
+        return {};
+    }
+
+    function _getExtensionVersion() {
+        try {
+            if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) {
+                return chrome.runtime.getManifest().version || '';
+            }
+        } catch (e) { /* ignore */ }
+        return '';
+    }
+
+    function _loadBuildHash() {
+        try {
+            if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+            chrome.storage.local.get('quyen_release_policy', function (data) {
+                var policy = data && data.quyen_release_policy;
+                if (policy && policy.buildHash) _buildHashCache = String(policy.buildHash).substring(0, 128);
+            });
+        } catch (e) { /* extension APIs may be unavailable in tests */ }
     }
 
     function _csvEscape(val) {
@@ -181,6 +219,8 @@ HIS.Audit = (function () {
         }
         return str;
     }
+
+    _loadBuildHash();
 
     // ==========================================
     // EXPOSE

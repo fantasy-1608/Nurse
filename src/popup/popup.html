@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>__EXT_EMOJI__ __EXT_SHORT_NAME__</title>
-    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Quicksand', sans-serif; width: 280px; background: #fff; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; width: 280px; background: #fff; }
         .popup {
             padding: 16px;
         }
@@ -62,50 +61,30 @@
         input:checked + .slider { background: #4CAF50; }
         input:checked + .slider::before { transform: translateX(20px); }
 
-        /* Update banner */
-        .update-banner {
-            display: none;
+        /* Release status */
+        .release-status {
             margin-top: 12px;
             padding: 10px 12px;
-            background: linear-gradient(135deg, #fff3e0, #fce4ec);
-            border: 1px solid #ffcc80;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
             border-radius: 10px;
-            animation: update-pulse 2s ease-in-out infinite;
-        }
-        .update-banner.show { display: block; }
-        @keyframes update-pulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(233, 30, 99, 0.2); }
-            50% { box-shadow: 0 0 0 4px rgba(233, 30, 99, 0.1); }
-        }
-        .update-title {
-            font-size: 12px;
-            font-weight: 700;
-            color: #e65100;
-            margin-bottom: 4px;
-        }
-        .update-desc {
             font-size: 10px;
-            color: #666;
-            margin-bottom: 8px;
             line-height: 1.4;
         }
-        .update-btn {
-            display: inline-block;
-            padding: 6px 16px;
-            background: linear-gradient(135deg, #e91e63, #ff5722);
-            color: #fff;
-            border: none;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 700;
-            font-family: 'Quicksand', sans-serif;
-            cursor: pointer;
-            text-decoration: none;
-            transition: transform 0.15s, box-shadow 0.15s;
+        .release-status-ok {
+            color: #166534;
+            background: #f0fdf4;
+            border-color: #bbf7d0;
         }
-        .update-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 3px 12px rgba(233, 30, 99, 0.3);
+        .release-status-block {
+            color: #991b1b;
+            background: #fef2f2;
+            border-color: #fecaca;
+        }
+        .release-status-warn {
+            color: #92400e;
+            background: #fffbeb;
+            border-color: #fde68a;
         }
         .update-check {
             font-size: 10px;
@@ -149,7 +128,7 @@
             padding: 10px 14px;
             border: 2px solid #e0e0e0;
             border-radius: 10px;
-            font-family: 'Quicksand', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
             font-size: 14px;
             font-weight: 600;
             text-align: center;
@@ -177,7 +156,7 @@
             color: #fff;
             border: none;
             border-radius: 10px;
-            font-family: 'Quicksand', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
             font-size: 13px;
             font-weight: 700;
             cursor: pointer;
@@ -264,6 +243,17 @@
             </label>
         </div>
 
+        <div class="toggle-row">
+            <label class="toggle-label">
+                Khóa khẩn cấp
+                <span class="toggle-hint">IT/khoa dùng khi cần dừng ngay</span>
+            </label>
+            <label class="switch">
+                <input type="checkbox" id="kill-switch-toggle">
+                <span class="slider"></span>
+            </label>
+        </div>
+
         <div class="toggle-row" style="border-bottom: none;">
             <label class="toggle-label">
                 Debug Mode
@@ -275,18 +265,12 @@
             </label>
         </div>
 
-        <!-- Update banner -->
-        <div class="update-banner" id="update-banner">
-            <div class="update-title">🆕 Có phiên bản mới!</div>
-            <div class="update-desc" id="update-desc"></div>
-            <a class="update-btn" id="update-btn" href="#" target="_blank">⬇️ Tải về</a>
-        </div>
+        <div class="release-status" id="release-status">Đang kiểm tra release policy...</div>
 
-        <div class="update-check" id="check-update-btn">🔄 Kiểm tra cập nhật</div>
+        <div class="update-check" id="export-errors-btn" style="margin-top:4px;">Trạng thái lỗi runtime <span id="error-count-badge" style="background:#f44336;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:none;">0</span></div>
+        <div class="update-check" id="export-audit-btn" style="margin-top:4px;">📋 Xuất audit <span id="audit-count-badge" style="background:#2563eb;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:none;">0</span></div>
 
-        <div class="update-check" id="export-errors-btn" style="margin-top:4px;">🐛 Xuất nhật ký lỗi <span id="error-count-badge" style="background:#f44336;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:none;">0</span></div>
-
-        <div class="footer">Luôn tận tâm vì bệnh nhân 💛</div>
+        <div class="footer">Kiểm tra dữ liệu trên HIS trước khi lưu</div>
     </div>
     <script src="popup.js"></script>
 </body>

@@ -8,11 +8,18 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node test/no-demo-tab.test.js",
+    "test": "node test/no-demo-tab.test.js && node test/security-harness.test.js && node test/repo-phi-gate.test.js && node test/release-gate.test.js && node test/audit-export-gate.test.js && node test/pilot-evidence-gate.test.js && node test/rollout-inventory-gate.test.js && node test/hospital-release-gate.test.js",
     "build:nurse": "node build/build.js nurse",
     "build:ddt": "node build/build.js ddt",
     "build:all": "node build/release.js",
-    "release": "node build/release.js && gh release create v$(node -p \"require('./package.json').version\") dist-zip/*.zip --title \"v$(node -p \"require('./package.json').version\")\" --generate-notes"
+    "release": "node build/release.js",
+    "syntax:gate": "node tools/check-js-syntax.js",
+    "repo:phi:gate": "node tools/check-repo-phi.js",
+    "release:gate": "node test/release-gate.test.js --require-artifacts",
+    "audit:gate": "node tools/verify-audit-export.js audit-export.csv",
+    "pilot:gate": "node tools/verify-pilot-evidence.js pilot-evidence.csv",
+    "rollout:gate": "node tools/verify-rollout-inventory.js rollout-inventory.csv",
+    "hospital:gate": "node tools/verify-hospital-release.js"
   },
   "keywords": [],
   "author": "",

@@ -42,12 +42,11 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 - Tìm kiếm sinh hiệu qua 6 nguồn: NT.006 → Grid → HSBA → CC → Ngoại trú → Khám bệnh
 - Async fetch — không block giao diện khi truy vấn
 
-### 6. Hệ Thống "Chỉ Vàng" (Gamification)
+### 6. Thống Kê Thao Tác Nội Bộ
 
-- Tích lũy điểm qua mỗi phiếu vật tư / phiếu chăm sóc hoàn thành
-- **Server-side Validation:** Điểm chỉ được cộng khi server HIS thực sự xác nhận đã lưu dữ liệu thành công (không cộng ảo).
-- Hiệu ứng "+1 chỉ vàng ✨" bay lên + Gold Flash giữa màn hình
-- Rank system: 🌱 → 🪙 → 🥉 → 🥈 → 🥇 → 💎 → ✨👑✨
+- Ghi nhận số thao tác hỗ trợ trong ngày để theo dõi pilot.
+- Chỉ tăng sau khi thao tác được xác nhận thành công.
+- Không dùng điểm thưởng/cá nhân hóa trong tiêu chí rollout toàn viện.
 
 ### 7. Bảng Điều Khiển (Side Panel)
 
@@ -67,15 +66,40 @@ Extension chạy trên trình duyệt Chrome/Edge, tự động hóa các thao t
 ### Build
 
 ```bash
+# Kiểm thử kỹ thuật
+npm test
+
 # Build bản Điều Dưỡng (triển khai chính)
 pnpm run build:ddt
 
-# Build bản Chị Quyên (🌸)
+# Build bản Nurse
 pnpm run build:nurse
 
 # Build cả 2 + đóng gói zip
 pnpm run build:all
+
+# Kiểm gate artifact release
+npm run release:gate
+
+# Kiểm cú pháp toàn bộ JS
+npm run syntax:gate
+
+# Sau pilot thật: kiểm file pilot-evidence.csv
+npm run pilot:gate
+
+# Kiểm audit export từ popup
+npm run audit:gate
+
+# Trước rollout toàn viện: kiểm danh sách máy cài
+npm run rollout:gate
+
+# Cổng cuối: release + pilot + rollout
+npm run hospital:gate
 ```
+
+Rollback/thu hồi khẩn cấp dùng `ROLLBACK_CHECKLIST.md`; không tiếp tục pilot/toàn viện nếu chưa test kill switch và rollback trên máy pilot.
+
+Hồ sơ pháp lý và ATTT cho rollout gồm `SECURITY_POLICY.md`, `PRIVACY_IMPACT_ASSESSMENT.md`, `COMPLIANCE_MATRIX.md`, `RELEASE_CHECKLIST.md`, `ROLLBACK_CHECKLIST.md` và `HOSPITAL_RELEASE_READINESS_REPORT.md`.
 
 Kết quả nằm trong `dist/DDT` và `dist/Nurse`.
 
@@ -86,9 +110,11 @@ Kết quả nằm trong `dist/DDT` và `dist/Nurse`.
 3. Nhấn **Load unpacked** → chọn thư mục `dist/DDT` hoặc `dist/Nurse`
 4. Biểu tượng 💉 xuất hiện trên toolbar là thành công
 
-### Triển khai qua Network Share
+### Triển khai thủ công có kiểm soát
 
-Extension hỗ trợ auto-update qua thư mục mạng chia sẻ — không cần cài lại thủ công trên từng máy.
+Bản rollout bệnh viện dùng gói ZIP kèm `sha256.txt` và `release-policy.json`. IT phải kiểm hash, ghi máy/khoa/user/version/hash/người cài/thời điểm, rồi nạp đúng bản đã duyệt. Extension không tự gọi GitHub hoặc kênh update bên ngoài bệnh viện.
+
+Trước khi mở rộng ngoài khoa pilot, đọc `HOSPITAL_RELEASE_READINESS_REPORT.md` và hoàn tất toàn bộ gate trong `RELEASE_CHECKLIST.md`.
 
 ---
 
@@ -118,12 +144,12 @@ Extension hỗ trợ auto-update qua thư mục mạng chia sẻ — không cầ
 2. Extension tự động chọn Bác sĩ kê đơn và Kho vật tư.
 3. Bảng điều khiển xuất hiện với gợi ý, tìm kiếm nhanh và thiết lập Cách dùng sẵn.
 4. Bấm ✚ Điền để đưa vật tư vào phiếu HIS.
-5. Bấm ↵ Lưu để hoàn thành và nhận +1 chỉ vàng!
+5. Bấm ↵ Thêm để đưa dòng vật tư vào phiếu; người dùng vẫn kiểm tra và lưu trên HIS.
 
 ### Bước 3: Xem Lịch Sử
 
 - Click icon 💉 trên toolbar để xem popup
-- Kiểm tra Nhật ký thao tác và số Chỉ vàng đã tích lũy
+- Kiểm tra audit, lỗi và trạng thái release policy.
 
 ---
 
@@ -146,7 +172,6 @@ src/
 ├── shared/                # Modules dùng chung
 │   ├── message.js         # Message bus (origin validation + type allowlist)
 │   ├── patient-lock.js    # Patient Lock v2 (fuzzy match + seq guard)
-│   ├── crypto.js          # PBKDF2 activation lock
 │   ├── constants.js       # Global constants + HIS.TIMEOUTS
 │   ├── utils.js           # Utilities (escapeHtml, safeHTML, waitForElement)
 │   └── fill-tracker.js    # Fill progress tracking
@@ -173,9 +198,10 @@ background.js (service worker)
 - **Origin validation:** Message bus chỉ nhận message từ đúng origin của HIS
 - **Type allowlist:** Chỉ xử lý các message types đã đăng ký (Module Phiếu Chăm sóc, Vật tư...)
 - **Message Envelope & Request ID:** Đóng gói và gắn thẻ Request ID cho mọi tác vụ bất đồng bộ, loại bỏ tình trạng nhận nhầm dữ liệu cũ.
-- **PBKDF2:** Activation lock dùng 600,000 iterations (OWASP 2025)
+- **Audit fail-closed:** Auto-fill bị chặn nếu không ghi được audit.
+- **Safe Mode toàn cục:** Chặn Truyền dịch, Phiếu chăm sóc và Vật tư.
 - **XSS protection:** `escapeHtml()` + `safeHTML` tagged template cho mọi user input
-- **Least privilege:** GitHub permissions là optional, chỉ request khi cần check update
+- **Least privilege:** Không xin quyền GitHub/update ngoài bệnh viện; host permission chỉ giới hạn VNPT HIS.
 
 ---
 
@@ -212,7 +238,7 @@ Xem chi tiết tại [CHANGELOG.md](CHANGELOG.md).
 - Thêm hệ thống "Phiếu vật tư": Auto chọn Kho, Điền bác sĩ, loại bỏ các popup HIS phiền nhức nhối.
 - Tái cấu trúc lại UI Phiếu Vật Tư thành dạng list cực kỳ khoa học, nhỏ gọn.
 - Tìm kiếm linh hoạt qua `Mã VT`, chống trùng mã cực nhạy.
-- Thêm hiệu ứng âm thanh/chỉ vàng khi điền xong phiếu VT!
+- Thêm phản hồi thao tác khi điền xong phiếu VT.
 - Fix loạt lỗi linter/CSS cảnh báo từ trình duyệt.
 - Tối ưu hóa API fetch sinh hiệu / xử lý grid bất đồng bộ.
 
@@ -231,14 +257,14 @@ Xem chi tiết tại [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## 📦 Release
+## 📦 Đóng gói nội bộ
 
 ```bash
-# Build + zip + tạo GitHub Release
+# Build + zip + tạo sha256 và release policy
 pnpm run release
 ```
 
-Quy trình: `pnpm version patch` → `git push` → `pnpm run release`
+Quy trình: cập nhật version → chạy kiểm thử → `pnpm run release` → kiểm `sha256.txt` và `release-policy.json` → rollout thủ công theo `RELEASE_CHECKLIST.md` và `ROLLBACK_CHECKLIST.md`. Bản bệnh viện chỉ dùng gói ZIP nội bộ đã kiểm hash.
 
 ---
 

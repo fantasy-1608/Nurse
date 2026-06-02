@@ -26,6 +26,8 @@ const QuyenVatTuUI = (function () {
 
     let _fillingRequestId = null; // tracking ID cho lượt fill hiện tại
     let _pendingGoldCount = false; // theo dõi cờ cộng điểm khi Lưu
+    let _fastPathEnabled = false; // rollout toàn viện: mặc định tắt data injection
+    const _cancelledRequestIds = new Set();
 
     // =========================================================
     // INIT
@@ -37,9 +39,17 @@ const QuyenVatTuUI = (function () {
 
         // Load safe mode state
         if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.get('quyen_safe_mode', function (data) {
+            chrome.storage.local.get(['quyen_safe_mode', 'quyen_vattu_fast_path_enabled'], function (data) {
                 _safeMode = data.quyen_safe_mode === true;
+                _fastPathEnabled = data.quyen_vattu_fast_path_enabled === true;
             });
+            if (chrome.storage.onChanged) {
+                chrome.storage.onChanged.addListener(function (changes, area) {
+                    if (area !== 'local') return;
+                    if (changes.quyen_safe_mode) _safeMode = changes.quyen_safe_mode.newValue === true;
+                    if (changes.quyen_vattu_fast_path_enabled) _fastPathEnabled = changes.quyen_vattu_fast_path_enabled.newValue === true;
+                });
+            }
         }
 
         HIS.Message.listen([
@@ -53,6 +63,10 @@ const QuyenVatTuUI = (function () {
                 renderLoading('Đang tải dữ liệu thuốc...');
                 setTimeout(function () { refresh(); }, 800);
             } else if (data.type === 'QUYEN_VT_FILL_RESULT') {
+                if (data.requestId && _cancelledRequestIds.has(data.requestId)) {
+                    _cancelledRequestIds.delete(data.requestId);
+                    return;
+                }
                 if (_fillingRequestId && data.requestId && data.requestId !== _fillingRequestId) return;
                 onFillResult(data);
             } else if (data.type === 'QUYEN_VT_ENTER_RESULT') {
@@ -60,7 +74,7 @@ const QuyenVatTuUI = (function () {
                     showToast('❌ ' + data.error, 'warning');
                     _pendingGoldCount = false;
                 } else {
-                    showToast('✅ Đã lưu phiếu VT', 'success');
+                    showToast('✅ Đã thêm vật tư vào phiếu', 'success');
                     if (_pendingGoldCount) {
                         _pendingGoldCount = false;
                         if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.incrementFilledCount === 'function') {
@@ -69,18 +83,11 @@ const QuyenVatTuUI = (function () {
                         if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.triggerGoldFlash === 'function') {
                             QuyenUI.triggerGoldFlash();
                         }
-                        showToast('✨ +1 Chỉ vàng!', 'success');
+                        showToast('✅ Đã ghi nhận thao tác', 'success');
                     }
                 }
             } else if (data.type === 'QUYEN_VT_PHYSICAL_ENTER_PRESSED') {
-                if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.incrementFilledCount === 'function') {
-                    QuyenUI.incrementFilledCount();
-                }
-                // ★ Gold flash effect
-                if (typeof QuyenUI !== 'undefined' && typeof QuyenUI.triggerGoldFlash === 'function') {
-                    QuyenUI.triggerGoldFlash();
-                }
-                showToast('✨ +1 Chỉ vàng!', 'success');
+                showToast('✅ Bridge xác nhận đã bấm Thêm vật tư', 'success');
             }
         });
 
@@ -273,15 +280,15 @@ const QuyenVatTuUI = (function () {
                     const item = rItems[rii];
                     const isWound = (rule === 'wound');
                     const noteHtml = item.note ? '<div class="quyen-vt-note-text">ℹ️ ' + escapeHtml(item.note) + '</div>' : '';
-                    suggestHtml += '<div class="quyen-vt-suggest-row' + (isWound ? ' quyen-vt-wound' : '') + '" data-idx="' + rowIdx + '" data-ma="' + escapeHtml(item.ma) + '">' +
+                    suggestHtml += '<div class="quyen-vt-suggest-row' + (isWound ? ' quyen-vt-wound' : '') + '" data-idx="' + rowIdx + '" data-ma="' + escapeAttr(item.ma) + '">' +
                         '<div class="quyen-vt-row-top">' +
-                            '<div class="quyen-vt-suggest-info" title="' + escapeHtml(item.ma) + ' - ' + escapeHtml(item.ten) + '">' +
+                            '<div class="quyen-vt-suggest-info" title="' + escapeAttr(item.ma) + ' - ' + escapeAttr(item.ten) + '">' +
                                 '<span class="quyen-vt-ma">' + escapeHtml(item.ma) + '</span>' +
                                 '<span class="quyen-vt-ten">' + escapeHtml(item.ten) + '</span>' +
                             '</div>' +
                         '</div>' +
                         '<div class="quyen-vt-row-bottom">' +
-                            '<input type="text" class="quyen-vt-cachdung-input" id="quyen-vt-cd-' + rowIdx + '" data-idx="' + rowIdx + '" value="' + escapeHtml(item.cachdung) + '" placeholder="Cách dùng...">' +
+                            '<input type="text" class="quyen-vt-cachdung-input" id="quyen-vt-cd-' + rowIdx + '" data-idx="' + rowIdx + '" value="' + escapeAttr(item.cachdung) + '" placeholder="Cách dùng...">' +
                             '<div class="quyen-vt-sl-ctrl">' +
                                 '<button type="button" class="quyen-vt-sl-arrow quyen-vt-sl-down" data-idx="' + rowIdx + '" title="Giảm">-</button>' +
                                 '<input type="number" class="quyen-vt-sl-input" data-idx="' + rowIdx + '" value="' + item.sl + '" min="1" max="99" id="quyen-vt-sl-' + rowIdx + '">' +
@@ -289,7 +296,7 @@ const QuyenVatTuUI = (function () {
                                 '<span class="quyen-vt-dvt">' + escapeHtml(item.dvt) + '</span>' +
                             '</div>' +
                             '<button class="quyen-vt-fill-btn" data-idx="' + rowIdx + '" id="quyen-vt-fill-' + rowIdx + '" title="Điền VT">✚ Điền</button>' +
-                            '<button class="quyen-vt-enter-btn" data-idx="' + rowIdx + '" id="quyen-vt-enter-' + rowIdx + '" title="Lưu" style="display:none; margin-left: 2px;">↵ Lưu</button>' +
+                            '<button class="quyen-vt-enter-btn" data-idx="' + rowIdx + '" id="quyen-vt-enter-' + rowIdx + '" title="Thêm vào phiếu" style="display:none; margin-left: 2px;">↵ Thêm</button>' +
                         '</div>' +
                         noteHtml +
                     '</div>';
@@ -317,7 +324,7 @@ const QuyenVatTuUI = (function () {
         }
 
         const actionsHtml = (suggestedVT && suggestedVT.length > 0) ?
-            '<div class="quyen-vt-actions"><button class="quyen-vt-copy-btn" id="quyen-vt-copy">📋 Copy danh sách</button></div>' : '';
+            '<div class="quyen-vt-actions"><button class="quyen-vt-copy-btn" id="quyen-vt-copy">📋 Copy danh sách</button><button class="quyen-vt-copy-btn" id="quyen-vt-stop" style="margin-left:6px;background:#b91c1c;">Dừng</button></div>' : '';
 
         _container.innerHTML = '<div class="quyen-vt-wrapper"><div class="quyen-vt-toolbar">' + drugTags + '<button class="quyen-vt-refresh-btn" id="quyen-vt-refresh" title="Đọc lại từ HIS">🔄</button></div>' + suggestHtml + kimLuonNote + actionsHtml + '</div>';
 
@@ -327,6 +334,8 @@ const QuyenVatTuUI = (function () {
 
         const copyBtn = _container.querySelector('#quyen-vt-copy');
         if (copyBtn) copyBtn.addEventListener('click', function () { copyToClipboard(suggestedVT); });
+        const stopBtn = _container.querySelector('#quyen-vt-stop');
+        if (stopBtn) stopBtn.addEventListener('click', function () { stopQueue('USER_CANCEL'); });
 
         // Wire nút Điền
         const fillBtns = _container.querySelectorAll('.quyen-vt-fill-btn');
@@ -387,13 +396,26 @@ const QuyenVatTuUI = (function () {
     // =========================================================
     function onClickFill(idx, suggestedVT) {
         // ★ Safe Mode: chặn fill, chỉ hiện cảnh báo
-        if (_safeMode) {
+        if (_safeMode || (typeof HIS !== 'undefined' && HIS.Safety && HIS.Safety.isSafeMode())) {
+            if (typeof HIS !== 'undefined' && HIS.Safety) {
+                HIS.Safety.auditResult('VATTU_FILL_BLOCKED', { module: 'vattu', result: 'BLOCKED', reason: 'SAFE_MODE' });
+            }
             showToast('🛡️ Safe Mode đang bật — tắt trong popup để sử dụng Điền', 'warning');
             return;
         }
 
         const item = suggestedVT && suggestedVT[idx];
         if (!item) return;
+
+        if (typeof HIS === 'undefined' || !HIS.PatientLock || !HIS.PatientLock.hasSource()) {
+            showToast('🚫 Chưa chọn bệnh nhân! Hãy click chọn BN trong danh sách trước.', 'error');
+            return;
+        }
+        const lockResult = HIS.PatientLock.verifyCurrentForm({ requireTarget: true });
+        if (!lockResult.ok) {
+            showToast('🚫 ' + lockResult.details, 'error');
+            return;
+        }
 
         const slInput  = _container.querySelector('#quyen-vt-sl-'   + idx);
         const cdInput  = _container.querySelector('#quyen-vt-cd-'   + idx);
@@ -408,6 +430,9 @@ const QuyenVatTuUI = (function () {
             _fillTotal++;
             if (fillBtn) { fillBtn.textContent = '🕐 Chờ'; fillBtn.disabled = true; }
             QuyenLog.info('🧰 Queue VT:', item.ma, '(đang chờ ' + _fillQueue.length + ')');
+            if (typeof HIS !== 'undefined' && HIS.Safety) {
+                HIS.Safety.auditResult('VATTU_QUEUE_ADD', { module: 'vattu', item: item.ten, ma: item.ma, result: 'QUEUED', filledCount: _fillQueue.length });
+            }
             return;
         }
 
@@ -433,24 +458,54 @@ const QuyenVatTuUI = (function () {
         QuyenLog.info('🧰 Điền VT:', item.ma, '| SL:', sl, '| CD:', cachdung);
 
         _fillingRequestId = Date.now() + '_' + Math.random();
-        HIS.Message.send('QUYEN_FILL_VT_ITEM', {
-            requestId: _fillingRequestId,
-            ma:       item.ma,
-            ten:      item.ten,
-            sl:       sl,
-            cachdung: cachdung,
-            doctor:   _doctorName,
-        });
+        function sendFillRequest() {
+            HIS.Message.send('QUYEN_FILL_VT_ITEM', {
+                requestId: _fillingRequestId,
+                module: 'vattu',
+                ma:       item.ma,
+                ten:      item.ten,
+                sl:       sl,
+                cachdung: cachdung,
+                doctor:   _doctorName,
+                fastPathEnabled: _fastPathEnabled
+            });
 
-        // Timeout fallback 12s — giải phóng queue nếu bridge không phản hồi
-        setTimeout(function () {
-            if (_fillingIdx === idx) {
+            setTimeout(function () {
+                if (_fillingIdx === idx) {
+                    resetFillBtn(idx, '✚ Điền');
+                    _fillingIdx = null;
+                    _fillInProgress = false;
+                    if (typeof HIS !== 'undefined' && HIS.Safety) {
+                        HIS.Safety.auditResult('VATTU_FILL_TIMEOUT', { module: 'vattu', item: item.ten, ma: item.ma, result: 'TIMEOUT', reason: 'BRIDGE_TIMEOUT' });
+                    }
+                    stopQueue('TIMEOUT');
+                }
+            }, 12000);
+        }
+
+        if (typeof HIS !== 'undefined' && HIS.Safety) {
+            HIS.Safety.guardAutoFill('VATTU_FILL_ATTEMPT', {
+                module: 'vattu',
+                item: item.ten,
+                ma: item.ma,
+                requestId: _fillingRequestId,
+                fillMode: _fastPathEnabled ? 'fast_path' : 'keyboard'
+            }).then(sendFillRequest).catch(function (err) {
                 resetFillBtn(idx, '✚ Điền');
                 _fillingIdx = null;
                 _fillInProgress = false;
-                _processNextFill();
-            }
-        }, 12000);
+                const msg = err && err.message === 'SAFE_MODE'
+                    ? '🛡️ Safe Mode đang bật'
+                    : (err && err.message === 'KILL_SWITCH' ? '🚫 Khóa khẩn cấp đang bật' : '🚫 Không ghi được audit, đã chặn điền VT');
+                showToast(msg, 'error');
+            });
+        } else {
+            resetFillBtn(idx, '✚ Điền');
+            _fillingIdx = null;
+            _fillInProgress = false;
+            showToast('🚫 Không nạp được lớp an toàn/audit — đã chặn điền VT', 'error');
+            QuyenLog.warn('🔒 VT fill BLOCKED: safety guard unavailable');
+        }
     }
 
     function _processNextFill() {
@@ -468,17 +523,32 @@ const QuyenVatTuUI = (function () {
     function onFillResult(data) {
         const idx = _fillingIdx;
         _fillingIdx = null;
+        _fillingRequestId = null;
         _fillDone++;
         _fillInProgress = false;
 
 
 
-        if (data.success) {
+        if (typeof HIS !== 'undefined' && HIS.Safety) {
+            HIS.Safety.auditResult('VATTU_FILL_RESULT', {
+                module: 'vattu',
+                item: data.ten || '',
+                ma: data.ma || '',
+                requestId: data.requestId || '',
+                result: data.success && data.verified !== false ? 'OK' : 'ERROR',
+                reason: data.error || (data.verified === false ? 'VERIFY_FAILED' : ''),
+                filledCount: data.success ? 1 : 0
+            });
+        }
+
+        if (data.success && data.verified !== false) {
             resetFillBtn(idx, '✅');
             showToast('✅ Đã điền + thêm ' + (data.ma || '') + ' vào phiếu VT!', 'success');
         } else {
             resetFillBtn(idx, '✚ Điền');
             showToast('❌ ' + (data.error || 'Lỗi điền VT'), 'error');
+            stopQueue('ITEM_FAILED');
+            return;
         }
 
         // Xử lý item tiếp theo hoặc show tổng kết batch
@@ -497,6 +567,22 @@ const QuyenVatTuUI = (function () {
         if (idx === null || idx === undefined) return;
         const btn = _container && _container.querySelector('#quyen-vt-fill-' + idx);
         if (btn) { btn.textContent = label; btn.disabled = false; }
+    }
+
+    function stopQueue(reason) {
+        const dropped = _fillQueue.length;
+        _fillQueue.length = 0;
+        _fillTotal = 0;
+        _fillDone = 0;
+        _fillInProgress = false;
+        _fillingIdx = null;
+        if (_fillingRequestId) _cancelledRequestIds.add(_fillingRequestId);
+        _fillingRequestId = null;
+        _pendingGoldCount = false;
+        if (typeof HIS !== 'undefined' && HIS.Safety) {
+            HIS.Safety.auditResult('VATTU_QUEUE_STOP', { module: 'vattu', result: 'STOPPED', reason: reason || 'STOP', filledCount: dropped });
+        }
+        if (dropped > 0 || reason === 'USER_CANCEL') showToast('Đã dừng hàng đợi vật tư', 'warning');
     }
 
     // =========================================================
@@ -564,6 +650,10 @@ const QuyenVatTuUI = (function () {
     function escapeHtml(str) {
         if (!str) return '';
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function escapeAttr(str) {
+        return escapeHtml(str).replace(/'/g, '&#39;');
     }
 
     // =========================================================

@@ -2,7 +2,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { createWriteStream } = require('fs');
+const crypto = require('crypto');
 
 // Đọc version từ package.json
 const pkg = require('../package.json');
@@ -39,9 +39,33 @@ execSync(
     { stdio: 'inherit', cwd: path.join(__dirname, '..') }
 );
 
+const zipFiles = [`DDT-v${version}.zip`, `Nurse-v${version}.zip`];
+const shaLines = zipFiles.map((file) => {
+    const filePath = path.join(distZipDir, file);
+    const hash = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+    return `${hash}  ${file}`;
+});
+fs.writeFileSync(path.join(distZipDir, 'sha256.txt'), shaLines.join('\n') + '\n');
+
+const policy = {
+    generatedAt: new Date().toISOString(),
+    channel: 'manual',
+    version,
+    packages: zipFiles.map((file, index) => ({
+        file,
+        sha256: shaLines[index].split('  ')[0],
+        allowedVersions: [version],
+        expiresAt: '',
+        storageKey: 'quyen_release_policy'
+    })),
+    installNote: 'Nhập đúng sha256 của gói đã cài vào quyen_release_policy.buildHash trên máy pilot/toàn viện.'
+};
+fs.writeFileSync(path.join(distZipDir, 'release-policy.json'), JSON.stringify(policy, null, 2) + '\n');
+
 console.log('\n' + '='.repeat(50));
 console.log(`\n✅ Hoàn tất! Các file zip nằm tại thư mục dist-zip/:`);
 console.log(`   📁 DDT-v${version}.zip`);
 console.log(`   📁 Nurse-v${version}.zip`);
-console.log(`\n💡 Để tạo GitHub Release, chạy:`);
-console.log(`   pnpm run release\n`);
+console.log(`   🔐 sha256.txt`);
+console.log(`   🔐 release-policy.json`);
+console.log(`\n💡 Kiểm hash theo sha256.txt và lưu buildHash vào release policy cục bộ khi pilot/toàn viện.\n`);

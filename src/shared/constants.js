@@ -28,11 +28,6 @@ HIS.HOST_PATTERNS = [
     'vncare.vn'
 ];
 
-// API endpoints
-HIS.API = {
-    GEMINI_BASE: 'https://generativelanguage.googleapis.com',
-};
-
 // Z-Index Scale (tránh z-index wars giữa các extension)
 HIS.Z_INDEX = {
     BASE: 9000,

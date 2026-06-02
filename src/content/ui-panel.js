@@ -110,11 +110,11 @@ const QuyenUI = (function () {
                     <span class="quyen-logo">__EXT_EMOJI__</span>
                     <span class="quyen-title">__EXT_SHORT_NAME__</span>
                     <span class="quyen-header-dot">·</span>
-                    <span class="quyen-stats quyen-tier-basic" id="quyen-stats">
-                        <span class="quyen-merit-icon">🌱</span>
-                        <span class="quyen-merit-count">0</span>
-                        <span class="quyen-merit-label">chỉ vàng</span>
-                    </span>
+                        <span class="quyen-stats quyen-tier-basic" id="quyen-stats">
+                            <span class="quyen-merit-icon">🌱</span>
+                            <span class="quyen-merit-count">0</span>
+                            <span class="quyen-merit-label">thao tác</span>
+                        </span>
                 </div>
                 <button class="quyen-btn-minimize" id="quyen-btn-minimize" title="Thu nhỏ">—</button>
             </div>
@@ -307,7 +307,7 @@ const QuyenUI = (function () {
         window.addEventListener('message', function(event) {
             if (!event.data) return;
             // ★ SPRINT C: Origin + type validation
-            if (typeof HIS !== 'undefined' && HIS.Message && !HIS.Message.isValid(event)) return;
+            if (typeof HIS === 'undefined' || !HIS.Message || !HIS.Message.isValid(event)) return;
             if (event.data.type === 'QUYEN_PATIENT_SELECTED') {
                 const p = event.data.patient || {};
                 const v = event.data.vitals || {};
@@ -511,6 +511,23 @@ const QuyenUI = (function () {
     // ==========================================
     // UPDATE DRUG LIST UI
     // ==========================================
+    function guardAutoFill(action, detail, onAllowed) {
+        if (typeof HIS !== 'undefined' && HIS.Safety) {
+            HIS.Safety.guardAutoFill(action, detail).then(onAllowed).catch(function (err) {
+                const reason = err && err.message === 'SAFE_MODE'
+                    ? 'Safe Mode đang bật — đã chặn tự động điền.'
+                    : (err && err.message === 'KILL_SWITCH'
+                        ? 'Khóa khẩn cấp đang bật — đã chặn tự động điền.'
+                        : 'Không ghi được audit — đã chặn tự động điền.');
+                showToast('🚫 ' + reason, 'error');
+                QuyenLog.warn('Auto-fill BLOCKED:', reason);
+            });
+            return;
+        }
+        showToast('🚫 Không nạp được lớp an toàn/audit — đã chặn tự động điền.', 'error');
+        QuyenLog.warn('Auto-fill BLOCKED: safety guard unavailable');
+    }
+
     function updateDrugList(allDrugs, ivDrugs) {
         if (!_drugListEl) return;
 
@@ -527,7 +544,7 @@ const QuyenUI = (function () {
                 : (allDrugs.length > 0
                     ? `Có ${allDrugs.length} thuốc nhưng không có thuốc truyền`
                     : 'Chờ mở form truyền dịch...');
-            _drugListEl.innerHTML = `<div class="quyen-empty">${msg}</div>`;
+            _drugListEl.innerHTML = `<div class="quyen-empty">${escapeHtml(msg)}</div>`;
 
             const fillAllBtn = document.getElementById('quyen-btn-fill-all');
             if (fillAllBtn) fillAllBtn.disabled = true;
@@ -549,12 +566,12 @@ const QuyenUI = (function () {
             if (drug.prescriptionDate) tooltipParts.push('Ngày kê: ' + drug.prescriptionDate);
             if (fullUsage) tooltipParts.push('Cách dùng: ' + fullUsage);
             tooltipParts.push('💉 Truyền TM');
-            const tooltip = escapeHtml(tooltipParts.join('\n'));
+            const tooltip = escapeAttr(tooltipParts.join('\n'));
 
             html += `
                 <div class="quyen-drug-card quyen-drug-iv" data-index="${index}" style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;margin:3px 0;border-radius:8px;background:rgba(0,0,0,0.05);border:1px solid rgba(0,0,0,0.08);">
                     <span class="quyen-drug-label" data-tip="${tooltip}" style="flex:1;font-size:12px;font-weight:600;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help;">${escapeHtml(drug.name)}</span>
-                    <button class="quyen-btn quyen-btn-fill" data-drug-index="${index}" title="Điền ${escapeHtml(drug.name)}" style="margin-left:8px;padding:4px 14px;border-radius:6px;border:none;background:#4CAF50;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">💉 Điền</button>
+                    <button class="quyen-btn quyen-btn-fill" data-drug-index="${index}" title="Điền ${escapeAttr(drug.name)}" style="margin-left:8px;padding:4px 14px;border-radius:6px;border:none;background:#4CAF50;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">💉 Điền</button>
                 </div>
             `;
         });
@@ -583,21 +600,37 @@ const QuyenUI = (function () {
                         return;
                     }
 
-                    const result = QuyenInfusionFiller.fillForm(drug);
-                    if (result.success && !result.pending) {
-                        // ★ Form đang mở sẵn — fill thành công ngay lập tức
-                        incrementFilledCount();
-                        showToast(`✅ Đã điền "${drug.name}" — ${getRandomThank()}`);
-                        this.classList.add('quyen-btn-done');
-                        this.textContent = '✅ Đã điền';
-                    } else if (result.success && result.pending) {
-                        // ★ Form chưa mở — đang chờ. showCompletionEffect() sẽ báo khi xong
-                        showToast(`⏳ Chưa thấy form truyền dịch, đang chờ...`, 'warning');
-                        this.textContent = '⏳ Chờ...';
-                        this.disabled = true;
-                    } else {
-                        showToast(`❌ Lỗi: ${result.error}`, 'error');
-                    }
+                    const btn = this;
+                    guardAutoFill('INFUSION_FILL_ATTEMPT', {
+                        module: 'infusion',
+                        drug: drug.name,
+                        item: drug.name,
+                        requestId: 'infusion_' + Date.now()
+                    }, function () {
+                        const result = QuyenInfusionFiller.fillForm(drug);
+                        if (typeof HIS !== 'undefined' && HIS.Safety) {
+                            HIS.Safety.auditResult('INFUSION_FILL_RESULT', {
+                                module: 'infusion',
+                                drug: drug.name,
+                                item: drug.name,
+                                result: result.success ? (result.pending ? 'PENDING' : 'OK') : 'ERROR',
+                                reason: result.error || '',
+                                filledCount: result.filledCount || 0
+                            });
+                        }
+                        if (result.success && !result.pending) {
+                            incrementFilledCount();
+                            showToast(`✅ Đã điền "${drug.name}" — ${getRandomThank()}`);
+                            btn.classList.add('quyen-btn-done');
+                            btn.textContent = '✅ Đã điền';
+                        } else if (result.success && result.pending) {
+                            showToast(`⏳ Chưa thấy form truyền dịch, đang chờ...`, 'warning');
+                            btn.textContent = '⏳ Chờ...';
+                            btn.disabled = true;
+                        } else {
+                            showToast(`❌ Lỗi: ${result.error}`, 'error');
+                        }
+                    });
                 }
             });
         });
@@ -696,14 +729,32 @@ const QuyenUI = (function () {
 
         // Fill the first IV drug (typically one at a time)
         const drug = ivDrugs[0];
-        const result = QuyenInfusionFiller.fillForm(drug);
-
-        if (result.success) {
-            incrementFilledCount();
-            showToast(`✅ Đã điền "${drug.name}" — ${getRandomThank()}`);
-        } else {
-            showToast(`❌ Lỗi: ${result.error}`, 'error');
-        }
+        guardAutoFill('INFUSION_FILL_ALL_ATTEMPT', {
+            module: 'infusion',
+            drug: drug.name,
+            item: drug.name,
+            fillMode: 'fill_all',
+            requestId: 'infusion_all_' + Date.now()
+        }, function () {
+            const result = QuyenInfusionFiller.fillForm(drug);
+            if (typeof HIS !== 'undefined' && HIS.Safety) {
+                HIS.Safety.auditResult('INFUSION_FILL_ALL_RESULT', {
+                    module: 'infusion',
+                    drug: drug.name,
+                    item: drug.name,
+                    fillMode: 'fill_all',
+                    result: result.success ? 'OK' : 'ERROR',
+                    reason: result.error || '',
+                    filledCount: result.filledCount || 0
+                });
+            }
+            if (result.success) {
+                incrementFilledCount();
+                showToast(`✅ Đã điền "${drug.name}" — ${getRandomThank()}`);
+            } else {
+                showToast(`❌ Lỗi: ${result.error}`, 'error');
+            }
+        });
     }
 
     // ==========================================
@@ -746,27 +797,33 @@ const QuyenUI = (function () {
     // ==========================================
     function loadStats() {
         try {
-            const today = new Date().toDateString();
-            const saved = localStorage.getItem('quyen_stats');
-            if (saved) {
-                const data = JSON.parse(saved);
-                if (data.date === today) {
-                    _filledToday = data.count || 0;
-                }
+            _filledToday = 0;
+            if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+                updateStatsUI();
+                return;
             }
-            updateStatsUI();
+            chrome.storage.local.get('quyen_audit_log', function (data) {
+                const today = new Date().toISOString().substring(0, 10);
+                const entries = data.quyen_audit_log || [];
+                let count = 0;
+                for (let i = 0; i < entries.length; i++) {
+                    if (isCountableAuditEntry(entries[i], today)) count++;
+                }
+                _filledToday = count;
+                updateStatsUI();
+            });
         } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
     }
 
     function incrementFilledCount() {
         _filledToday++;
         updateStatsUI();
-        try {
-            localStorage.setItem('quyen_stats', JSON.stringify({
-                date: new Date().toDateString(),
-                count: _filledToday
-            }));
-        } catch (e) { console.debug("[Nurse] catch:", e.message || e); }
+    }
+
+    function isCountableAuditEntry(entry, today) {
+        if (!entry || !entry.ts || entry.ts.substring(0, 10) !== today) return false;
+        if (!/_RESULT$/.test(entry.action || '')) return false;
+        return entry.result === 'OK' || entry.result === 'PENDING';
     }
 
     function updateStatsUI() {
@@ -778,7 +835,7 @@ const QuyenUI = (function () {
         _statsEl.innerHTML =
             `<span class="quyen-merit-icon">${tier.icon}</span>` +
             `<span class="quyen-merit-count">${_filledToday}</span>` +
-            `<span class="quyen-merit-label">chỉ vàng</span>`;
+            `<span class="quyen-merit-label">thao tác</span>`;
     }
 
     // ==========================================
@@ -947,6 +1004,10 @@ const QuyenUI = (function () {
         return div.innerHTML;
     }
 
+    function escapeAttr(text) {
+        return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
     // ==========================================
     // ★ SPRINT B: LOCK INDICATOR
     // ==========================================
@@ -1031,11 +1092,15 @@ const QuyenUI = (function () {
         const statusEl = document.getElementById('quyen-fill-status');
         if (!statusEl) return;
 
-        let html = text;
+        statusEl.textContent = text;
         if (showCancel) {
-            html += ' <span id="quyen-fill-cancel" style="cursor:pointer;margin-left:4px;opacity:0.7;" title="Hủy">❌</span>';
+            const cancel = document.createElement('span');
+            cancel.id = 'quyen-fill-cancel';
+            cancel.style.cssText = 'cursor:pointer;margin-left:4px;opacity:0.7;';
+            cancel.title = 'Hủy';
+            cancel.textContent = '❌';
+            statusEl.appendChild(cancel);
         }
-        statusEl.innerHTML = html;
 
         if (showCancel) {
             const cancelBtn = document.getElementById('quyen-fill-cancel');
@@ -1096,7 +1161,7 @@ const QuyenUI = (function () {
          * @param {'success'|'error'|'warning'|'info'} [type='success'] - Loại toast
          */
         showToast,
-        /** Tăng counter chỉ vàng +1, cập nhật tier badge */
+        /** Tăng counter thao tác +1, cập nhật badge */
         incrementFilledCount,
         /**
          * Chuyển tab trong panel
