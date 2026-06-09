@@ -268,4 +268,246 @@ HIS.Core = {
     }
 };
 
+
+/* ==========================================
+   HIS.DocCache & HIS.PerfCache Implementation (PERF-001)
+   ========================================== */
+
+HIS.DocCache = (function() {
+    let _docs = [];
+    let _initialized = false;
+
+    function init() {
+        if (_initialized) return;
+        _initialized = true;
+        invalidate();
+        
+        try {
+            const observer = new MutationObserver((mutations) => {
+                let checkNeeded = false;
+                for (let i = 0; i < mutations.length; i++) {
+                    const added = mutations[i].addedNodes;
+                    for (let j = 0; j < added.length; j++) {
+                        const node = added[j];
+                        if (node && node.nodeType === 1) {
+                            if (node.tagName === 'IFRAME' || (node.querySelectorAll && node.querySelectorAll('iframe').length > 0)) {
+                                checkNeeded = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (checkNeeded) break;
+                }
+                if (checkNeeded) {
+                    invalidate();
+                }
+            });
+            if (document.body) {
+                observer.observe(document.body, { childList: true, subtree: true });
+            }
+        } catch (e) {}
+
+        // Connect PatientLock.onChange
+        try {
+            if (typeof HIS !== 'undefined' && HIS.PatientLock && typeof HIS.PatientLock.onChange === 'function') {
+                HIS.PatientLock.onChange(function() {
+                    invalidate();
+                });
+            }
+        } catch(e) {}
+
+        // Connect QUYEN_FORM_CLOSED message
+        try {
+            window.addEventListener('message', function(event) {
+                if (event && event.data && event.data.type === 'QUYEN_FORM_CLOSED') {
+                    invalidate();
+                }
+            });
+        } catch(e) {}
+    }
+
+    function invalidate() {
+        _docs = [];
+        if (typeof HIS !== 'undefined' && HIS.PerfCache && typeof HIS.PerfCache.invalidate === 'function') {
+            HIS.PerfCache.invalidate();
+        }
+    }
+
+    function getAll() {
+        if (_docs.length > 0) {
+            return _docs;
+        }
+
+        const docs = [document];
+        try {
+            const iframes = document.querySelectorAll('iframe');
+            for (let i = 0; i < iframes.length; i++) {
+                try {
+                    const iDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
+                    if (iDoc) {
+                        docs.push(iDoc);
+                        const subIframes = iDoc.querySelectorAll('iframe');
+                        for (let j = 0; j < subIframes.length; j++) {
+                            try {
+                                const sDoc = subIframes[j].contentDocument || subIframes[j].contentWindow.document;
+                                if (sDoc) docs.push(sDoc);
+                            } catch (e) {}
+                        }
+                    }
+                } catch (e) {}
+            }
+        } catch (e) {}
+        _docs = docs;
+        return docs;
+    }
+
+    return {
+        init,
+        invalidate,
+        getAll
+    };
+})();
+
+HIS.PerfCache = (function() {
+    let _cache = {};
+
+    function invalidate() {
+        _cache = {};
+    }
+
+    function get(key) {
+        return _cache[key];
+    }
+
+    function set(key, value) {
+        _cache[key] = value;
+    }
+
+    return {
+        invalidate,
+        get,
+        set
+    };
+})();
+
+HIS.PerfMetrics = (function() {
+    const MAX_ENTRIES = 200;
+
+    function record(actionType, selector, duration, inputContent) {
+        let redactedContent = undefined;
+        if (inputContent !== undefined && inputContent !== null) {
+            if (typeof HIS !== 'undefined' && HIS.Privacy && typeof HIS.Privacy.redact === 'function') {
+                redactedContent = HIS.Privacy.redact(inputContent);
+            } else {
+                redactedContent = String(inputContent).replace(/[A-ZÀ-Ỹa-zà-ỹ0-9]/g, '*');
+            }
+        }
+        
+        const entry = {
+            timestamp: new Date().toISOString(),
+            actionType: actionType,
+            selector: selector,
+            duration: duration,
+            content: redactedContent
+        };
+
+        let queue = [];
+        try {
+            const stored = localStorage['getItem']('quyen_perf_telemetry');
+            if (stored) {
+                queue = JSON.parse(stored);
+            }
+        } catch(e) {}
+
+        if (!Array.isArray(queue)) {
+            queue = [];
+        }
+
+        queue.push(entry);
+        while (queue.length > 100) {
+            queue.shift();
+        }
+
+        try {
+            localStorage['setItem']('quyen_perf_telemetry', JSON.stringify(queue));
+        } catch(e) {}
+    }
+
+    function log(moduleName, step, durationMs, result, fallbackUsed, timeout, staleDropped) {
+        let metric = {};
+        if (typeof moduleName === 'object' && moduleName !== null) {
+            metric = Object.assign({}, moduleName);
+        } else {
+            metric = {
+                module: moduleName,
+                step: step,
+                durationMs: durationMs,
+                result: result,
+                fallbackUsed: fallbackUsed,
+                timeout: timeout,
+                staleDropped: staleDropped
+            };
+        }
+
+        metric.ts = metric.ts || new Date().toISOString();
+        if (!metric.version) {
+            try {
+                if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.getManifest === 'function') {
+                    const manifest = chrome.runtime.getManifest();
+                    metric.version = manifest ? manifest.version : '1.3.6';
+                }
+            } catch (e) {}
+            metric.version = metric.version || '1.3.6';
+        }
+
+        let redactedMetric = metric;
+        if (typeof HIS !== 'undefined' && HIS.Privacy && typeof HIS.Privacy.redact === 'function') {
+            redactedMetric = HIS.Privacy.redact(metric);
+        }
+
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.get('quyen_perf_metrics', function(data) {
+                let list = data.quyen_perf_metrics || [];
+                if (!Array.isArray(list)) list = [];
+                list.push(redactedMetric);
+                if (list.length > MAX_ENTRIES) {
+                    list = list.slice(list.length - MAX_ENTRIES);
+                }
+                chrome.storage.local.set({ quyen_perf_metrics: list });
+            });
+        }
+    }
+
+    function getQueue() {
+        try {
+            const stored = localStorage['getItem']('quyen_perf_telemetry');
+            if (stored) {
+                return JSON.parse(stored) || [];
+            }
+        } catch(e) {}
+        return [];
+    }
+
+    function clear() {
+        try {
+            localStorage['removeItem']('quyen_perf_telemetry');
+        } catch(e) {}
+    }
+
+    return {
+        record,
+        log,
+        getQueue,
+        clear
+    };
+})();
+
+// Auto-initialize DocCache
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    HIS.DocCache.init();
+} else {
+    window.addEventListener('DOMContentLoaded', () => HIS.DocCache.init());
+}
+
 console.log('[HIS] 🏥 Shared core DOM helpers loaded');
+

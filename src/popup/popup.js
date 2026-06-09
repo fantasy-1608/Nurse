@@ -113,6 +113,7 @@ function showMainUI() {
     setupErrorExport();
     showAuditCount();
     setupAuditExport();
+    setupPerfExport();
 }
 
 // ==========================================
@@ -305,7 +306,10 @@ function setupErrorExport() {
 function csvEscape(val) {
     if (val === null || val === undefined) return '';
     const str = String(val);
-    if (str.indexOf(',') >= 0 || str.indexOf('"') >= 0 || str.indexOf('\n') >= 0) {
+    if (/^\s*[=\+\-@\t\r]/.test(str)) {
+        return "'" + str;
+    }
+    if (str.indexOf(',') >= 0 || str.indexOf('"') >= 0 || str.indexOf('\n') >= 0 || str.indexOf('\r') >= 0) {
         return '"' + str.replace(/"/g, '""') + '"';
     }
     return str;
@@ -346,6 +350,66 @@ function setupAuditExport() {
             navigator.clipboard.writeText('\uFEFF' + rows.join('\n')).then(function () {
                 btn.textContent = '✅ Đã copy ' + entries.length + ' audit!';
                 setTimeout(function () { btn.innerHTML = '📋 Xuất audit <span id="audit-count-badge" style="background:#2563eb;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:inline;">' + entries.length + '</span>'; }, 2000);
+            });
+        });
+    });
+}
+
+function setupPerfExport() {
+    const btn = document.getElementById('export-perf-btn');
+    if (!btn) return;
+
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+        if (tabs && tabs[0]) {
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_PERF_TELEMETRY' }, function (res) {
+                if (chrome.runtime.lastError || !res || !res.success) return;
+                const entries = res.data || [];
+                const badge = document.getElementById('perf-count-badge');
+                if (badge && entries.length > 0) {
+                    badge.textContent = entries.length;
+                    badge.style.display = 'inline';
+                }
+            });
+        }
+    });
+
+    btn.addEventListener('click', function () {
+        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+            if (!tabs || !tabs[0]) {
+                btn.textContent = '❌ Không tìm thấy trang';
+                setTimeout(function () { btn.innerHTML = '⚡ Tải báo cáo hiệu năng <span id="perf-count-badge" style="background:#10b981;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:none;">0</span>'; }, 2000);
+                return;
+            }
+
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_PERF_TELEMETRY' }, function (res) {
+                if (chrome.runtime.lastError || !res || !res.success) {
+                    btn.textContent = '❌ Lỗi đọc báo cáo';
+                    setTimeout(function () { btn.innerHTML = '⚡ Tải báo cáo hiệu năng <span id="perf-count-badge" style="background:#10b981;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:none;">0</span>'; }, 2000);
+                    return;
+                }
+
+                const entries = res.data || [];
+                if (entries.length === 0) {
+                    btn.textContent = '✅ Không có dữ liệu';
+                    setTimeout(function () { btn.innerHTML = '⚡ Tải báo cáo hiệu năng <span id="perf-count-badge" style="background:#10b981;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:none;">0</span>'; }, 2000);
+                    return;
+                }
+
+                const jsonStr = JSON.stringify(entries, null, 4);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'quyen_perf_telemetry_' + Date.now() + '.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                btn.textContent = '✅ Đã tải về ' + entries.length + ' mục!';
+                setTimeout(function () {
+                    btn.innerHTML = '⚡ Tải báo cáo hiệu năng <span id="perf-count-badge" style="background:#10b981;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px;display:inline;">' + entries.length + '</span>';
+                }, 2000);
             });
         });
     });

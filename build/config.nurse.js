@@ -1,10 +1,11 @@
 /* eslint-disable */
 module.exports = {
     target: 'nurse',
+    uiMode: 'production',
     extName: 'Điều Dưỡng VNPT HIS',
     extShortName: 'Điều Dưỡng',
     extDesc: 'Điều Dưỡng — Trợ lý tự động nhập liệu trên VNPT HIS',
-    extEmoji: '💉',
+    extEmoji: '🌸',
     extPrefix: 'Điều Dưỡng',
     extFooterText: 'Trợ lý VNPT HIS — kiểm tra trước khi lưu',
     extSuccessMessages: [

@@ -106,8 +106,8 @@ function verifyAuditExport(text, options) {
         if (!row['Hành động']) errors.push('Dòng ' + line + ': thiếu hành động audit.');
         if (!Object.prototype.hasOwnProperty.call(ALLOWED_MODULES, moduleName)) errors.push('Dòng ' + line + ': module audit không hợp lệ.');
         if (!Object.prototype.hasOwnProperty.call(ALLOWED_RESULTS, result)) errors.push('Dòng ' + line + ': kết quả audit không hợp lệ.');
-        if (patientRef && !/^pt_[a-f0-9]{8}$/i.test(patientRef)) errors.push('Dòng ' + line + ': PatientRef phải là mã giả danh.');
-        if (itemRef && !/^it_[a-f0-9]{8}$/i.test(itemRef)) errors.push('Dòng ' + line + ': ItemRef phải là mã giả danh.');
+        if (patientRef && !/^pt_[a-f0-9]{8,64}$/i.test(patientRef)) errors.push('Dòng ' + line + ': PatientRef phải là mã giả danh.');
+        if (itemRef && !/^it_[a-f0-9]{8,64}$/i.test(itemRef)) errors.push('Dòng ' + line + ': ItemRef phải là mã giả danh.');
         if (expectedVersion && version && version !== expectedVersion) errors.push('Dòng ' + line + ': phiên bản audit không khớp package.json.');
         if (buildHash && Object.keys(expectedHashes).length && !Object.values(expectedHashes).includes(buildHash)) {
             errors.push('Dòng ' + line + ': build hash audit không khớp sha256.txt.');

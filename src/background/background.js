@@ -34,31 +34,66 @@ function normalizePolicy(policy) {
 
 function evaluateReleasePolicy(policy, killSwitch) {
     const version = currentVersion();
-    const normalized = normalizePolicy(policy);
-    const allowed = normalized.allowedVersions.indexOf(version) >= 0;
-    const expired = normalized.expiresAt ? Date.now() > Date.parse(normalized.expiresAt) : false;
+    const isDev = !('update_url' in chrome.runtime.getManifest());
 
     if (killSwitch === true) {
-        return { ok: false, reason: 'KILL_SWITCH', version, policy: normalized };
+        return { ok: false, reason: 'KILL_SWITCH', version, policy: policy || null };
     }
-    if (!allowed) {
-        return { ok: false, reason: 'VERSION_NOT_ALLOWED', version, policy: normalized };
+
+    if (!isDev) {
+        // Enforce strict checks in production mode
+        if (!policy) {
+            return { ok: false, reason: 'POLICY_MISSING', version, policy: null };
+        }
+        if (!policy.allowedVersions || !Array.isArray(policy.allowedVersions) || policy.allowedVersions.indexOf(version) < 0) {
+            return { ok: false, reason: 'VERSION_NOT_ALLOWED', version, policy };
+        }
+        if (policy.expiresAt && Date.now() > Date.parse(policy.expiresAt)) {
+            return { ok: false, reason: 'VERSION_EXPIRED', version, policy };
+        }
+        const sha256Regex = /^[a-fA-F0-9]{64}$/;
+        if (!policy.buildHash || !sha256Regex.test(policy.buildHash)) {
+            return { ok: false, reason: 'POLICY_INVALID_HASH', version, policy };
+        }
+        if (policy.channel !== 'production') {
+            return { ok: false, reason: 'POLICY_INVALID_CHANNEL', version, policy };
+        }
+        return { ok: true, reason: 'OK', version, policy };
+    } else {
+        // In developer/debug mode, allow fallbacks to standard default release policy for easier testing.
+        const normalized = normalizePolicy(policy);
+        const allowed = normalized.allowedVersions.indexOf(version) >= 0;
+        const expired = normalized.expiresAt ? Date.now() > Date.parse(normalized.expiresAt) : false;
+
+        if (!allowed) {
+            return { ok: false, reason: 'VERSION_NOT_ALLOWED', version, policy: normalized };
+        }
+        if (expired) {
+            return { ok: false, reason: 'VERSION_EXPIRED', version, policy: normalized };
+        }
+        return { ok: true, reason: 'OK', version, policy: normalized };
     }
-    if (expired) {
-        return { ok: false, reason: 'VERSION_EXPIRED', version, policy: normalized };
-    }
-    return { ok: true, reason: 'OK', version, policy: normalized };
 }
 
 function ensureReleasePolicy(callback) {
     chrome.storage.local.get([RELEASE_POLICY_KEY, KILL_SWITCH_KEY], function (data) {
-        const policy = normalizePolicy(data[RELEASE_POLICY_KEY]);
+        const isDev = !('update_url' in chrome.runtime.getManifest());
         const updates = {};
-        if (!data[RELEASE_POLICY_KEY]) updates[RELEASE_POLICY_KEY] = policy;
-        if (typeof data[KILL_SWITCH_KEY] !== 'boolean') updates[KILL_SWITCH_KEY] = false;
+        
+        let policy = data[RELEASE_POLICY_KEY];
+        if (!policy && isDev) {
+            policy = defaultReleasePolicy();
+            updates[RELEASE_POLICY_KEY] = policy;
+        }
+        
+        if (typeof data[KILL_SWITCH_KEY] !== 'boolean') {
+            updates[KILL_SWITCH_KEY] = false;
+        }
 
         function done() {
-            const evaluated = evaluateReleasePolicy(policy, data[KILL_SWITCH_KEY] === true);
+            const currentPolicy = updates[RELEASE_POLICY_KEY] !== undefined ? updates[RELEASE_POLICY_KEY] : data[RELEASE_POLICY_KEY];
+            const currentKill = updates[KILL_SWITCH_KEY] !== undefined ? updates[KILL_SWITCH_KEY] : (data[KILL_SWITCH_KEY] === true);
+            const evaluated = evaluateReleasePolicy(currentPolicy, currentKill);
             if (callback) callback(evaluated);
         }
 

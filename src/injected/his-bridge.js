@@ -25,9 +25,66 @@
     var _currentHosobenhanid = '';
     var _currentBenhnhanId = '';
     var _currentPatientRowData = {};
+    var startFormWatcher = null;
 
     const BRIDGE_MARKER = '__quyen_ext__';
     const BRIDGE_DEBUG = window.__QUYEN_BRIDGE_DEBUG__ === true;
+    
+    // Retrieve session nonce from script tag
+    const scriptEl = document.getElementById('quyen-bridge-script');
+    
+    const _sessionNonce = scriptEl ? scriptEl.getAttribute('data-nonce') : 
+        (window.HIS && window.HIS.Message && typeof window.HIS.Message.getSessionNonce === 'function' ? window.HIS.Message.getSessionNonce() : '');
+    
+    // Replay protection rolling cache
+    const seenRequestIds = new Set();
+    const maxSeenRequests = 1000;
+
+    function isDuplicateRequest(requestId) {
+        if (!requestId) return false;
+        if (seenRequestIds.has(requestId)) return true;
+        seenRequestIds.add(requestId);
+        if (seenRequestIds.size > maxSeenRequests) {
+            const first = seenRequestIds.values().next().value;
+            seenRequestIds.delete(first);
+        }
+        return false;
+    }
+
+    function injectOverlayStyles(doc) {
+        if (!doc || typeof doc.createElement !== 'function') return;
+        if (doc.getElementById('quyen-badge-styles')) return;
+        const style = doc.createElement('style');
+        style.id = 'quyen-badge-styles';
+        style.textContent = `
+            input[data-quyen-source="nt006"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='65' height='18'><rect width='65' height='18' rx='4' fill='%2328a745'/><text x='6' y='13' fill='white' font-family='sans-serif' font-size='9' font-weight='bold'>NT.006</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 75px !important;
+            }
+            input[data-quyen-source="prev"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='18'><rect width='140' height='18' rx='4' fill='%23ffeeba'/><text x='6' y='13' fill='%23333' font-family='sans-serif' font-size='9' font-weight='bold'>Phiếu cũ — cần xác nhận</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 150px !important;
+            }
+            input[data-quyen-source="suggestion"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='130' height='18'><rect width='130' height='18' rx='4' fill='%23e2e3e5'/><text x='6' y='13' fill='%23666' font-family='sans-serif' font-size='9' font-weight='bold'>Gợi ý — chưa xác nhận</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 140px !important;
+            }
+            input[data-quyen-source="manual"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='70' height='18'><rect width='70' height='18' rx='4' fill='%23007bff'/><text x='6' y='13' fill='white' font-family='sans-serif' font-size='9' font-weight='bold'>Nhập tay</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 80px !important;
+            }
+        `;
+        (doc.head || doc.body || doc.documentElement).appendChild(style);
+    }
+
     const ALLOWED_TYPES = {
         QUYEN_BRIDGE_READY: true,
         QUYEN_CARESHEET_SEC4_DATA: true,
@@ -121,51 +178,80 @@
             source: 'bridge',
             module: payload.module || '',
             requestId: payload.requestId || '',
-            nonce: Math.random().toString(36).slice(2, 12)
+            nonce: Math.random().toString(36).slice(2, 12),
+            sessionNonce: _sessionNonce
         });
         const ctx = getBridgePatientContext();
         if (ctx.seq && envelope.seq === undefined) envelope.seq = ctx.seq;
         if (ctx.khambenhId && !envelope.khambenhId) envelope.khambenhId = ctx.khambenhId;
         if (ctx.hosobenhanid && !envelope.hosobenhanid) envelope.hosobenhanid = ctx.hosobenhanid;
+
+        // Schema validation
+        if (window.HIS && window.HIS.MessageSchema) {
+            const validation = window.HIS.MessageSchema.validate(envelope);
+            if (!validation.ok) {
+                console.error('[Bridge] Blocked outgoing schema validation failure:', validation.reason, validation.field || '');
+                return false;
+            }
+        }
+
         window.postMessage(envelope, window.location.origin);
         return true;
     }
 
     function isValidIncoming(event) {
-        if (!event || event.origin !== window.location.origin) return false;
+        if (!event || event.origin !== window.location.origin) {
+            console.log('[isValidIncoming DEBUG] failed origin check');
+            return false;
+        }
         const data = event.data || {};
-        if (!data.type || !ALLOWED_TYPES[data.type]) return false;
+        if (!data.type || !ALLOWED_TYPES[data.type]) {
+            console.log('[isValidIncoming DEBUG] failed type check:', data.type);
+            return false;
+        }
         if (data._q !== BRIDGE_MARKER) {
+            console.log('[isValidIncoming DEBUG] failed marker check');
             log.warn('Blocked legacy incoming message without marker:', data.type);
             return false;
         }
-        if (data.source && data.source !== 'content') return false;
-        if (data.ts && Math.abs(Date.now() - Number(data.ts)) > 5 * 60 * 1000) return false;
+
+        // Session nonce verification
+        if (!data.sessionNonce || data.sessionNonce !== _sessionNonce) {
+            console.warn('[Bridge] Blocked incoming message: invalid session nonce');
+            return false;
+        }
+
+        if (data.source && data.source !== 'content') {
+            console.log('[isValidIncoming DEBUG] failed source check:', data.source);
+            return false;
+        }
+        if (data.ts && Math.abs(Date.now() - Number(data.ts)) > 5 * 60 * 1000) {
+            console.log('[isValidIncoming DEBUG] failed ts check:', data.ts, Date.now());
+            return false;
+        }
+
+        // Replay/Duplicate check based on nonce (requestId is shared by replies so it cannot be used for dedup)
+        if (data.nonce && isDuplicateRequest(data.nonce)) {
+            log.warn('Blocked duplicate message nonce:', data.nonce);
+            return false;
+        }
+
+        // Schema validation
+        if (window.HIS && window.HIS.MessageSchema) {
+            const validation = window.HIS.MessageSchema.validate(data);
+            if (!validation.ok) {
+                console.error('[Bridge] Blocked incoming schema validation failure:', validation.reason, validation.field || '');
+                return false;
+            }
+        }
+
+        console.log('[isValidIncoming DEBUG] passed');
         return true;
     }
 
     // Mục đích: Spy đã được xoá sau khi hoàn thành diagnostic.
 
-    // ★ BUG-16: Retry jQuery detection if not available at init time
-    if (!_$) {
-        let _jqRetryCount = 0;
-        const _jqRetryTimer = setInterval(function () {
-            _$ = window['$'] || window['jQuery'];
-            _jqRetryCount++;
-            if (_$) {
-                clearInterval(_jqRetryTimer);
-                log.debug('jQuery found after ' + (_jqRetryCount * 500) + 'ms retry');
-            } else if (_jqRetryCount >= 20) {
-                clearInterval(_jqRetryTimer);
-                log.warn('jQuery not found after 10s — grid hooks disabled');
-            }
-        }, 500);
-    }
-
-    log.debug('HIS Bridge v__EXT_VERSION__ — __EXT_NAME__! __EXT_EMOJI__');
-
-    // ★ 3.2: HIS Version Detection — ghi nhận version HIS đang chạy
-    (function detectHISVersion() {
+    function detectHISVersion() {
         try {
             const sysInfo = window.systemInfo || window.SYSTEM_INFO || {};
             const hisVersion = sysInfo.VERSION || sysInfo.version ||
@@ -179,13 +265,78 @@
                 jqVersion: jqVersion
             });
         } catch (e) { log.warn('HIS version detection failed:', e.message); }
-    })();
+    }
 
-    // ★ AUDIT FIX: Chỉ cho phép Điều dưỡng dùng (USER_GROUP_ID == "5")
-    if (window.userInfo && window.userInfo.USER_GROUP_ID && window.userInfo.USER_GROUP_ID !== "5") {
-        log.warn('TỪ CHỐI TRUY CẬP: Nurse Extension chỉ được phép sử dụng bởi Điều Dưỡng. Group:', window.userInfo.USER_GROUP_ID);
-        postToContent('QUYEN_ROLE_BLOCK', { role: window.userInfo.USER_GROUP_ID });
-        return; // Dừng toàn bộ hoạt động của bridge
+    function initBridge() {
+        _$ = window['$'] || window['jQuery'];
+        if (!_$) {
+            let _jqRetryCount = 0;
+            const _jqRetryTimer = setInterval(function () {
+                _$ = window['$'] || window['jQuery'];
+                _jqRetryCount++;
+                if (_$) {
+                    clearInterval(_jqRetryTimer);
+                    log.debug('jQuery found after ' + (_jqRetryCount * 500) + 'ms retry');
+                    setupAjaxHook();
+                } else if (_jqRetryCount >= 20) {
+                    clearInterval(_jqRetryTimer);
+                    log.warn('jQuery not found after 10s — grid hooks disabled');
+                }
+            }, 500);
+        } else {
+            setupAjaxHook();
+        }
+
+        log.debug('HIS Bridge v__EXT_VERSION__ — __EXT_NAME__! __EXT_EMOJI__');
+
+        // version check
+        detectHISVersion();
+
+        // Register event listener
+        window.addEventListener('message', messageListener);
+
+        // Grid hooks
+        setupPatientGridHook();
+
+        // Scan forms
+        setTimeout(function() {
+            if (startFormWatcher) startFormWatcher();
+        }, 100);
+
+        // Bridge ready
+        postToContent('QUYEN_BRIDGE_READY', { status: 'ready', bridgeVersion: '__EXT_VERSION__' });
+    }
+
+    // Polling verification check for window.userInfo
+    if (window.userInfo) {
+        var userGroupId = window.userInfo.USER_GROUP_ID || '';
+        if (userGroupId === '5') {
+            log.debug('Xác minh người dùng thành công: Điều Dưỡng (USER_GROUP_ID = "5").');
+            initBridge();
+        } else {
+            log.warn('TỪ CHỐI TRUY CẬP: Nhóm người dùng khác 5 (Nurse). Nhóm:', userGroupId);
+            postToContent('QUYEN_ROLE_BLOCK', { role: userGroupId, reason: 'ROLE_MISMATCH' });
+        }
+    } else {
+        let verifyAttempts = 0;
+        const verifyInterval = setInterval(function () {
+            verifyAttempts++;
+            if (window.userInfo) {
+                clearInterval(verifyInterval);
+                var userGroupId = window.userInfo.USER_GROUP_ID || '';
+                if (userGroupId === '5') {
+                    log.debug('Xác minh người dùng thành công: Điều Dưỡng (USER_GROUP_ID = "5").');
+                    initBridge();
+                } else {
+                    log.warn('TỪ CHỐI TRUY CẬP: Nhóm người dùng khác 5 (Nurse). Nhóm:', userGroupId);
+                    postToContent('QUYEN_ROLE_BLOCK', { role: userGroupId, reason: 'ROLE_MISMATCH' });
+                }
+            } else if (verifyAttempts >= 50) {
+                clearInterval(verifyInterval);
+                log.warn('TỪ CHỐI TRUY CẬP: Không tìm thấy window.userInfo sau 5s (ROLE_TIMEOUT).');
+                postToContent('QUYEN_ROLE_BLOCK', { role: 'UNVERIFIED', reason: 'ROLE_TIMEOUT' });
+            }
+        }, 100);
     }
 
 
@@ -220,6 +371,111 @@
             } catch (e) { /* cross-origin — expected for sandboxed iframes */ }
         }
         return null;
+    }
+
+    function messageListener(event) {
+        if (!isValidIncoming(event)) return;
+
+        var data = event.data || {};
+
+        // 2. Patient lock verification check (patientSeq and khambenhId)
+        var mutationTypes = {
+            'QUYEN_COMBOGRID_CLICK': true,
+            'QUYEN_KEYBOARD_SELECT': true,
+            'QUYEN_TRIGGER_CHANGE': true,
+            'QUYEN_TYPE_TEXT': true,
+            'QUYEN_FILL_VT_ITEM': true,
+            'QUYEN_VT_SEND_ENTER': true,
+            'QUYEN_FILL_COMBOGRID': true
+        };
+
+        if (mutationTypes[data.type]) {
+            var reqSeq = data.patientSeq;
+            var reqKB = data.khambenhId;
+            if (reqSeq !== undefined && String(reqSeq) !== String(_patientSeq)) {
+                log.warn('Blocked mutation message of type ' + data.type + ': patientSeq mismatch (' + reqSeq + ' !== ' + _patientSeq + ')');
+                if (data.type === 'QUYEN_FILL_VT_ITEM') {
+                    postToContent('QUYEN_VT_FILL_RESULT', { requestId: data.requestId, success: false, ma: data.ma, error: 'Bệnh nhân hoặc lượt khám thay đổi đột ngột.' });
+                }
+                return;
+            }
+            if (reqKB !== undefined && String(reqKB) !== String(_currentKhambenhId)) {
+                log.warn('Blocked mutation message of type ' + data.type + ': khambenhId mismatch (' + reqKB + ' !== ' + _currentKhambenhId + ')');
+                if (data.type === 'QUYEN_FILL_VT_ITEM') {
+                    postToContent('QUYEN_VT_FILL_RESULT', { requestId: data.requestId, success: false, ma: data.ma, error: 'Bệnh nhân hoặc lượt khám thay đổi đột ngột.' });
+                }
+                return;
+            }
+        }
+
+        try {
+            console.log('[Message Listener] processing type:', event.data.type);
+            switch (event.data.type) {
+                case 'QUYEN_REQ_DRUG_LIST':
+                    handleDrugListRequest(event.data.requestId, event.data.treatmentId);
+                    break;
+                case 'QUYEN_REQ_PATIENT_INFO':
+                    fetchPatientInfo(event.data.rowId, event.data.requestId);
+                    break;
+                case 'QUYEN_REQ_CALL_SP':
+                    callSP(event.data.spName, event.data.params, event.data.requestId);
+                    break;
+                case 'QUYEN_COMBOGRID_CLICK':
+                    handleComboGridClick(event.data.marker, event.data.requestId);
+                    break;
+                case 'QUYEN_KEYBOARD_SELECT':
+                    handleKeyboardSelect(event.data.inputMarker, event.data.itemIndex, event.data.requestId);
+                    break;
+                case 'QUYEN_TRIGGER_SEARCH':
+                    handleTriggerSearch(event.data.inputMarker);
+                    break;
+                case 'QUYEN_TRIGGER_CHANGE':
+                    try {
+                        if (_$) {
+                            const sel = event.data.selector;
+                            const val = event.data.value;
+                            const $el = _$(sel);
+                            if ($el.length) {
+                                $el.val(val).trigger('change');
+                                log.debug('TRIGGER_CHANGE: set', sel, '=', val);
+                            }
+                        }
+                    } catch (e) { log.warn('TRIGGER_CHANGE error:', e); }
+                    break;
+                case 'QUYEN_WAKE_UP_GRID':
+                    handleWakeUpGrid(event.data.inputMarker);
+                    break;
+                case 'QUYEN_TYPE_TEXT':
+                    handleTypeText(event.data.inputMarker, event.data.text);
+                    break;
+                case 'QUYEN_REQ_CARESHEET_SEC4':
+                    handleCareSheetSec4Request(event.data.seq, event.data.khambenhId, event.data.requestId);
+                    break;
+                case 'QUYEN_REQ_VITALS':
+                    fetchVitalsFromHIS();
+                    break;
+                case 'QUYEN_REQ_VATTU_DATA':
+                    fetchVatTuData(
+                        event.data.khambenhId   || _currentKhambenhId,
+                        event.data.benhnhanId   || _currentBenhnhanId,
+                        event.data.hosobenhanid || _currentHosobenhanid,
+                        event.data.requestId
+                    );
+                    break;
+                case 'QUYEN_FILL_VT_ITEM':
+                    console.log('[Message Listener] handleFillVtItem start');
+                    handleFillVtItem(event.data);
+                    break;
+                case 'QUYEN_VT_SEND_ENTER':
+                    handleVtSendEnter();
+                    break;
+                case 'QUYEN_FILL_COMBOGRID':
+                    handleFillComboGrid(event.data.tasks);
+                    break;
+            }
+        } catch (e) {
+            console.error('[Bridge] Message listener error:', e);
+        }
     }
 
     // ==========================================
@@ -635,29 +891,30 @@
         }
     }
 
-    setupPatientGridHook();
+    function setupAjaxHook() {
+        if (_$ && _$.ajax && window.__QUYEN_AJAX_SNOOP !== false) {
+            if (_$.ajax.__quyen_hooked__) return;
+            const originalAjax = _$.ajax;
+            _$.ajax = function (options) {
+                const originalSuccess = options.success;
 
-    if (_$ && window.__QUYEN_AJAX_SNOOP !== false) {
-        const originalAjax = _$.ajax;
-        _$.ajax = function (options) {
-            const originalSuccess = options.success;
+                options.success = function (data, textStatus, jqXHR) {
+                    try {
+                        // Kiểm tra xem response có phải từ API thuốc không
+                        checkForDrugData(options, data);
+                        // Kiểm tra xem response có phải từ API phiếu chăm sóc không
+                        checkForCareSheetData(options, data);
+                    } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
 
-            options.success = function (data, textStatus, jqXHR) {
-                try {
-                    // Kiểm tra xem response có phải từ API thuốc không
-                    checkForDrugData(options, data);
-                    // Kiểm tra xem response có phải từ API phiếu chăm sóc không
-                    checkForCareSheetData(options, data);
-                } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
+                    // Gọi callback gốc
+                    if (originalSuccess) originalSuccess.apply(this, arguments);
+                };
 
-                // Gọi callback gốc
-                if (originalSuccess) originalSuccess.apply(this, arguments);
+                return originalAjax.apply(this, arguments);
             };
-
-            return originalAjax.apply(this, arguments);
-        };
-
-        log.debug('AJAX snooping đã bật — đang chờ bắt dữ liệu thuốc...');
+            _$.ajax.__quyen_hooked__ = true;
+            log.debug('AJAX snooping đã bật — đang chờ bắt dữ liệu thuốc...');
+        }
     }
 
     /**
@@ -1388,81 +1645,7 @@
         return hasData;
     }
 
-    // ==========================================
-    // MESSAGE HANDLER
-    // ==========================================
-    window.addEventListener('message', function (event) {
-        if (!isValidIncoming(event)) return;
 
-        try {
-        switch (event.data.type) {
-            case 'QUYEN_REQ_DRUG_LIST':
-                handleDrugListRequest(event.data.requestId, event.data.treatmentId);
-                break;
-            case 'QUYEN_REQ_PATIENT_INFO':
-                fetchPatientInfo(event.data.rowId, event.data.requestId);
-                break;
-            case 'QUYEN_REQ_CALL_SP':
-                callSP(event.data.spName, event.data.params, event.data.requestId);
-                break;
-            case 'QUYEN_COMBOGRID_CLICK':
-                handleComboGridClick(event.data.marker, event.data.requestId);
-                break;
-            case 'QUYEN_KEYBOARD_SELECT':
-                handleKeyboardSelect(event.data.inputMarker, event.data.itemIndex, event.data.requestId);
-                break;
-            case 'QUYEN_TRIGGER_SEARCH':
-                handleTriggerSearch(event.data.inputMarker);
-                break;
-            case 'QUYEN_TRIGGER_CHANGE':
-                try {
-                    if (_$) {
-                        const sel = event.data.selector;
-                        const val = event.data.value;
-                        const $el = _$(sel);
-                        if ($el.length) {
-                            $el.val(val).trigger('change');
-                            log.debug('TRIGGER_CHANGE: set', sel, '=', val);
-                        }
-                    }
-                } catch (e) { log.warn('TRIGGER_CHANGE error:', e); }
-                break;
-            case 'QUYEN_WAKE_UP_GRID':
-                handleWakeUpGrid(event.data.inputMarker);
-                break;
-            case 'QUYEN_TYPE_TEXT':
-                handleTypeText(event.data.inputMarker, event.data.text);
-                break;
-            case 'QUYEN_REQ_CARESHEET_SEC4':
-                handleCareSheetSec4Request(event.data.seq, event.data.khambenhId, event.data.requestId);
-                break;
-            case 'QUYEN_REQ_VITALS':
-                fetchVitalsFromHIS();
-                break;
-            case 'QUYEN_REQ_VATTU_DATA':
-                fetchVatTuData(
-                    event.data.khambenhId   || _currentKhambenhId,
-                    event.data.benhnhanId   || _currentBenhnhanId,
-                    event.data.hosobenhanid || _currentHosobenhanid,
-                    event.data.requestId
-                );
-                break;
-            case 'QUYEN_FILL_VT_ITEM':
-                handleFillVtItem(event.data);
-                break;
-            case 'QUYEN_VT_SEND_ENTER':
-                handleVtSendEnter();
-                break;
-            case 'QUYEN_FILL_COMBOGRID':
-                handleFillComboGrid(event.data.tasks);
-                break;
-
-
-        }
-        } catch (msgError) {
-            log.error('❌ Message handler error [' + (event.data.type || '?') + ']:', msgError.message || msgError);
-        }
-    });
 
     // ==========================================
     // COMBOGRID FILL — Set DULIEU trực tiếp vào Section 17
@@ -1517,6 +1700,10 @@
             // Enable → set value → disable lại
             $display.prop('disabled', false);
             $display.val(task.value);
+            $display.attr('data-quyen-source', 'suggestion');
+            if (iframe && iframe.contentWindow) {
+                injectOverlayStyles(iframe.contentWindow.document);
+            }
             $display.trigger('input');
             $display.trigger('change');
             $display.prop('disabled', true);
@@ -1802,12 +1989,39 @@
         var doctor   = data.doctor   || '';
         var requestId = data.requestId || '';
         var fastPathEnabled = data.fastPathEnabled === true || window.__QUYEN_VATTU_FAST_PATH_ENABLED__ === true;
+        var vtSource   = data.vtSource   || 'suggestion';
 
         // ★ BẬT GUARD: Chặn chuyển BN trong suốt quá trình fill
         _vtFillInProgress = true;
 
+        function showBridgeLoading(doc, msg) {
+            if (!doc || typeof doc.createElement !== 'function') return;
+            var overlay = doc.getElementById('quyen-bridge-loading');
+            if (!overlay) {
+                overlay = doc.createElement('div');
+                overlay.id = 'quyen-bridge-loading';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:bold;color:#e91e63;font-size:16px;pointer-events:none;transition:opacity 0.2s;';
+                if (!doc.getElementById('quyen-spin-style')) {
+                    var style = doc.createElement('style');
+                    style.id = 'quyen-spin-style';
+                    style.textContent = '@keyframes quyen-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+                    doc.head.appendChild(style);
+                }
+                doc.body.appendChild(overlay);
+            }
+            overlay.innerHTML = '<span style="display:inline-block;animation:quyen-spin 1s linear infinite;margin-bottom:8px;font-size:32px;">⏳</span><div style="background:#fff;padding:6px 16px;border-radius:20px;box-shadow:0 4px 12px rgba(0,0,0,0.15);border:1px solid #f8bbd0;">' + msg + '</div>';
+        }
+
+        function hideBridgeLoading(doc) {
+            if (!doc) return;
+            var overlay = doc.getElementById('quyen-bridge-loading');
+            if (overlay) overlay.remove();
+        }
+
+        var _currentDoc = null; // Save for cleanup
         function postResult(ok, err) {
             _vtFillInProgress = false;
+            hideBridgeLoading(_currentDoc);
             postToContent('QUYEN_VT_FILL_RESULT', { requestId: requestId, success: ok, ma: ma, error: err || '', verified: ok === true });
         }
 
@@ -1825,6 +2039,9 @@
             } catch(e) { /* cross-origin */ }
         }
         if (!vtDoc) { postResult(false, 'Chưa mở phiếu vật tư.'); return; }
+        
+        _currentDoc = vtDoc;
+        showBridgeLoading(vtDoc, 'Đang điền: ' + ten + '...');
 
         var vtInput  = vtDoc.getElementById('txtDS_THUOC');
         var ddSelect = vtDoc.getElementById('cboDUONG_DUNG');
@@ -1837,6 +2054,13 @@
 
         function triggerInput(el, val) {
             el.value = val;
+            el.setAttribute('data-quyen-source', vtSource);
+            if (el.getAttribute('data-has-quyen-source-listener') !== 'true') {
+                el.setAttribute('data-has-quyen-source-listener', 'true');
+                el.addEventListener('input', function () {
+                    el.setAttribute('data-quyen-source', 'manual');
+                });
+            }
             if ($jq) {
                 $jq(el).val(val).trigger('input').trigger('keyup').trigger('change');
             } else {
@@ -1853,34 +2077,50 @@
         var searchTerm = ma || ten;
 
         // ── 2. Chờ ComboGrid widget sẵn sàng ──
-        // Sau khi scanForms auto-chọn kho, widget cần 2-4s để load data.
-        // Nếu gõ ngay → widget bỏ qua → popup không hiện → timeout.
         function waitForWidgetReady(attempt) {
             if (attempt > 10) {
-                log.warn('🧰 Kho chưa sẵn sàng sau 5s, thử gõ...');
                 startTyping();
                 return;
             }
             var khoSelect = vtDoc.getElementById('cboMA_KHO');
             var khoReady = khoSelect && khoSelect.value && khoSelect.value !== '' && khoSelect.value !== '-1' && khoSelect.value !== '0';
             if (!khoReady) {
-                log.debug('🧰 Chờ kho... (lần ' + attempt + ')');
                 setTimeout(function() { waitForWidgetReady(attempt + 1); }, 500);
                 return;
             }
-            // Kho đã chọn → chờ 1.5s cho widget tải data xong
-            log.debug('🧰 Kho OK (' + khoSelect.value + '), chờ widget 1.5s...');
-            setTimeout(startTyping, 1500);
+            
+            var currentKho = khoSelect.value;
+            var lastKho = vtDoc.body.getAttribute('data-quyen-last-kho') || '';
+            var jq = (typeof $jq !== 'undefined') ? $jq : (window.jQuery || window.$);
+            
+            if (currentKho === lastKho) {
+                // Đã load rồi, gõ luôn
+                setTimeout(startTyping, 50);
+            } else {
+                vtDoc.body.setAttribute('data-quyen-last-kho', currentKho);
+                var waitStart = Date.now();
+                function waitKhoAjax() {
+                    if (jq && jq.active > 0 && (Date.now() - waitStart < 3000)) {
+                        setTimeout(waitKhoAjax, 50);
+                    } else {
+                        setTimeout(startTyping, 150); // Buffer cho HIS render
+                    }
+                }
+                setTimeout(waitKhoAjax, 100);
+            }
         }
 
         // ── HELPER: Điền Đường dùng, SL, Cách dùng & Click "Thêm" ──
-        function fillDetailsAndSave(delay) {
-            setTimeout(function () {
+        function fillDetailsAndSave(fallbackDelay) {
+            var startTime = Date.now();
+            var jq = (typeof $jq !== 'undefined') ? $jq : (window.jQuery || window.$);
+
+            function doFill() {
                 if (ddSelect && ddSelect.options) {
                     for (var oi = 0; oi < ddSelect.options.length; oi++) {
                         if (ddSelect.options[oi].value === '2445') {
                             ddSelect.selectedIndex = oi;
-                            if ($jq) $jq('#cboDUONG_DUNG').val('2445').trigger('change');
+                            if (jq) jq('#cboDUONG_DUNG').val('2445').trigger('change');
                             else ddSelect.dispatchEvent(new Event('change', { bubbles: true }));
                             log.debug('🧰 Đường dùng = Dùng ngoài (2445)');
                             break;
@@ -1915,10 +2155,29 @@
                 }
 
                 postResult(true, '');
-            }, delay || 1500);
+            }
+
+            function waitAjax() {
+                if (jq && jq.active > 0 && (Date.now() - startTime < 3000)) {
+                    setTimeout(waitAjax, 50);
+                } else {
+                    // AJAX xong (hoặc timeout), đợi thêm 50ms buffer cho HIS xử lý data/DOM
+                    setTimeout(doFill, 50);
+                }
+            }
+
+            // Bắt đầu chờ AJAX
+            setTimeout(waitAjax, 50);
         }
 
-        function startTyping() {
+         function startTyping() {
+            vtInput.setAttribute('data-quyen-source', vtSource);
+            if (vtInput.getAttribute('data-has-quyen-source-listener') !== 'true') {
+                vtInput.setAttribute('data-has-quyen-source-listener', 'true');
+                vtInput.addEventListener('input', function () {
+                    vtInput.setAttribute('data-quyen-source', 'manual');
+                });
+            }
             vtInput.focus();
             vtInput.click();
             vtInput.value = '';
@@ -1963,7 +2222,7 @@
                     if (injected) {
                         triggerInput(vtInput, ten);
                         log.debug('🧰 ✅ Tiêm thành công mã: ' + ma + '. Fast Path kích hoạt!');
-                        fillDetailsAndSave(500); // 🚀 Rút ngắn timer
+                        fillDetailsAndSave(1500); // Revert to 1500 to match safe polling delay
                         return; // Done
                     }
                 } catch(injErr) {
@@ -2032,22 +2291,40 @@
 
         // ── 3. POLLING COMBOGRID (Dành cho Fallback) ──
         function startComboGridPolling() {
-            var retries = 0, maxRetries = 25;
-            var checkTimer = setInterval(function () {
-                retries++;
-                var popupRow = null;
-                var allVisible = [];
+            var startTime = Date.now();
+            var searchDocs = [vtDoc];
+            try { if (window.parent && window.parent.document && window.parent.document !== vtDoc) searchDocs.push(window.parent.document); } catch(e) {}
+            try { if (window.top && window.top.document && window.top.document !== vtDoc) searchDocs.push(window.top.document); } catch(e) {}
+            if (document !== vtDoc) searchDocs.push(document);
 
-                if (retries > 1 && retries % 6 === 0) {
-                    log.debug('🧰 Re-trigger (lần ' + retries + ')...');
+            var latencyHistory = window.__quyen_latency_history || [];
+            window.__quyen_latency_history = latencyHistory;
+
+            function getP95Latency() {
+                if (latencyHistory.length === 0) return 500;
+                var sorted = latencyHistory.slice().sort(function(a, b) { return a - b; });
+                var idx = Math.floor(sorted.length * 0.95);
+                return sorted[idx] || 500;
+            }
+
+            var p95 = getP95Latency();
+            var timeoutMs = Math.min(10000, Math.max(7500, p95 * 3));
+
+            var retriggerTimer = null;
+            var retriggerCount = 0;
+
+            retriggerTimer = setInterval(function() {
+                retriggerCount++;
+                if (retriggerCount > 1 && retriggerCount % 3 === 0) {
+                    log.debug('🧰 Re-trigger (lần ' + retriggerCount + ')...');
                     vtInput.focus();
                     vtInput.click();
                     vtInput.value = '';
-                    try { vtInput.dispatchEvent(new elWin.Event('input', { bubbles: true })); } catch(e) { /* cross-frame safe */ }
+                    try { vtInput.dispatchEvent(new elWin.Event('input', { bubbles: true })); } catch(e) {}
                     var ri = 0;
                     function retypeChar() {
                         if (ri >= searchTerm.length) {
-                            try { vtInput.dispatchEvent(new elWin.KeyboardEvent('keydown', { keyCode: 40, which: 40, key: 'ArrowDown', bubbles: true })); } catch(e2) { /* cross-frame safe */ }
+                            try { vtInput.dispatchEvent(new elWin.KeyboardEvent('keydown', { keyCode: 40, which: 40, key: 'ArrowDown', bubbles: true })); } catch(e2) {}
                             return;
                         }
                         var c2 = searchTerm[ri], k2 = c2.toUpperCase().charCodeAt(0);
@@ -2062,86 +2339,161 @@
                     }
                     retypeChar();
                 }
+            }, 2000);
 
-                var searchDocs = [vtDoc];
-                try { if (window.parent && window.parent.document && window.parent.document !== vtDoc) searchDocs.push(window.parent.document); } catch(e) { /* cross-origin safe */ }
-                try { if (window.top && window.top.document && window.top.document !== vtDoc) searchDocs.push(window.top.document); } catch(e) { /* cross-origin safe */ }
-                if (document !== vtDoc) searchDocs.push(document);
+            function observeElement(searchDocs, targetSelector, callback, timeoutMs) {
+                var finished = false;
+                var timeoutId = null;
+                var backupPollId = null;
+                var observers = [];
 
-                for (var si = 0; si < searchDocs.length; si++) {
-                    try {
-                        var searchDoc = searchDocs[si];
-                        var cgItems = searchDoc.querySelectorAll('.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item, .cg-comboItem');
-                        for (var cgi = 0; cgi < cgItems.length; cgi++) {
-                            try { var cgR = cgItems[cgi].getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
-                            catch(ex) { if (cgItems[cgi].offsetHeight === 0) continue; }
-                            allVisible.push(cgItems[cgi]);
-                        }
-
-                        if (allVisible.length === 0) {
-                            var acLis = searchDoc.querySelectorAll('ul.ui-autocomplete:not([style*="display: none"]) li.ui-menu-item');
-                            for (var ali = 0; ali < acLis.length; ali++) {
-                                try { if (acLis[ali].getBoundingClientRect().height > 0) allVisible.push(acLis[ali]); }
-                                catch(e3) { if (acLis[ali].offsetHeight > 0) allVisible.push(acLis[ali]); }
-                            }
-                        }
-
-                        if (allVisible.length > 0) {
-                            log.debug('🧰 Tìm thấy', allVisible.length, 'popup items');
-                            break;
-                        }
-                    } catch(e) { /* cross-origin */ }
+                function cleanup() {
+                    if (finished) return;
+                    finished = true;
+                    if (timeoutId) clearTimeout(timeoutId);
+                    if (backupPollId) clearInterval(backupPollId);
+                    if (retriggerTimer) clearInterval(retriggerTimer);
+                    for (var oi = 0; oi < observers.length; oi++) {
+                        try { observers[oi].disconnect(); } catch(e) {}
+                    }
                 }
 
-                if (allVisible.length > 0) {
-                    for (var vi = 0; vi < allVisible.length; vi++) {
-                        var rowText = (allVisible[vi].textContent || '').toUpperCase();
-                        if (ma && rowText.indexOf(ma.toUpperCase()) >= 0) {
+                function check() {
+                    if (finished) return;
+                    var allVisible = [];
+                    for (var si = 0; si < searchDocs.length; si++) {
+                        try {
+                            var searchDoc = searchDocs[si];
+                            var cgItems = searchDoc.querySelectorAll(targetSelector);
+                            for (var cgi = 0; cgi < cgItems.length; cgi++) {
+                                try { var cgR = cgItems[cgi].getBoundingClientRect(); if (cgR.height === 0 || cgR.width === 0) continue; }
+                                catch(ex) { if (cgItems[cgi].offsetHeight === 0) continue; }
+                                allVisible.push(cgItems[cgi]);
+                            }
+
+                            if (allVisible.length === 0) {
+                                var acLis = searchDoc.querySelectorAll('ul.ui-autocomplete:not([style*="display: none"]) li.ui-menu-item');
+                                for (var ali = 0; ali < acLis.length; ali++) {
+                                    try { if (acLis[ali].getBoundingClientRect().height > 0) allVisible.push(acLis[ali]); }
+                                    catch(e3) { if (acLis[ali].offsetHeight > 0) allVisible.push(acLis[ali]); }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
+                    if (allVisible.length > 0) {
+                        cleanup();
+                        callback(allVisible);
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (check()) return cleanup;
+
+                for (var i = 0; i < searchDocs.length; i++) {
+                    try {
+                        var doc = searchDocs[i];
+                        var targetNode = doc.body || doc.documentElement;
+                        if (!targetNode) continue;
+                        
+                        var observer = new MutationObserver(function() {
+                            check();
+                        });
+                        observer.observe(targetNode, { childList: true, subtree: false });
+                        observers.push(observer);
+                    } catch (e) {}
+                }
+
+                backupPollId = setInterval(check, 500);
+
+                timeoutId = setTimeout(function() {
+                    if (finished) return;
+                    if (!check()) {
+                        cleanup();
+                        callback([], new Error('Timeout'));
+                    }
+                }, timeoutMs || 10000);
+
+                return cleanup;
+            }
+
+            observeElement(searchDocs, '.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item, .cg-comboItem', function (allVisible, err) {
+                if (err || !allVisible || allVisible.length === 0) {
+                    log.warn('🧰 Combogrid không detect được sau ' + (timeoutMs / 1000) + 's');
+                    postResult(false, 'Không tìm thấy "' + searchTerm + '" trong kho VT. Kiểm tra lại tên hoặc thêm thủ công.');
+                    return;
+                }
+
+                var elapsed = Date.now() - startTime;
+                latencyHistory.push(elapsed);
+                if (latencyHistory.length > 20) latencyHistory.shift();
+
+                try {
+                    var queue = [];
+                    var stored = localStorage['getItem']('quyen_perf_telemetry');
+                    if (stored) queue = JSON.parse(stored) || [];
+                    queue.push({
+                        timestamp: new Date().toISOString(),
+                        actionType: 'observe',
+                        selector: '.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item, .cg-comboItem',
+                        duration: elapsed
+                    });
+                    while (queue.length > 100) queue.shift();
+                    localStorage['setItem']('quyen_perf_telemetry', JSON.stringify(queue));
+                } catch(e) {}
+
+                var popupRow = null;
+                for (var vi = 0; vi < allVisible.length; vi++) {
+                    var rowText = (allVisible[vi].textContent || '').toUpperCase();
+                    if (ma) {
+                        if (rowText.indexOf(ma.toUpperCase()) >= 0) {
                             popupRow = allVisible[vi];
                             log.debug('🧰 Match mã ' + ma + ' ở dòng', vi);
                             break;
                         }
-                    }
-                    if (!popupRow) popupRow = allVisible[0];
-                }
-
-                if (popupRow) {
-                    clearInterval(checkTimer);
-                    var innerDivs = popupRow.querySelectorAll('.cg-DivItem');
-                    var clickTarget = popupRow;
-                    for (var ci2 = 0; ci2 < innerDivs.length; ci2++) {
-                        if (innerDivs[ci2].offsetWidth > 0 && innerDivs[ci2].style.display !== 'none') {
-                            clickTarget = innerDivs[ci2]; break;
+                    } else if (ten) {
+                        if (rowText.indexOf(ten.toUpperCase()) >= 0) {
+                            popupRow = allVisible[vi];
+                            log.debug('🧰 Match tên ' + ten + ' ở dòng', vi);
+                            break;
                         }
                     }
-
-                    log.debug('🧰 Click popup:', clickTarget.className);
-
-                    clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                    clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                    clickTarget.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-                    clickTarget.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
-
-                    try {
-                        var itemWin = (clickTarget.ownerDocument && clickTarget.ownerDocument.defaultView) || window;
-                        var jq = itemWin.jQuery || itemWin.$ || (window.parent && window.parent.jQuery);
-                        if (jq) {
-                            jq(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
-                            jq(popupRow).trigger('mousedown').trigger('mouseup').trigger('click');
-                        }
-                    } catch (e) { /* ignore */ }
-
-                    // ── Khởi chạy Helper ở chế độ Fallback ──
-                    if (typeof fillDetailsAndSave === 'function') {
-                        fillDetailsAndSave(1500);
-                    }
-
-                } else if (retries >= maxRetries) {
-                    clearInterval(checkTimer);
-                    log.warn('🧰 Combogrid không detect được sau 7.5s');
-                    postResult(false, 'Không tìm thấy "' + searchTerm + '" trong kho VT. Kiểm tra lại tên hoặc thêm thủ công.');
                 }
-            }, 500);
+
+                if (!popupRow) {
+                    postResult(false, 'Không tìm thấy vật tư khớp với mã/tên: ' + (ma || ten));
+                    return;
+                }
+
+                var innerDivs = popupRow.querySelectorAll('.cg-DivItem');
+                var clickTarget = popupRow;
+                for (var ci2 = 0; ci2 < innerDivs.length; ci2++) {
+                    if (innerDivs[ci2].offsetWidth > 0 && innerDivs[ci2].style.display !== 'none') {
+                        clickTarget = innerDivs[ci2]; break;
+                    }
+                }
+
+                log.debug('🧰 Click popup:', clickTarget.className);
+
+                clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                clickTarget.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+                clickTarget.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+
+                try {
+                    var itemWin = (clickTarget.ownerDocument && clickTarget.ownerDocument.defaultView) || window;
+                    var jq = itemWin.jQuery || itemWin.$ || (window.parent && window.parent.jQuery);
+                    if (jq) {
+                        jq(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
+                        jq(popupRow).trigger('mousedown').trigger('mouseup').trigger('click');
+                    }
+                } catch (e) { /* ignore */ }
+
+                if (typeof fillDetailsAndSave === 'function') {
+                    fillDetailsAndSave(1500);
+                }
+            }, timeoutMs);
         }
     }
 
@@ -2850,9 +3202,10 @@
         let _lastTab = null;
 
         function checkHref(href) {
-            if (href.indexOf('NTU02D006') >= 0) return 'infusion';   // Phiếu truyền dịch
-            if (href.indexOf('NTU02D204') >= 0) return 'caresheet';   // Phiếu chăm sóc
-            if (href.indexOf('NTU02D021') >= 0) return 'vattu';       // Phiếu vật tư
+            if (!href) return null;
+            if (href.indexOf('NTU02D006') >= 0 || href.indexOf('NTU02D007') >= 0 || href.indexOf('PhieuTruyenDich') >= 0) return 'infusion';   // Phiếu truyền dịch
+            if (href.indexOf('NTU02D204') >= 0 || href.indexOf('NTU82D204') >= 0 || href.indexOf('ThemPhieu') >= 0 || href.indexOf('PhieuChamSoc') >= 0 || href.indexOf('NTU02D005') >= 0) return 'caresheet';   // Phiếu chăm sóc
+            if (href.indexOf('NTU02D021') >= 0 || href.indexOf('VatTu') >= 0) return 'vattu';       // Phiếu vật tư
             return null;
         }
 
@@ -2992,10 +3345,8 @@
             }
         }
 
-        // Delay 3s sau khi trang load để tránh false trigger
-        setTimeout(function () { setInterval(scanForms, 1500); }, 3000);
+        startFormWatcher = function () {
+            setTimeout(function () { setInterval(scanForms, 1500); }, 3000);
+        };
     })();
-
-    // ★ AUDIT FIX: Thêm bridgeVersion để content script có thể kiểm tra compatibility
-    postToContent('QUYEN_BRIDGE_READY', { status: 'ready', bridgeVersion: '__EXT_VERSION__' });
 })();

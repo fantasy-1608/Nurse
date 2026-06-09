@@ -1,6 +1,6 @@
 {
   "name": "nurse",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "Điều Dưỡng — Trợ lý tự động nhập liệu trên VNPT HIS",
   "main": "index.js",
   "directories": {
@@ -8,9 +8,9 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node test/no-demo-tab.test.js && node test/security-harness.test.js && node test/repo-phi-gate.test.js && node test/release-gate.test.js && node test/audit-export-gate.test.js && node test/pilot-evidence-gate.test.js && node test/rollout-inventory-gate.test.js && node test/hospital-release-gate.test.js",
+    "test": "node test/no-demo-tab.test.js && node test/security-harness.test.js && node test/repo-phi-gate.test.js && node test/release-gate.test.js && node test/perf-metrics-gate.test.js && node test/audit-export-gate.test.js && node test/pilot-evidence-gate.test.js && node test/rollout-inventory-gate.test.js && node test/hospital-release-gate.test.js && npm run e2e:gate",
+    "e2e:gate": "node test/e2e-gate.test.js",
     "build:nurse": "node build/build.js nurse",
-    "build:ddt": "node build/build.js ddt",
     "build:all": "node build/release.js",
     "release": "node build/release.js",
     "syntax:gate": "node tools/check-js-syntax.js",

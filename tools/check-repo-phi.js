@@ -5,7 +5,7 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const SAFE_FIXTURE_MARKER = 'PHI_FIXTURE_DO_NOT_USE_REAL_DATA';
-const SKIP_DIRS = new Set(['.git', '.gitnexus', 'node_modules', 'dist', 'dist-zip']);
+const SKIP_DIRS = new Set(['.git', '.gitnexus', 'node_modules', 'dist', 'dist-zip', '.agents', '.gemini', 'temp', 'screenshots', 'pilot-evidence', 'audit-export', 'rollout-inventory']);
 const SCAN_EXTENSIONS = new Set(['.css', '.csv', '.html', '.js', '.json', '.md']);
 const DOB_PATTERN = /\b(?:0?[1-9]|[12][0-9]|3[01])[/-](?:0?[1-9]|1[0-2])[/-](?:19|20)\d{2}\b/;
 const DOB_CONTEXT_PATTERN = /\b(?:patient|benh\s*nhan|bệnh\s*nhân|bn|dob|ngay\s*sinh|ngày\s*sinh|nam\s*sinh|năm\s*sinh|ho\s*ten|họ\s*tên|khambenh|hosobenhan|hsba|ma\s*kham|mã\s*khám|ma\s*benh|mã\s*bệnh)\b/i;

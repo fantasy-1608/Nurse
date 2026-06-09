@@ -202,12 +202,218 @@ const QuyenVatTuEngine = (function () {
     }
 
     // =========================================================
+    // QUEUING SYSTEM — for E2E validation & sequential autofill
+    // =========================================================
+    let _queue = [];
+    let _isBusy = false;
+    let _currentReqId = null;
+    let _cleanupListener = null;
+    let _activeItem = null;
+    let _activeContext = null;
+    let _vattuStartTime = 0;
+
+    function startQueue(items) {
+        if (_isBusy) return;
+        _queue = (items || []).slice();
+        _isBusy = true;
+        _activeItem = null;
+        _activeContext = null;
+        
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.start({ name: 'vattu' });
+        }
+
+        // Đăng ký nhận kết quả điền từ bridge
+        _cleanupListener = HIS.Message.listen('QUYEN_VT_FILL_RESULT', function(data) {
+            if (data.requestId && data.requestId === _currentReqId) {
+                if (data.success) {
+                    if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                        HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.VERIFYING);
+                    }
+                    HIS.WriteVerifier.postWriteVerify(_activeContext, { ma: _activeItem.ma, sl: _activeItem.sl }).then(res => {
+                        const durationMs = _vattuStartTime > 0 ? (Date.now() - _vattuStartTime) : 0;
+                        _vattuStartTime = 0;
+                        if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                            HIS.PerfMetrics.log({
+                                module: 'vattu',
+                                step: 'fillItem',
+                                durationMs: durationMs,
+                                result: res.ok ? 'success' : 'failed',
+                                fallbackUsed: false,
+                                timeout: false,
+                                staleDropped: false
+                            });
+                        }
+                        if (res.ok) {
+                            processNextQueueItem();
+                        } else {
+                            if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(res.details);
+                            stopQueue();
+                        }
+                    }).catch(err => {
+                        const durationMs = _vattuStartTime > 0 ? (Date.now() - _vattuStartTime) : 0;
+                        _vattuStartTime = 0;
+                        if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                            HIS.PerfMetrics.log({
+                                module: 'vattu',
+                                step: 'fillItem',
+                                durationMs: durationMs,
+                                result: 'failed',
+                                fallbackUsed: false,
+                                timeout: false,
+                                staleDropped: false
+                            });
+                        }
+                        if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(err.message);
+                        stopQueue();
+                    });
+                } else {
+                    const durationMs = _vattuStartTime > 0 ? (Date.now() - _vattuStartTime) : 0;
+                    _vattuStartTime = 0;
+                    if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                        HIS.PerfMetrics.log({
+                            module: 'vattu',
+                            step: 'fillItem',
+                            durationMs: durationMs,
+                            result: 'failed',
+                            fallbackUsed: false,
+                            timeout: false,
+                            staleDropped: false
+                        });
+                    }
+                    if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                        HIS.FillTracker.block(data.error || 'Fill failed');
+                    }
+                    stopQueue();
+                }
+            }
+        });
+
+        // Định kỳ kiểm tra xem form còn hiển thị không (E2E-14)
+        const checkTimer = setInterval(function() {
+            if (typeof HIS !== 'undefined' && HIS.WriteVerifier) {
+                const isVisible = HIS.WriteVerifier.isFormVisible('vattu');
+                if (!isVisible && _isBusy) {
+                    stopQueue();
+                    clearInterval(checkTimer);
+                }
+            }
+        }, 1000); // 1s is enough instead of 100ms
+
+        processNextQueueItem();
+    }
+
+    function processNextQueueItem() {
+        if (!_isBusy) return;
+        if (_queue.length === 0) {
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                HIS.FillTracker.complete();
+            }
+            stopQueue();
+            return;
+        }
+
+        const item = _queue.shift();
+        _vattuStartTime = Date.now();
+        
+        let context;
+        try {
+            context = HIS.OperationContext.create('vattu');
+            HIS.WriteVerifier.preWriteGuard(context);
+        } catch (err) {
+            const durationMs = _vattuStartTime > 0 ? (Date.now() - _vattuStartTime) : 0;
+            _vattuStartTime = 0;
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'vattu',
+                    step: 'fillItem',
+                    durationMs: durationMs,
+                    result: 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                HIS.FillTracker.block(err.message);
+            }
+            QuyenLog.error(`[vattu preWriteGuard] blocked: ${err.message}`);
+            stopQueue();
+            return;
+        }
+
+        _activeContext = context;
+        _activeItem = item;
+        _currentReqId = context.requestId;
+
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.WRITING);
+        }
+        
+        HIS.Message.send('QUYEN_FILL_VT_ITEM', {
+            requestId: context.requestId,
+            patientSeq: context.patientSeq,
+            khambenhId: context.khambenhId,
+            module: 'vattu',
+            ma: item.ma,
+            ten: item.ten,
+            sl: item.sl,
+            cachdung: item.cachdung || '',
+            vtSource: item.rule === 'existing' ? 'prev' : 'suggestion'
+        });
+    }
+
+    function stopQueue() {
+        if (_vattuStartTime > 0) {
+            const durationMs = Date.now() - _vattuStartTime;
+            _vattuStartTime = 0;
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'vattu',
+                    step: 'fillItem',
+                    durationMs: durationMs,
+                    result: 'cancelled',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: true
+                });
+            }
+        }
+
+        _isBusy = false;
+        _queue = [];
+        _currentReqId = null;
+        _activeItem = null;
+        if (_cleanupListener) {
+            _cleanupListener();
+            _cleanupListener = null;
+        }
+        if (typeof HIS !== 'undefined') {
+            if (_activeContext) {
+                HIS.OperationContext.cancel('STOP_QUEUE');
+                _activeContext = null;
+            }
+            if (HIS.FillTracker && HIS.FillTracker.isActive()) {
+                HIS.FillTracker.cancel('Dừng');
+            }
+        }
+    }
+
+    function isBusy() {
+        return _isBusy;
+    }
+
+    // =========================================================
     // PUBLIC
     // =========================================================
     return {
         analyze:            analyze,
         getCurrentPatient:  function () { return _currentPatient; },
         applyRules:         applyRules,  // export để test độc lập
+        startQueue:         startQueue,
+        stopQueue:          stopQueue,
+        isBusy:             isBusy,
+        getCurrentReqId:    function () { return _currentReqId; }
     };
 
 })();

@@ -1,11 +1,7 @@
 /**
- * HIS Shared — Fill Tracker v1.0 (Sprint D)
- * State tracking wrapper cho fill operations.
- * Không thay đổi flow bên trong, chỉ BỌC NGOÀI để:
- * - Theo dõi trạng thái (IDLE/FILLING/DONE/ERROR/TIMEOUT)
- * - Auto-timeout khi fill stuck > 15s
- * - Cho phép cancel từ UI
- * - Emit events cho progress indicator
+ * HIS Shared — Fill Tracker v2.0
+ * UX-001: General UI State Machine
+ * Định nghĩa trạng thái và luật chuyển trạng thái chuẩn hóa.
  */
 
 window.HIS = window.HIS || {};
@@ -17,117 +13,152 @@ HIS.FillTracker = (function () {
     // STATES
     // ==========================================
     const STATE = {
-        IDLE: 'IDLE',
-        FILLING: 'FILLING',
-        DRUG_SELECTED: 'DRUG_SELECTED',
-        SPEED_FILLED: 'SPEED_FILLED',
-        DOCTOR_SELECTED: 'DOCTOR_SELECTED',
-        NURSE_SELECTED: 'NURSE_SELECTED',
-        DONE: 'DONE',
-        ERROR: 'ERROR',
-        TIMEOUT: 'TIMEOUT',
-        CANCELLED: 'CANCELLED'
+        IDLE: 'IDLE',               // Sẵn sàng nhận lệnh
+        READY: 'READY',             // Bệnh nhân hợp lệ, sẵn sàng điền
+        PREPARING: 'PREPARING',     // Chạy pre-write guard & tạo Context
+        WRITING: 'WRITING',         // Đang gửi message và điền DOM
+        VERIFYING: 'VERIFYING',     // Đang đối chiếu giá trị hậu ghi
+        VERIFIED: 'VERIFIED',       // Đã đối chiếu trùng khớp hoàn toàn (Thành công)
+        BLOCKED: 'BLOCKED',         // Bị chặn do vi phạm an toàn / sai thông tin
+        ERROR: 'ERROR',             // Lỗi kỹ thuật / Exception
+        CANCELLED: 'CANCELLED',     // Người dùng hủy / đổi bệnh nhân đột ngột
+        TIMEOUT: 'TIMEOUT'          // Quá hạn thời gian điền (>15-30s)
     };
 
     let _state = STATE.IDLE;
     let _startTime = 0;
     let _timeoutTimer = null;
     let _requestId = 0;
-    let _currentDrug = null;
-    let _steps = [];         // Log của từng bước
-    let _listeners = [];     // onChange callbacks
-    const _timeoutMs = 30000;  // ★ BUG-05: 30 giây (tăng từ 15s vì 3 ComboGrid có thể tốn 22s trên server chậm)
+    let _activeOperation = null;
+    let _steps = [];
+    let _listeners = [];
+    const _timeoutMs = 30000;
 
     // ==========================================
-    // START — bắt đầu fill session mới
+    // TRANSITIONS
     // ==========================================
-    function start(drug) {
-        // Cancel session cũ nếu có
-        if (_state === STATE.FILLING || _state === STATE.DRUG_SELECTED || 
-            _state === STATE.SPEED_FILLED || _state === STATE.DOCTOR_SELECTED) {
-            _notifyListeners(STATE.CANCELLED, 'Hủy do fill mới');
+    function transitionTo(newState, detail = '') {
+        const oldState = _state;
+
+        // Định nghĩa các luật chuyển đổi hợp lệ (State Transition Matrix)
+        const allowedTransitions = {
+            [STATE.IDLE]: [STATE.READY, STATE.PREPARING, STATE.BLOCKED, STATE.ERROR],
+            [STATE.READY]: [STATE.PREPARING, STATE.IDLE, STATE.BLOCKED],
+            [STATE.PREPARING]: [STATE.WRITING, STATE.BLOCKED, STATE.CANCELLED, STATE.ERROR],
+            [STATE.WRITING]: [STATE.VERIFYING, STATE.CANCELLED, STATE.TIMEOUT, STATE.ERROR],
+            [STATE.VERIFYING]: [STATE.VERIFIED, STATE.BLOCKED, STATE.CANCELLED, STATE.TIMEOUT, STATE.ERROR],
+            [STATE.VERIFIED]: [STATE.IDLE, STATE.READY],
+            [STATE.BLOCKED]: [STATE.IDLE, STATE.READY, STATE.PREPARING],
+            [STATE.ERROR]: [STATE.IDLE, STATE.READY],
+            [STATE.CANCELLED]: [STATE.IDLE, STATE.READY],
+            [STATE.TIMEOUT]: [STATE.IDLE, STATE.READY]
+        };
+
+        if (oldState !== newState) {
+            const allowed = allowedTransitions[oldState] || [];
+            if (!allowed.includes(newState)) {
+                console.warn(`[FillTracker] Invalid transition requested: ${oldState} -> ${newState}. Direct transition forced.`);
+            }
+            
+            _state = newState;
+            _steps.push({ step: newState, time: _elapsed(), detail: detail });
+            _notifyListeners(newState, detail);
+
+            // Log performance metrics on terminal states
+            const terminalStates = [STATE.VERIFIED, STATE.BLOCKED, STATE.ERROR, STATE.CANCELLED, STATE.TIMEOUT];
+            if (terminalStates.includes(newState)) {
+                if (typeof HIS !== 'undefined' && HIS.PerfMetrics && typeof HIS.PerfMetrics.log === 'function') {
+                    const elapsed = _elapsed();
+                    const moduleName = _activeOperation ? (_activeOperation.module || _activeOperation.name) : 'unknown';
+                    
+                    let fallbackUsed = false;
+                    if (detail && typeof detail === 'string' && detail.toLowerCase().includes('fallback')) {
+                        fallbackUsed = true;
+                    } else if (_activeOperation && _activeOperation.fallbackUsed) {
+                        fallbackUsed = true;
+                    }
+
+                    let staleDropped = false;
+                    if (detail && typeof detail === 'string' && detail.toLowerCase().includes('stale')) {
+                        staleDropped = true;
+                    }
+
+                    HIS.PerfMetrics.log({
+                        module: moduleName,
+                        step: oldState + ' -> ' + newState,
+                        durationMs: elapsed,
+                        result: newState,
+                        fallbackUsed: fallbackUsed,
+                        timeout: newState === STATE.TIMEOUT,
+                        staleDropped: staleDropped,
+                        ts: new Date().toISOString()
+                    });
+                }
+            }
         }
+    }
 
-        _requestId++;
-        _state = STATE.FILLING;
-        _startTime = Date.now();
-        _currentDrug = drug;
-        _steps = [{ step: 'START', time: 0, detail: drug ? drug.name : '?' }];
-
-        // Auto-timeout
+    function start(operation) {
         if (_timeoutTimer) clearTimeout(_timeoutTimer);
+        
+        _requestId++;
+        _startTime = Date.now();
+        _activeOperation = operation;
+        _steps = [{ step: STATE.PREPARING, time: 0, detail: operation ? operation.name : '?' }];
+        
+        _state = STATE.PREPARING;
+        _notifyListeners(STATE.PREPARING, operation ? operation.name : '');
+
+        // Khởi động bộ đếm giờ tự động quá hạn
         _timeoutTimer = setTimeout(function () {
             if (_isActive()) {
-                _state = STATE.TIMEOUT;
-                _steps.push({ step: 'TIMEOUT', time: _elapsed(), detail: 'Quá ' + (_timeoutMs / 1000) + 's' });
-                _notifyListeners(STATE.TIMEOUT, 'Fill quá thời gian (' + (_timeoutMs / 1000) + 's)');
+                transitionTo(STATE.TIMEOUT, `Quá ${_timeoutMs / 1000}s`);
             }
         }, _timeoutMs);
 
-        _notifyListeners(STATE.FILLING, drug ? drug.name : '');
         return _requestId;
     }
 
-    // ==========================================
-    // ADVANCE — ghi nhận tiến trình
-    // ==========================================
+    // Helper tương thích ngược với v1.0
     function advance(stepName, detail) {
         if (!_isActive()) return;
-
-        const stepMap = {
-            'drug': STATE.DRUG_SELECTED,
-            'speed': STATE.SPEED_FILLED,
-            'doctor': STATE.DOCTOR_SELECTED,
-            'nurse': STATE.NURSE_SELECTED
-        };
-
-        if (stepMap[stepName]) {
-            _state = stepMap[stepName];
-        }
-
         _steps.push({ step: stepName, time: _elapsed(), detail: detail || '' });
         _notifyListeners(_state, stepName + ': ' + (detail || 'OK'));
     }
 
-    // ==========================================
-    // COMPLETE — fill xong thành công
-    // ==========================================
     function complete(detail) {
         if (_timeoutTimer) { clearTimeout(_timeoutTimer); _timeoutTimer = null; }
-        _state = STATE.DONE;
-        _steps.push({ step: 'DONE', time: _elapsed(), detail: detail || '' });
-        _notifyListeners(STATE.DONE, detail || 'Hoàn tất');
+        transitionTo(STATE.VERIFIED, detail || 'Xác minh thành công');
     }
 
-    // ==========================================
-    // ERROR — fill thất bại
-    // ==========================================
     function error(reason) {
         if (_timeoutTimer) { clearTimeout(_timeoutTimer); _timeoutTimer = null; }
-        _state = STATE.ERROR;
-        _steps.push({ step: 'ERROR', time: _elapsed(), detail: reason || '' });
-        _notifyListeners(STATE.ERROR, reason || 'Lỗi');
+        transitionTo(STATE.ERROR, reason || 'Gặp sự cố');
     }
 
-    // ==========================================
-    // CANCEL — user bấm hủy
-    // ==========================================
-    function cancel() {
-        if (!_isActive()) return false;
+    function block(reason) {
         if (_timeoutTimer) { clearTimeout(_timeoutTimer); _timeoutTimer = null; }
-        _state = STATE.CANCELLED;
-        _steps.push({ step: 'CANCELLED', time: _elapsed(), detail: 'User cancel' });
-        _notifyListeners(STATE.CANCELLED, 'Đã hủy');
-        return true;
+        transitionTo(STATE.BLOCKED, reason || 'Bị chặn');
     }
 
-    // ==========================================
-    // STATUS — truy vấn trạng thái
-    // ==========================================
+    function cancel(reason) {
+        if (_timeoutTimer) { clearTimeout(_timeoutTimer); _timeoutTimer = null; }
+        transitionTo(STATE.CANCELLED, reason || 'Hủy bỏ');
+    }
+
+    function reset() {
+        if (_timeoutTimer) { clearTimeout(_timeoutTimer); _timeoutTimer = null; }
+        _state = STATE.IDLE;
+        _activeOperation = null;
+        _startTime = 0;
+        _steps = [];
+        _notifyListeners(STATE.IDLE, 'Reset');
+    }
+
     function getStatus() {
         return {
             state: _state,
-            drug: _currentDrug ? _currentDrug.name : null,
+            operation: _activeOperation ? _activeOperation.name : null,
             elapsed: _isActive() ? _elapsed() : (_steps.length > 0 ? _steps[_steps.length - 1].time : 0),
             steps: _steps.slice(),
             requestId: _requestId,
@@ -139,13 +170,8 @@ HIS.FillTracker = (function () {
         return _isActive();
     }
 
-    // ==========================================
-    // LISTENERS — onChange callbacks
-    // ==========================================
     function onChange(callback) {
-        // ★ BUG-19: Giới hạn số listener để tránh leak
         if (_listeners.length >= 10) {
-            console.warn('[HIS] FillTracker: Too many listeners (' + _listeners.length + '), removing oldest');
             _listeners.shift();
         }
         _listeners.push(callback);
@@ -154,13 +180,8 @@ HIS.FillTracker = (function () {
         };
     }
 
-    // ==========================================
-    // PRIVATE
-    // ==========================================
     function _isActive() {
-        return _state === STATE.FILLING || _state === STATE.DRUG_SELECTED ||
-               _state === STATE.SPEED_FILLED || _state === STATE.DOCTOR_SELECTED ||
-               _state === STATE.NURSE_SELECTED;
+        return _state === STATE.PREPARING || _state === STATE.WRITING || _state === STATE.VERIFYING;
     }
 
     function _elapsed() {
@@ -168,25 +189,26 @@ HIS.FillTracker = (function () {
     }
 
     function _notifyListeners(state, detail) {
+        const status = getStatus();
         for (let i = 0; i < _listeners.length; i++) {
-            try { _listeners[i](state, detail, getStatus()); } catch (e) { console.debug("[HIS] catch:", e.message || e); }
+            try { _listeners[i](state, detail, status); } catch (e) { console.debug("[HIS] catch:", e.message || e); }
         }
     }
 
-    // ==========================================
-    // EXPOSE
-    // ==========================================
     return {
         STATE: STATE,
         start: start,
         advance: advance,
         complete: complete,
         error: error,
+        block: block,
         cancel: cancel,
+        reset: reset,
         getStatus: getStatus,
         isActive: isActive,
-        onChange: onChange
+        onChange: onChange,
+        transitionTo: transitionTo
     };
 })();
 
-console.log('[HIS] 📊 FillTracker v1.0 loaded');
+console.log('[HIS] FillTracker v2.0 loaded');

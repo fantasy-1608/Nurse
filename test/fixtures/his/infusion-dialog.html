@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HIS Infusion Dialog</title>
+</head>
+<body>
+    <div id="divDlgInfusion" class="ui-dialog" style="display: block;">
+        <div class="ui-dialog-titlebar">
+            <span class="ui-dialog-title">Phiếu Truyền Dịch</span>
+        </div>
+        <div class="ui-dialog-content">
+            <!-- Patient Header for readTargetFromDOM verification -->
+            <div id="patient-header">
+                1001001001 | NGUYEN VAN A | 01/01/1980
+            </div>
+
+            <form id="frmInfusion">
+                <div>
+                    <label for="txtTKDT">Tìm thuốc:</label>
+                    <input type="text" id="txtTKDT" name="txtTKDT" value="" />
+                </div>
+                <div>
+                    <label for="txtTOCDO_NHOGIOT">Tốc độ (giọt/phút):</label>
+                    <input type="text" id="txtTOCDO_NHOGIOT" name="txtTOCDO_NHOGIOT" value="" />
+                </div>
+                <div>
+                    <label for="txtSO_LUONG">Thể tích (ml):</label>
+                    <input type="text" id="txtSO_LUONG" name="txtSO_LUONG" value="" />
+                </div>
+                <div>
+                    <label for="txtTG_TAOPHIEU">Thời gian tạo phiếu:</label>
+                    <input type="text" id="txtTG_TAOPHIEU" name="txtTG_TAOPHIEU" value="08/06/2026 08:00" />
+                </div>
+                <div>
+                    <label for="txtTG_BATDAU">Thời gian bắt đầu:</label>
+                    <input type="text" id="txtTG_BATDAU" name="txtTG_BATDAU" value="" />
+                </div>
+                <div>
+                    <label for="txtTKBS">Bác sĩ chỉ định:</label>
+                    <input type="text" id="txtTKBS" name="txtTKBS" value="" />
+                </div>
+                <div>
+                    <label for="cboYT_CHIDINH">Y tá thực hiện:</label>
+                    <select id="cboYT_CHIDINH" name="cboYT_CHIDINH">
+                        <option value="">-- Chọn Y tá --</option>
+                        <option value="101">Nguyễn Thị C</option>
+                        <option value="102">Lê Văn D</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

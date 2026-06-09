@@ -28,16 +28,16 @@ const CARESHEET_CONFIG = {
             huyetAp: '',
             nhipTho: '',
             spO2: '',
-            canNang: '', dau: '0', bmi: '',
+            canNang: '', dau: '', bmi: '',
             // 2. Toàn thân
-            daNiemMac: ['Hồng'], daNiemMacKhac: '',
-            triGiac: ['Tỉnh'], triGiacKhac: '', glassgow: '15',
+            daNiemMac: [], daNiemMacKhac: '',
+            triGiac: [], triGiacKhac: '', glassgow: '',
             // 3. Hô hấp
-            khoTho: ['(-)'],
+            khoTho: [],
             thoOxy1: '', thoOxy2: '',
             ho: [], hoKhac: '',
             // 5. Tuần hoàn
-            tinhChatMach: ['Mạch đều'], tinhChatMachKhac: '',
+            tinhChatMach: [], tinhChatMachKhac: '',
             // 6. Tiêu hóa
             tieuHoaBT: ['BT'],
             an: ['Ăn được'],
@@ -77,13 +77,13 @@ const CARESHEET_CONFIG = {
             gdsk: ['+'],
             // 16. Theo dõi khác
             vetThuongVetLoet1: '', vetThuongVetLoet2: '',
-            diemBraden: ['NC thấp'],
-            diemMorse: ['Thấp'],
+            diemBraden: [],
+            diemMorse: [],
             diemHumptyDumpty: [],
             canhBaoSom: [],
-            mucDoDau: ['2'],
-            phu: ['0: không phù'],
-            viemTinhMach: ['0 - Không']
+            mucDoDau: [],
+            phu: [],
+            viemTinhMach: []
         };
     },
 

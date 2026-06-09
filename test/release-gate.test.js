@@ -90,7 +90,7 @@ function assertReleaseArtifacts() {
     }
 
     const lines = fs.readFileSync(shaPath, 'utf8').trim().split(/\r?\n/).filter(Boolean);
-    assert(lines.length >= 2, 'sha256.txt must list both extension packages');
+    assert(lines.length >= 1, 'sha256.txt must list at least one extension package');
     const hashesByPackage = {};
     lines.forEach(function (line) {
         const match = line.match(/^([a-f0-9]{64})\s+(.+\.zip)$/i);
@@ -104,7 +104,7 @@ function assertReleaseArtifacts() {
     const policyPath = path.join(root, 'dist-zip/release-policy.json');
     assert(fs.existsSync(policyPath), 'release-policy.json must exist');
     const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
-    assert(policy.packages && policy.packages.length >= 2, 'release policy must include package hashes');
+    assert(policy.packages && policy.packages.length >= 1, 'release policy must include package hashes');
     policy.packages.forEach(function (pkg) {
         assert(Array.isArray(pkg.allowedVersions) && pkg.allowedVersions.length === 1, 'each release package must allowlist exact release version');
         assert.strictEqual(pkg.allowedVersions[0], policy.version, 'package allowlist must match release version');
@@ -161,11 +161,6 @@ assert(message.includes('MARKER'), 'message bus must use a strict marker');
 assert(message.includes('MAX_MESSAGE_AGE_MS') || /5\s*\*\s*60\s*\*\s*1000/.test(message), 'message bus must expire old envelopes');
 assert(!message.includes('isLegacyType && sameWindowSource'), 'message bus must reject legacy raw QUYEN_* messages');
 
-if (fs.existsSync(path.join(root, 'dist/DDT/manifest.json'))) {
-    assertManifestHardening(readJson('dist/DDT/manifest.json'), 'DDT manifest');
-    assertNoExternalRuntimeUrls('dist/DDT');
-    assertNoLegacyRuntimeStorage('dist/DDT');
-}
 if (fs.existsSync(path.join(root, 'dist/Nurse/manifest.json'))) {
     assertManifestHardening(readJson('dist/Nurse/manifest.json'), 'Nurse manifest');
     assertNoExternalRuntimeUrls('dist/Nurse');

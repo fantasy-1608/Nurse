@@ -51,6 +51,19 @@
         } catch (e) { /* prevent infinite loop */ }
     });
 
+    // ★ Forward hotkey from iframes to top window
+    document.addEventListener('keydown', function(e) {
+        if (e.altKey && (e.key === 'q' || e.key === 'Q')) {
+            const tag = (document.activeElement || {}).tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            if (window !== window.top) {
+                try {
+                    window.top.postMessage({ type: 'QUYEN_HOTKEY_TOGGLE' }, window.location.origin);
+                } catch(err) {}
+            }
+        }
+    });
+
     // Chỉ chạy ở top frame
     if (window !== window.top) return;
 
@@ -80,30 +93,52 @@
     // ==========================================
     // INJECT PAGE SCRIPT (his-bridge.js)
     // ==========================================
-    function injectBridgeScript() {
-        const id = 'quyen-bridge-script';
-        if (document.getElementById(id)) return;
-
+    // Helper to inject script sequentially
+    function injectScript(relPath, id, onload) {
+        if (document.getElementById(id)) {
+            if (onload) onload();
+            return;
+        }
         const script = document.createElement('script');
         script.id = id;
-
         try {
             const _chrome = /** @type {any} */ (window).chrome;
             if (_chrome && _chrome.runtime) {
                 const manifestVer = _chrome.runtime.getManifest().version;
-                script.src = _chrome.runtime.getURL('injected/his-bridge.js') + '?v=' + manifestVer + '_' + Date.now();
+                script.src = _chrome.runtime.getURL(relPath) + '?v=' + manifestVer + '_' + Date.now();
             }
         } catch (e) {
-            QuyenLog.error('Không thể inject bridge script:', e);
+            QuyenLog.error('Không thể inject script ' + relPath + ':', e);
             return;
         }
-
-        script.onload = function () {
-            QuyenLog.info('Bridge script injected thành công __EXT_EMOJI__');
-            /** @type {HTMLElement} */ (script).remove();
-        };
-
+        if (onload) script.onload = onload;
         (document.head || document.documentElement).appendChild(script);
+    }
+
+    function injectBridgeScript() {
+        const sessionNonce = HIS.Message.getSessionNonce();
+        injectScript('shared/message-schema.js', 'quyen-schema-script', function () {
+            const script = document.createElement('script');
+            script.id = 'quyen-bridge-script';
+            script.setAttribute('data-nonce', sessionNonce);
+            try {
+                const _chrome = /** @type {any} */ (window).chrome;
+                if (_chrome && _chrome.runtime) {
+                    const manifestVer = _chrome.runtime.getManifest().version;
+                    script.src = _chrome.runtime.getURL('injected/his-bridge.js') + '?v=' + manifestVer + '_' + Date.now();
+                }
+            } catch (e) {
+                QuyenLog.error('Không thể inject bridge script:', e);
+                return;
+            }
+            script.onload = function () {
+                QuyenLog.info('Bridge script injected thành công __EXT_EMOJI__');
+                script.remove();
+                const schemaScript = document.getElementById('quyen-schema-script');
+                if (schemaScript) schemaScript.remove();
+            };
+            (document.head || document.documentElement).appendChild(script);
+        });
     }
 
     // ==========================================
@@ -147,6 +182,85 @@
             // Xóa UI panel (ID thực của giao diện là quyen-panel)
             const panel = document.getElementById('quyen-panel');
             if (panel) panel.remove();
+
+            // Remove existing modal if already exists to avoid duplicates
+            const oldModal = document.getElementById('quyen-role-blocker-modal');
+            if (oldModal) oldModal.remove();
+
+            // Create new modal overlay
+            const modal = document.createElement('div');
+            modal.id = 'quyen-role-blocker-modal';
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.width = '100vw';
+            modal.style.height = '100vh';
+            modal.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+            modal.style.zIndex = '999999';
+            modal.style.display = 'flex';
+            modal.style.flexDirection = 'column';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.style.color = '#fff';
+            modal.style.fontFamily = 'Arial, sans-serif';
+            modal.style.padding = '20px';
+            modal.style.boxSizing = 'border-box';
+            
+            // Inner content box
+            const contentBox = document.createElement('div');
+            contentBox.style.backgroundColor = '#2c3e50';
+            contentBox.style.border = '2px solid #e74c3c';
+            contentBox.style.borderRadius = '8px';
+            contentBox.style.padding = '30px';
+            contentBox.style.maxWidth = '500px';
+            contentBox.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+            contentBox.style.textAlign = 'center';
+            
+            const title = document.createElement('h2');
+            title.style.color = '#e74c3c';
+            title.style.marginTop = '0';
+            title.style.fontSize = '24px';
+            title.innerText = 'TỪ CHỐI TRUY CẬP';
+            
+            const message = document.createElement('p');
+            message.style.fontSize = '16px';
+            message.style.lineHeight = '1.6';
+            message.style.whiteSpace = 'pre-line';
+            
+            const reason = event.data.reason;
+            const role = event.data.role || 'UNVERIFIED';
+            
+            if (reason === 'ROLE_MISMATCH') {
+                message.innerText = `TỪ CHỐI TRUY CẬP: Tiện ích Nurse Helper chỉ dành cho Điều dưỡng.\nNhóm người dùng hiện tại: ${role} (Yêu cầu: 5).`;
+            } else if (reason === 'ROLE_TIMEOUT') {
+                message.innerText = `TỪ CHỐI TRUY CẬP: Không thể xác minh quyền người dùng từ VNPT HIS (Hết thời gian chờ).\nVui lòng tải lại trang và thử lại.`;
+            } else {
+                if (role === 'UNVERIFIED') {
+                    message.innerText = `TỪ CHỐI TRUY CẬP: Không thể xác minh quyền người dùng từ VNPT HIS (Hết thời gian chờ).\nVui lòng tải lại trang và thử lại.`;
+                } else {
+                    message.innerText = `TỪ CHỐI TRUY CẬP: Tiện ích Nurse Helper chỉ dành cho Điều dưỡng.\nNhóm người dùng hiện tại: ${role} (Yêu cầu: 5).`;
+                }
+            }
+            
+            const button = document.createElement('button');
+            button.innerText = 'Tải lại trang';
+            button.style.marginTop = '20px';
+            button.style.padding = '10px 20px';
+            button.style.backgroundColor = '#e74c3c';
+            button.style.color = '#fff';
+            button.style.border = 'none';
+            button.style.borderRadius = '4px';
+            button.style.cursor = 'pointer';
+            button.style.fontSize = '16px';
+            button.addEventListener('click', function() {
+                window.location.reload();
+            });
+            
+            contentBox.appendChild(title);
+            contentBox.appendChild(message);
+            contentBox.appendChild(button);
+            modal.appendChild(contentBox);
+            document.body.appendChild(modal);
         }
 
         // ★ 3.2: Persist HIS environment info for debugging
@@ -188,12 +302,46 @@
     }
 
     function evaluateReleasePolicy(data) {
-        const policy = normalizePolicy(data.quyen_release_policy);
         const version = getCurrentVersion();
-        if (data.quyen_kill_switch === true) return { ok: false, reason: 'KILL_SWITCH', policy: policy };
-        if (policy.allowedVersions.indexOf(version) < 0) return { ok: false, reason: 'VERSION_NOT_ALLOWED', policy: policy };
-        if (policy.expiresAt && Date.now() > Date.parse(policy.expiresAt)) return { ok: false, reason: 'VERSION_EXPIRED', policy: policy };
-        return { ok: true, reason: 'OK', policy: policy };
+        const policy = data ? data.quyen_release_policy : null;
+        const killSwitch = data ? (data.quyen_kill_switch === true) : false;
+
+        const isDev = (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.DEBUG) || !('update_url' in chrome.runtime.getManifest());
+
+        if (killSwitch) {
+            return { ok: false, reason: 'KILL_SWITCH', policy: policy || normalizePolicy(null) };
+        }
+
+        if (!isDev) {
+            // Enforce strict checks in production mode
+            if (!policy) {
+                return { ok: false, reason: 'POLICY_MISSING', policy: null };
+            }
+            if (!policy.allowedVersions || !Array.isArray(policy.allowedVersions) || policy.allowedVersions.indexOf(version) < 0) {
+                return { ok: false, reason: 'VERSION_NOT_ALLOWED', policy };
+            }
+            if (policy.expiresAt && Date.now() > Date.parse(policy.expiresAt)) {
+                return { ok: false, reason: 'VERSION_EXPIRED', policy };
+            }
+            const sha256Regex = /^[a-fA-F0-9]{64}$/;
+            if (!policy.buildHash || !sha256Regex.test(policy.buildHash)) {
+                return { ok: false, reason: 'POLICY_INVALID_HASH', policy };
+            }
+            if (policy.channel !== 'production') {
+                return { ok: false, reason: 'POLICY_INVALID_CHANNEL', policy };
+            }
+            return { ok: true, reason: 'OK', policy };
+        } else {
+            // In developer/debug mode, allow fallbacks to standard default release policy for easier testing.
+            const normPolicy = normalizePolicy(policy);
+            if (normPolicy.allowedVersions.indexOf(version) < 0) {
+                return { ok: false, reason: 'VERSION_NOT_ALLOWED', policy: normPolicy };
+            }
+            if (normPolicy.expiresAt && Date.now() > Date.parse(normPolicy.expiresAt)) {
+                return { ok: false, reason: 'VERSION_EXPIRED', policy: normPolicy };
+            }
+            return { ok: true, reason: 'OK', policy: normPolicy };
+        }
     }
 
     function stopForReleasePolicy(status) {
@@ -238,7 +386,17 @@
         });
     }
 
-    chrome.runtime.onMessage.addListener(function (msg) {
+    chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+        if (msg && msg.type === 'GET_PERF_TELEMETRY') {
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.get(function(data) {
+                    sendResponse({ success: true, data: data });
+                });
+            } else {
+                sendResponse({ success: true, data: [] });
+            }
+            return true;
+        }
         if (msg && msg.type === 'QUYEN_ACTIVATION_CHANGED' && msg.activated === true) {
             QuyenLog.info('🔓 Đã kích hoạt! Khởi động extension...');
             if (!_initialized) {

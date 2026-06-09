@@ -115,14 +115,14 @@
         return HIS.FillTracker.getStatus().state === 'IDLE';
     });
 
-    test('FillTracker.start → FILLING', function () {
+    test('FillTracker.start → PREPARING', function () {
         HIS.FillTracker.start({ name: 'Test Drug' });
-        return HIS.FillTracker.getStatus().state === 'FILLING';
+        return HIS.FillTracker.getStatus().state === 'PREPARING';
     });
 
-    test('FillTracker.advance → DRUG_SELECTED', function () {
-        HIS.FillTracker.advance('drug', 'Test Drug');
-        return HIS.FillTracker.getStatus().state === 'DRUG_SELECTED';
+    test('FillTracker.transitionTo → WRITING', function () {
+        HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.WRITING);
+        return HIS.FillTracker.getStatus().state === 'WRITING';
     });
 
     test('FillTracker.cancel → CANCELLED', function () {
@@ -130,10 +130,12 @@
         return HIS.FillTracker.getStatus().state === 'CANCELLED';
     });
 
-    test('FillTracker.complete → DONE', function () {
+    test('FillTracker.complete → VERIFIED', function () {
         HIS.FillTracker.start({ name: 'Test Drug 2' });
+        HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.WRITING);
+        HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.VERIFYING);
         HIS.FillTracker.complete('OK');
-        return HIS.FillTracker.getStatus().state === 'DONE';
+        return HIS.FillTracker.getStatus().state === 'VERIFIED';
     });
     console.groupEnd();
 

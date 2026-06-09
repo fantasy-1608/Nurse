@@ -81,8 +81,12 @@ const QuyenUI = (function () {
         const icon = document.getElementById('quyen-mini-icon');
         if (!icon) return;
         // Xóa tất cả state class cũ
-        icon.classList.remove('quyen-mini-sad', 'quyen-mini-happy', 'quyen-mini-fire', 'quyen-mini-wilted', 'quyen-mini-pulse');
+        icon.classList.remove('quyen-mini-sad', 'quyen-mini-happy', 'quyen-mini-fire', 'quyen-mini-wilted', 'quyen-mini-pulse', 'quyen-mini-danger');
         void icon.offsetWidth; // force reflow
+
+        // Đã gỡ bỏ hạn chế chế độ production theo yêu cầu của user để "mở lại icon bình thường".
+        // Bông hoa sẽ hiển thị đầy đủ hiệu ứng và màu sắc như ban đầu.
+
         if (state === 'sad')   icon.classList.add('quyen-mini-sad');
         if (state === 'happy') icon.classList.add('quyen-mini-happy');
         if (state === 'fire') {
@@ -138,7 +142,7 @@ const QuyenUI = (function () {
             <div class="quyen-tab-bar" id="quyen-tab-bar">
                 <button class="quyen-tab quyen-tab-active" data-tab="infusion" id="quyen-tab-infusion">✏️ Truyền dịch</button>
                 <button class="quyen-tab" data-tab="caresheet" id="quyen-tab-caresheet">📋 Phiếu CS</button>
-                <button class="quyen-tab" data-tab="vattu" id="quyen-tab-vattu">🧰 VT <span class="quyen-beta-badge">BETA</span></button>
+                <button class="quyen-tab" data-tab="vattu" id="quyen-tab-vattu">🧰 VT</button>
             </div>
             <div class="quyen-panel-body" id="quyen-panel-body">
                 <div class="quyen-tab-content quyen-tab-content-active" id="quyen-tab-content-infusion">
@@ -159,6 +163,16 @@ const QuyenUI = (function () {
                     <!-- VatTuUI sẽ render vào đây -->
                 </div>
             </div>
+            <details class="quyen-safety-disclaimer">
+                <summary style="cursor: pointer; font-weight: bold; outline: none;"><strong>⚠️ LƯU Ý LÂM SÀNG</strong></summary>
+                <div style="margin-top: 5px;">Nurse là công cụ hỗ trợ nhập liệu, không thay thế đánh giá lâm sàng. Trước khi bấm <strong>Lưu</strong> trên HIS:</div>
+                <ol>
+                    <li>Xác nhận đúng bệnh nhân;</li>
+                    <li>Rà soát toàn bộ dữ liệu;</li>
+                    <li>Sửa các trường không phù hợp;</li>
+                    <li>Dừng sử dụng và báo IT nếu có bất thường.</li>
+                </ol>
+            </details>
             <div class="quyen-footer">
                 __EXT_EMOJI__ __EXT_FOOTER_TEXT__
             </div>
@@ -170,6 +184,12 @@ const QuyenUI = (function () {
         _drugListEl = document.getElementById('quyen-drug-list');
         _statsEl = document.getElementById('quyen-stats');
         _patientNameEl = document.getElementById('quyen-patient-name');
+
+        if (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.UI_MODE === 'production') {
+            if (_statsEl) _statsEl.style.display = 'none';
+            const dotEl = _panel.querySelector('.quyen-header-dot');
+            if (dotEl) dotEl.style.display = 'none';
+        }
 
         // Event handlers
         setupEventHandlers();
@@ -283,6 +303,7 @@ const QuyenUI = (function () {
             });
         }
 
+
         // ★ Extension on/off toggle from popup
         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
             chrome.runtime.onMessage.addListener(function (msg) {
@@ -308,6 +329,14 @@ const QuyenUI = (function () {
             if (!event.data) return;
             // ★ SPRINT C: Origin + type validation
             if (typeof HIS === 'undefined' || !HIS.Message || !HIS.Message.isValid(event)) return;
+            
+            // ★ Handle global hotkey forwarder
+            if (event.data.type === 'QUYEN_HOTKEY_TOGGLE') {
+                if (_isMinimized) restorePanel();
+                else toggleMinimize();
+                return;
+            }
+
             if (event.data.type === 'QUYEN_PATIENT_SELECTED') {
                 const p = event.data.patient || {};
                 const v = event.data.vitals || {};
@@ -315,7 +344,7 @@ const QuyenUI = (function () {
 
                 // ★ SPRINT B: Set patient-lock source + target context
                 if (typeof HIS !== 'undefined' && HIS.PatientLock) {
-                    HIS.PatientLock.setSourceContext(p);
+                    HIS.PatientLock.setSourceContext(Object.assign({}, p, { seq: event.data.seq }));
                     // Target hint = same patient (là BN đang chọn trên form)
                     HIS.PatientLock.setTargetHint(p);
                 }
@@ -545,9 +574,6 @@ const QuyenUI = (function () {
                     ? `Có ${allDrugs.length} thuốc nhưng không có thuốc truyền`
                     : 'Chờ mở form truyền dịch...');
             _drugListEl.innerHTML = `<div class="quyen-empty">${escapeHtml(msg)}</div>`;
-
-            const fillAllBtn = document.getElementById('quyen-btn-fill-all');
-            if (fillAllBtn) fillAllBtn.disabled = true;
             return;
         }
 
@@ -620,7 +646,8 @@ const QuyenUI = (function () {
                         }
                         if (result.success && !result.pending) {
                             incrementFilledCount();
-                            showToast(`✅ Đã điền "${drug.name}" — ${getRandomThank()}`);
+                            const thankSuffix = (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.UI_MODE === 'production') ? '' : ` — ${getRandomThank()}`;
+                            showToast(`✅ Đã điền "${drug.name}"${thankSuffix}`);
                             btn.classList.add('quyen-btn-done');
                             btn.textContent = '✅ Đã điền';
                         } else if (result.success && result.pending) {
@@ -635,9 +662,7 @@ const QuyenUI = (function () {
             });
         });
 
-        // Enable fill-all
-        const fillAllBtn = document.getElementById('quyen-btn-fill-all');
-        if (fillAllBtn) fillAllBtn.disabled = false;
+
     }
 
     // ==========================================
@@ -750,7 +775,8 @@ const QuyenUI = (function () {
             }
             if (result.success) {
                 incrementFilledCount();
-                showToast(`✅ Đã điền "${drug.name}" — ${getRandomThank()}`);
+                const thankSuffix = (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.UI_MODE === 'production') ? '' : ` — ${getRandomThank()}`;
+                showToast(`✅ Đã điền "${drug.name}"${thankSuffix}`);
             } else {
                 showToast(`❌ Lỗi: ${result.error}`, 'error');
             }
@@ -796,6 +822,7 @@ const QuyenUI = (function () {
     // STATS
     // ==========================================
     function loadStats() {
+        if (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.UI_MODE === 'production') return;
         try {
             _filledToday = 0;
             if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
@@ -816,6 +843,7 @@ const QuyenUI = (function () {
     }
 
     function incrementFilledCount() {
+        if (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.UI_MODE === 'production') return;
         _filledToday++;
         updateStatsUI();
     }
@@ -1022,33 +1050,33 @@ const QuyenUI = (function () {
         const indicator = document.createElement('span');
         indicator.id = 'quyen-lock-indicator';
 
-        // Base style: small icon
-        const baseStyle = 'margin-left: 6px; font-size: 12px; cursor: help; vertical-align: middle;';
+        // Base style: styled pill badges
+        const baseStyle = 'margin-left: 6px; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid; vertical-align: middle; cursor: help;';
 
         if (typeof HIS !== 'undefined' && HIS.PatientLock && HIS.PatientLock.hasSource()) {
             const result = HIS.PatientLock.verifyCurrentForm();
             if (result.ok) {
-                indicator.textContent = '✓';
+                indicator.textContent = '✓ BN khớp';
                 indicator.title = 'Xác nhận: BN khớp\n' + result.details;
-                indicator.style.cssText = baseStyle + 'color: #28a745;';
+                indicator.style.cssText = baseStyle + 'color: #2b8a3e; background-color: #ebfbee; border-color: #d3f9d8;';
                 if (_panel) _panel.classList.remove('quyen-theme-danger');
             } else if (result.reason === 'NO_TARGET') {
-                indicator.textContent = '⚠️';
+                indicator.textContent = '⚠️ Chưa xác minh form';
                 indicator.title = 'Thông tin chặn:\n' + result.details;
-                indicator.style.cssText = baseStyle + 'color: #e67e22;';
+                indicator.style.cssText = baseStyle + 'color: #e67e22; background-color: #fff4e6; border-color: #ffe8cc;';
                 if (_panel) _panel.classList.remove('quyen-theme-danger');
             } else {
-                indicator.textContent = '❌';
+                indicator.textContent = '✕ BN không khớp';
                 indicator.title = 'Chưa khớp BN!\n' + result.details;
-                indicator.style.cssText = baseStyle + 'color: #f44336;';
+                indicator.style.cssText = baseStyle + 'color: #c92a2a; background-color: #fff5f5; border-color: #ffdeeb;';
                 // Kích hoạt theme cảnh báo đỏ
                 if (_panel) _panel.classList.add('quyen-theme-danger');
                 setFlowerState('fire');
             }
         } else {
-            indicator.textContent = '○';
+            indicator.textContent = '○ Chưa chọn BN';
             indicator.title = 'Chưa chọn bệnh nhân';
-            indicator.style.cssText = baseStyle + 'color: #999;';
+            indicator.style.cssText = baseStyle + 'color: #495057; background-color: #f1f3f5; border-color: #e9ecef;';
             if (_panel) _panel.classList.remove('quyen-theme-danger');
         }
 
@@ -1068,16 +1096,21 @@ const QuyenUI = (function () {
             const S = HIS.FillTracker.STATE;
             const status = HIS.FillTracker.getStatus();
 
-            if (state === S.FILLING) {
-                showFillProgress('⏳ Đang điền: ' + (detail || '...'), true);
-            } else if (state === S.DRUG_SELECTED) {
-                showFillProgress('💊 Đã chọn thuốc, điền tốc độ...', true);
-            } else if (state === S.DONE) {
+            if (state === S.PREPARING) {
+                showFillProgress('⏳ Đang chuẩn bị: ' + (detail || '...'), true);
+            } else if (state === S.WRITING) {
+                showFillProgress('💉 Đang điền dữ liệu: ' + (detail || '...'), true);
+            } else if (state === S.VERIFYING) {
+                showFillProgress('🔍 Đang đối chiếu giá trị...', true);
+            } else if (state === S.VERIFIED) {
                 showFillProgress('✅ Hoàn tất! (' + (status.elapsed / 1000).toFixed(1) + 's)', false);
                 setTimeout(hideFillProgress, 3000);
+            } else if (state === S.BLOCKED) {
+                showFillProgress('🚫 Bị chặn: ' + detail, false);
+                showToast('🚫 Bị chặn: ' + detail, 'error');
             } else if (state === S.TIMEOUT) {
                 showFillProgress('⏰ Quá thời gian!', false);
-                showToast('⏰ Fill quá 30s — có thể bị kẹt. Kiểm tra form!', 'error');
+                showToast('⏰ Quá 30s — có thể bị kẹt. Kiểm tra form!', 'error');
             } else if (state === S.CANCELLED) {
                 showFillProgress('❌ Đã hủy', false);
                 setTimeout(hideFillProgress, 2000);
@@ -1106,7 +1139,9 @@ const QuyenUI = (function () {
             const cancelBtn = document.getElementById('quyen-fill-cancel');
             if (cancelBtn) {
                 cancelBtn.addEventListener('click', function () {
-                    if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                    if (typeof QuyenInfusionFiller !== 'undefined' && typeof QuyenInfusionFiller.cancel === 'function') {
+                        QuyenInfusionFiller.cancel();
+                    } else if (typeof HIS !== 'undefined' && HIS.FillTracker) {
                         HIS.FillTracker.cancel();
                     }
                 });
@@ -1127,6 +1162,7 @@ const QuyenUI = (function () {
     // ★ EPIC GOLD FLASH EFFECT
     // ==========================================
     function triggerGoldFlash() {
+        if (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.UI_MODE === 'production') return;
         const flash = document.createElement('div');
         flash.className = 'quyen-epic-gold-flash';
         flash.innerHTML = `

@@ -20,13 +20,99 @@ HIS.Audit = (function () {
     var _buildHashCache = '';
 
     // ==========================================
-    // LOG — ghi 1 entry
+    // LOCALIZED TIME & TIMEZONE (UTC+7 / Asia/Ho_Chi_Minh)
+    // ==========================================
+    function formatVietnamTime(date) {
+        if (!(date instanceof Date)) {
+            date = new Date(date);
+        }
+        var formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Ho_Chi_Minh',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+        var parts = formatter.formatToParts(date);
+        var year, month, day, hour, minute, second;
+        for (var i = 0; i < parts.length; i++) {
+            var part = parts[i];
+            if (part.type === 'year') year = part.value;
+            else if (part.type === 'month') month = part.value;
+            else if (part.type === 'day') day = part.value;
+            else if (part.type === 'hour') hour = part.value;
+            else if (part.type === 'minute') minute = part.value;
+            else if (part.type === 'second') second = part.value;
+        }
+        
+        if (hour === '24') hour = '00';
+        
+        var ms = date.getMilliseconds();
+        var msStr = ('000' + ms).slice(-3);
+        
+        return year + '-' + month + '-' + day + 'T' + hour + ':' + minute + ':' + second + '.' + msStr + '+07:00';
+    }
+
+    function getTodayString() {
+        var date = new Date();
+        var formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Ho_Chi_Minh',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        var parts = formatter.formatToParts(date);
+        var year, month, day;
+        for (var i = 0; i < parts.length; i++) {
+            var part = parts[i];
+            if (part.type === 'year') year = part.value;
+            else if (part.type === 'month') month = part.value;
+            else if (part.type === 'day') day = part.value;
+        }
+        return year + '-' + month + '-' + day;
+    }
+
+    var _writeQueue = [];
+    var _isWriting = false;
+
+    // ==========================================
+    // LOG — ghi 1 entry (FIFO Queue)
     // ==========================================
     function log(action, detail) {
         return new Promise(function (resolve, reject) {
+            _writeQueue.push({
+                action: action,
+                detail: detail,
+                resolve: resolve,
+                reject: reject
+            });
+            _processQueue();
+        });
+    }
+
+    function _processQueue() {
+        if (_isWriting || _writeQueue.length === 0) return;
+        _isWriting = true;
+
+        var task = _writeQueue[0];
+
+        var initPromise = Promise.resolve();
+        if (typeof HIS !== 'undefined' && HIS.Privacy && typeof HIS.Privacy.initSalt === 'function') {
+            initPromise = HIS.Privacy.initSalt();
+        }
+
+        initPromise.then(function () {
+            var action = task.action;
+            var detail = task.detail;
+            var resolve = task.resolve;
+            var reject = task.reject;
+
             var safeDetail = _sanitizeDetail(detail || {});
             var entry = {
-                ts: new Date().toISOString(),
+                ts: formatVietnamTime(new Date()),
                 action: String(action || 'UNKNOWN').substring(0, 80),
                 module: safeDetail.module || '',
                 patientRef: safeDetail.patientRef || '',
@@ -50,16 +136,30 @@ HIS.Audit = (function () {
                 }
 
                 _saveEntries(entries, function (ok, err) {
+                    _writeQueue.shift();
+                    _isWriting = false;
+                    
                     if (!ok) {
                         reject(new Error(err || 'AUDIT_WRITE_FAILED'));
-                        return;
+                    } else {
+                        if (typeof QuyenLog !== 'undefined') {
+                            QuyenLog.info('Audit:', action, entry.result);
+                        }
+                        resolve(entry);
                     }
-                    if (typeof QuyenLog !== 'undefined') {
-                        QuyenLog.info('Audit:', action, entry.result);
-                    }
-                    resolve(entry);
+                    _processQueue();
                 });
-            }, reject);
+            }, function (err) {
+                _writeQueue.shift();
+                _isWriting = false;
+                reject(err);
+                _processQueue();
+            });
+        }).catch(function (err) {
+            _writeQueue.shift();
+            _isWriting = false;
+            task.reject(err);
+            _processQueue();
         });
     }
 
@@ -67,7 +167,7 @@ HIS.Audit = (function () {
     // GET — đọc entries
     // ==========================================
     function getToday(callback) {
-        var today = new Date().toISOString().substring(0, 10); // YYYY-MM-DD
+        var today = getTodayString();
         _getEntries(function (entries) {
             var filtered = entries.filter(function (e) {
                 return e.ts && e.ts.substring(0, 10) === today;
@@ -83,7 +183,7 @@ HIS.Audit = (function () {
     }
 
     function getStats(callback) {
-        var today = new Date().toISOString().substring(0, 10);
+        var today = getTodayString();
         _getEntries(function (entries) {
             var todayCount = 0;
             for (var i = 0; i < entries.length; i++) {
@@ -214,7 +314,10 @@ HIS.Audit = (function () {
     function _csvEscape(val) {
         if (val === null || val === undefined) return '';
         var str = String(val);
-        if (str.indexOf(',') >= 0 || str.indexOf('"') >= 0 || str.indexOf('\n') >= 0) {
+        if (/^\s*[=\+\-@\t\r]/.test(str)) {
+            str = "'" + str;
+        }
+        if (str.indexOf(',') >= 0 || str.indexOf('"') >= 0 || str.indexOf('\n') >= 0 || str.indexOf('\r') >= 0) {
             return '"' + str.replace(/"/g, '""') + '"';
         }
         return str;

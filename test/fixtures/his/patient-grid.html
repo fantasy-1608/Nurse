@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HIS Patient Grid</title>
+</head>
+<body>
+    <div id="patient-tab-container">
+        <!-- Main Patient Grid -->
+        <table id="grdBenhNhan">
+            <thead>
+                <tr>
+                    <th>STT</th>
+                    <th>Mã Khám Bệnh</th>
+                    <th>Hồ Sơ Bệnh Án</th>
+                    <th>Họ Tên</th>
+                    <th>Ngày Sinh</th>
+                    <th>Giới Tính</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Patient A Selected -->
+                <tr id="1" class="jqgrow ui-state-highlight" aria-selected="true">
+                    <td>1</td>
+                    <td aria-describedby="grdBenhNhan_KHAMBENHID">KB1001</td>
+                    <td aria-describedby="grdBenhNhan_HOSOBENHANID">HSBA1001</td>
+                    <td aria-describedby="grdBenhNhan_HOTEN">NGUYEN VAN A</td>
+                    <td aria-describedby="grdBenhNhan_NGAYSINH">01/01/1980</td>
+                    <td aria-describedby="grdBenhNhan_GIOITINH">Nam</td>
+                </tr>
+                <!-- Patient B -->
+                <tr id="2" class="jqgrow">
+                    <td>2</td>
+                    <td aria-describedby="grdBenhNhan_KHAMBENHID">KB1002</td>
+                    <td aria-describedby="grdBenhNhan_HOSOBENHANID">HSBA1002</td>
+                    <td aria-describedby="grdBenhNhan_HOTEN">TRAN THI B</td>
+                    <td aria-describedby="grdBenhNhan_NGAYSINH">02/02/1990</td>
+                    <td aria-describedby="grdBenhNhan_GIOITINH">Nữ</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

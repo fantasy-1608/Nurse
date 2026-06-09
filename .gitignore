@@ -24,3 +24,33 @@ dist-zip/
 logs
 *.log
 .gitnexus
+
+# Local files & artifacts
+.agents/
+.gemini/
+temp/
+*.zip
+!.gitignore
+
+# Private spreadsheets, documents, and logs (SEC-007)
+*.csv
+*.xlsx
+*.xls
+*.pdf
+*.docx
+*.zip
+*.log
+
+# Private operational/artifact directories (SEC-007)
+screenshots/
+pilot-evidence/
+audit-export/
+rollout-inventory/
+dist-zip/
+
+# Allowed Vetted Templates (Negation Rules)
+!*template.csv
+!*template.xlsx
+!*template.xls
+!src/docs/*-template.csv
+!dist/DDT/docs/*-template.csv

@@ -87,17 +87,55 @@ const QuyenCareSheetFiller = (function () {
     // Điền toàn bộ template values vào HIS form
     // ==========================================
     function fillFromTemplate(templateId) {
+        const startTime = Date.now();
         const template = CARESHEET_CONFIG.TEMPLATES.find(t => t.id === templateId);
         if (!template) {
             QuyenLog.error('❌ Không tìm thấy template:', templateId);
-            return { success: false, error: 'Template không tồn tại' };
+            return Promise.resolve({ success: false, error: 'Template không tồn tại' });
         }
 
         QuyenLog.info(`📋 Đang điền mẫu "${template.name}"...`);
 
+        let context;
+        try {
+            context = HIS.OperationContext.create('caresheet');
+            HIS.WriteVerifier.preWriteGuard(context);
+        } catch (err) {
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                HIS.FillTracker.block(err.message);
+            }
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillFromTemplate',
+                    durationMs: Date.now() - startTime,
+                    result: 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            return Promise.resolve({ success: false, error: err.message });
+        }
+
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.WRITING);
+        }
+
         const formDoc = getFormDocument();
         if (!formDoc) {
-            return { success: false, error: 'Form phiếu chăm sóc chưa mở. Hãy bấm "Thêm phiếu" trên HIS trước!' };
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillFromTemplate',
+                    durationMs: Date.now() - startTime,
+                    result: 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            return Promise.resolve({ success: false, error: 'Form phiếu chăm sóc chưa mở. Hãy bấm "Thêm phiếu" trên HIS trước!' });
         }
 
         const values = template.values;
@@ -121,12 +159,47 @@ const QuyenCareSheetFiller = (function () {
 
         QuyenLog.info(`✅ Đã điền ${filledCount} fields, ${errors.length} lỗi`);
 
-        return {
-            success: true, // Không báo lỗi nghiêm trọng trên UI chỉ vì thiếu field template
-            filledCount,
-            errors,
-            templateName: template.name
-        };
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.VERIFYING);
+        }
+
+        const fields = CARESHEET_CONFIG.SECTIONS.flatMap(s => s.fields);
+        return HIS.WriteVerifier.postWriteVerify(context, { values, fields, filledCount }).then(res => {
+            const durationMs = Date.now() - startTime;
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillFromTemplate',
+                    durationMs: durationMs,
+                    result: res.ok ? 'success' : 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            if (res.ok) {
+                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.complete();
+                return { success: true, filledCount };
+            } else {
+                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(res.details);
+                return { success: false, error: res.details, filledCount };
+            }
+        }).catch(err => {
+            const durationMs = Date.now() - startTime;
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillFromTemplate',
+                    durationMs: durationMs,
+                    result: 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(err.message);
+            return { success: false, error: err.message, filledCount };
+        });
     }
 
     // ==========================================
@@ -134,9 +207,47 @@ const QuyenCareSheetFiller = (function () {
     // Điền từ object values tùy chỉnh (từ mini form)
     // ==========================================
     function fillCustomValues(values) {
+        const startTime = Date.now();
+        let context;
+        try {
+            context = HIS.OperationContext.create('caresheet');
+            HIS.WriteVerifier.preWriteGuard(context);
+        } catch (err) {
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                HIS.FillTracker.block(err.message);
+            }
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillCustomValues',
+                    durationMs: Date.now() - startTime,
+                    result: 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            return Promise.resolve({ success: false, error: err.message });
+        }
+
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.WRITING);
+        }
+
         const formDoc = getFormDocument();
         if (!formDoc) {
-            return { success: false, error: 'Form phiếu chăm sóc chưa mở!' };
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillCustomValues',
+                    durationMs: Date.now() - startTime,
+                    result: 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            return Promise.resolve({ success: false, error: 'Form phiếu chăm sóc chưa mở!' });
         }
 
         let filledCount = 0;
@@ -156,7 +267,47 @@ const QuyenCareSheetFiller = (function () {
             console.groupEnd();
         }
 
-        return { success: errors.length === 0, filledCount, errors };
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.VERIFYING);
+        }
+
+        const fields = CARESHEET_CONFIG.SECTIONS.flatMap(s => s.fields);
+        return HIS.WriteVerifier.postWriteVerify(context, { values, fields, filledCount }).then(res => {
+            const durationMs = Date.now() - startTime;
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillCustomValues',
+                    durationMs: durationMs,
+                    result: res.ok ? 'success' : 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            if (res.ok) {
+                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.complete();
+                return { success: true, filledCount };
+            } else {
+                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(res.details);
+                return { success: false, error: res.details, filledCount };
+            }
+        }).catch(err => {
+            const durationMs = Date.now() - startTime;
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillCustomValues',
+                    durationMs: durationMs,
+                    result: 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(err.message);
+            return { success: false, error: err.message, filledCount };
+        });
     }
 
     // ==========================================
@@ -300,7 +451,41 @@ const QuyenCareSheetFiller = (function () {
     // ==========================================
     // UTILITY — Set input value + trigger events
     // ==========================================
-    function setInputValue(input, value) {
+    function injectOverlayStyles(doc) {
+        if (!doc || typeof doc.createElement !== 'function') return;
+        if (doc.getElementById('quyen-badge-styles')) return;
+        const style = doc.createElement('style');
+        style.id = 'quyen-badge-styles';
+        style.textContent = `
+            input[data-quyen-source="nt006"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='65' height='18'><rect width='65' height='18' rx='4' fill='%2328a745'/><text x='6' y='13' fill='white' font-family='sans-serif' font-size='9' font-weight='bold'>NT.006</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 75px !important;
+            }
+            input[data-quyen-source="prev"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='18'><rect width='140' height='18' rx='4' fill='%23ffeeba'/><text x='6' y='13' fill='%23333' font-family='sans-serif' font-size='9' font-weight='bold'>Phiếu cũ — cần xác nhận</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 150px !important;
+            }
+            input[data-quyen-source="suggestion"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='130' height='18'><rect width='130' height='18' rx='4' fill='%23e2e3e5'/><text x='6' y='13' fill='%23666' font-family='sans-serif' font-size='9' font-weight='bold'>Gợi ý — chưa xác nhận</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 140px !important;
+            }
+            input[data-quyen-source="manual"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='70' height='18'><rect width='70' height='18' rx='4' fill='%23007bff'/><text x='6' y='13' fill='white' font-family='sans-serif' font-size='9' font-weight='bold'>Nhập tay</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 80px !important;
+            }
+        `;
+        (doc.head || doc.body || doc.documentElement).appendChild(style);
+    }
+
+    function setInputValue(input, value, source = 'suggestion') {
         if (input.disabled && !input.id.includes('datepicker')) return;
 
         // Thử dùng native setter từ iframe's window
@@ -318,6 +503,16 @@ const QuyenCareSheetFiller = (function () {
         } catch (e) {
             input.value = value;
         }
+
+        input.setAttribute('data-quyen-source', source);
+        if (!(input.dataset && input.dataset.hasQuyenSourceListener) && input.getAttribute('data-has-quyen-source-listener') !== 'true') {
+            if (input.dataset) input.dataset.hasQuyenSourceListener = 'true';
+            input.setAttribute('data-has-quyen-source-listener', 'true');
+            input.addEventListener('input', function () {
+                input.setAttribute('data-quyen-source', 'manual');
+            });
+        }
+        injectOverlayStyles(input.ownerDocument);
 
         triggerEvent(input, 'input');
         triggerEvent(input, 'change');
@@ -423,14 +618,55 @@ const QuyenCareSheetFiller = (function () {
         const formDoc = getFormDocument();
         if (!formDoc) {
             QuyenLog.warn('❌ Form phiếu chăm sóc chưa mở!');
-            return { success: false, error: 'Form chưa mở' };
+            return Promise.resolve({ success: false, error: 'Form chưa mở' });
+        }
+
+        // Tạo OperationContext và chạy preWriteGuard
+        let context;
+        try {
+            context = HIS.OperationContext.create('caresheet');
+            HIS.WriteVerifier.preWriteGuard(context);
+        } catch (err) {
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                HIS.FillTracker.block(err.message);
+            }
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'caresheet',
+                    step: 'fillSection4FromPrevious',
+                    durationMs: 0,
+                    result: 'failed',
+                    fallbackUsed: false,
+                    timeout: false,
+                    staleDropped: false
+                });
+            }
+            return Promise.resolve({ success: false, error: err.message });
+        }
+
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.start({ name: 'caresheet' }); // Khởi chạy FillTracker cho caresheet
+            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.WRITING);
+        }
+
+        // ★ Sync patient tracking variables from PatientLock context if they are empty
+        if (!_currentPatientSeq || !_currentKhambenhId) {
+            const activeCtx = (typeof HIS !== 'undefined' && HIS.PatientLock) ? HIS.PatientLock.getSourceContext() : null;
+            if (activeCtx) {
+                if (!_currentPatientSeq && activeCtx.seq) {
+                    _currentPatientSeq = activeCtx.seq;
+                }
+                if (!_currentKhambenhId && activeCtx.khambenhId) {
+                    _currentKhambenhId = activeCtx.khambenhId;
+                }
+            }
         }
 
         // ★ Chỉ dùng cache nếu ĐÃ CÓ sec4 hoặc sec17 (không dựa vào weight)
         const hasCachedSec4 = !!(_cachedSec4Data && Object.keys(_cachedSec4Data).length > 0);
         const hasCachedSec17 = !!(_cachedSec17Data && Object.keys(_cachedSec17Data).length > 0);
         if (hasCachedSec4 || hasCachedSec17) {
-            return _doFillSection4(formDoc, _cachedSec4Data || {}, _cachedWeight, _cachedSec17Data || {}, allowedSections);
+            return _doFillSection4(formDoc, _cachedSec4Data || {}, _cachedWeight, _cachedSec17Data || {}, allowedSections, context);
         }
 
         // Chưa có cache → request Bridge
@@ -443,7 +679,7 @@ const QuyenCareSheetFiller = (function () {
             module: 'caresheet'
         });
 
-        // Chờ response (tối đa 3 giây)
+        // Chờ response (tối đa 6 giây)
         return new Promise(function (resolve) {
             let resolved = false;
             function onMessage(ev) {
@@ -470,9 +706,13 @@ const QuyenCareSheetFiller = (function () {
                     _cachedWeight = ev.data.weight || '';
                     _cachedPatientName = ev.data.patientName || '';
                     if (Object.keys(_cachedSec4Data).length > 0 || _cachedWeight || Object.keys(_cachedSec17Data).length > 0) {
-                        resolve(_doFillSection4(formDoc, _cachedSec4Data, _cachedWeight, _cachedSec17Data, allowedSections));
+                        _doFillSection4(formDoc, _cachedSec4Data, _cachedWeight, _cachedSec17Data, allowedSections, context).then(resolve);
                     } else {
                         QuyenLog.warn('📋 Không có dữ liệu từ phiếu cũ');
+                        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                            HIS.FillTracker.block('Không tìm thấy phiếu cũ');
+                        }
+                        HIS.OperationContext.cancel('NO_PREVIOUS_SHEET');
                         resolve({ success: false, error: 'Không tìm thấy phiếu cũ' });
                     }
                 }
@@ -483,6 +723,10 @@ const QuyenCareSheetFiller = (function () {
                     resolved = true;
                     window.removeEventListener('message', onMessage);
                     QuyenLog.warn('📋 Timeout chờ data phiếu cũ');
+                    if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                        HIS.FillTracker.block('Timeout — không tìm thấy phiếu cũ');
+                    }
+                    HIS.OperationContext.cancel('TIMEOUT');
                     resolve({ success: false, error: 'Timeout — không tìm thấy phiếu cũ' });
                 }
             }, 6000);
@@ -490,9 +734,13 @@ const QuyenCareSheetFiller = (function () {
     }
 
     /** Điền Section 4 + Section 17 + cân nặng vào form */
-    function _doFillSection4(formDoc, sec4Data, weight, sec17Data, allowedSections = null) {
+    function _doFillSection4(formDoc, sec4Data, weight, sec17Data, allowedSections = null, context = null) {
         const idToKey = { '1169': 'coQuanBenh1', '1170': 'coQuanBenh2', '1171': 'coQuanBenh3', '1232': 'coQuanBenh4' };
+        const idToLabel = { '1169': 'Cơ quan bệnh (1)', '1170': 'Cơ quan bệnh (2)', '1171': 'Cơ quan bệnh (3)', '1232': 'Cơ quan bệnh (4)' };
         let filledCount = 0;
+
+        const verifiedValues = {};
+        const verifiedFields = [];
 
         // ═══ Section 4: Cơ quan bệnh (index 4 trong SECTIONS) ═══
         if (!allowedSections || allowedSections.includes(4)) {
@@ -508,8 +756,13 @@ const QuyenCareSheetFiller = (function () {
                 const input = container.querySelector('input[type="text"], input:not([type]), textarea');
                 if (!input) continue;
 
-                setInputValue(input, value);
+                setInputValue(input, value, 'prev');
                 filledCount++;
+
+                const key = idToKey[ctId] || ctId;
+                verifiedValues[key] = value;
+                verifiedFields.push({ key: key, ctFormId: ctId, type: 'text', label: idToLabel[ctId] || ctId });
+
                 QuyenLog.info('  ✅ ' + (idToKey[ctId] || ctId) + ': "' + value + '"');
             }
             if (Object.keys(sec4Data).length === 0) QuyenLog.info('  (không có dữ liệu)');
@@ -524,8 +777,12 @@ const QuyenCareSheetFiller = (function () {
                 if (weightContainer) {
                     const weightInput = weightContainer.querySelector('input[type="text"], input:not([type])');
                     if (weightInput) {
-                        setInputValue(weightInput, weight);
+                        setInputValue(weightInput, weight, 'prev');
                         filledCount++;
+
+                        verifiedValues['canNang'] = weight;
+                        verifiedFields.push({ key: 'canNang', ctFormId: '1248', type: 'text', label: 'Cân nặng (kg)' });
+
                         QuyenLog.info('  ⚖️ Cân nặng: ' + weight + ' kg');
                     }
                 }
@@ -534,12 +791,20 @@ const QuyenCareSheetFiller = (function () {
             const height = _cachedHeight;
             if (height) {
                 let heightContainer = formDoc.querySelector('[data-ct-form-id="1317"]');
-                if (!heightContainer) heightContainer = formDoc.querySelector('[data-ct-form-id="1251"]');
+                let actualCtId = '1317';
+                if (!heightContainer) {
+                    heightContainer = formDoc.querySelector('[data-ct-form-id="1251"]');
+                    actualCtId = '1251';
+                }
                 if (heightContainer) {
                     const heightInput = heightContainer.querySelector('input[type="text"], input:not([type])');
                     if (heightInput) {
-                        setInputValue(heightInput, height);
+                        setInputValue(heightInput, height, 'prev');
                         filledCount++;
+
+                        verifiedValues['chieuCao'] = height;
+                        verifiedFields.push({ key: 'chieuCao', ctFormId: actualCtId, type: 'text', label: 'Chiều cao (cm)' });
+
                         QuyenLog.info('  📏 Chiều cao: ' + height + ' cm');
                     }
                 }
@@ -554,8 +819,12 @@ const QuyenCareSheetFiller = (function () {
                     if (bmiContainer) {
                         const bmiInput = bmiContainer.querySelector('input[type="text"], input:not([type])');
                         if (bmiInput) {
-                            setInputValue(bmiInput, bmi);
+                            setInputValue(bmiInput, bmi, 'prev');
                             filledCount++;
+
+                            verifiedValues['bmi'] = bmi;
+                            verifiedFields.push({ key: 'bmi', ctFormId: '1250', type: 'text', label: 'BMI' });
+
                             QuyenLog.info('  📊 BMI: ' + bmi + ' (CN=' + weight + ', CC=' + height + ')');
                         }
                     }
@@ -579,8 +848,12 @@ const QuyenCareSheetFiller = (function () {
                     if (!vContainer) continue;
                     const vInput = vContainer.querySelector('input[type="text"], input:not([type])');
                     if (!vInput) continue;
-                    setInputValue(vInput, vVal);
+                    setInputValue(vInput, vVal, 'prev');
                     filledCount++;
+
+                    verifiedValues[vf.key] = vVal;
+                    verifiedFields.push({ key: vf.key, ctFormId: vf.ctFormId, type: 'text', label: vf.label });
+
                     QuyenLog.info('  📋 ' + vf.label + ': ' + vVal + ' (từ phiếu cũ)');
                 }
             }
@@ -603,7 +876,22 @@ const QuyenCareSheetFiller = (function () {
             QuyenLog.info('📋 Đã copy ' + filledCount + ' ô từ phiếu cũ! __EXT_EMOJI__');
         }
 
-        return { success: filledCount > 0, filledCount: filledCount, patientName: _cachedPatientName, weight: weight, phieuId: _cachedPhieuId, sec17Count: (sec17Data ? Object.keys(sec17Data).length : 0) };
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.VERIFYING);
+        }
+
+        return HIS.WriteVerifier.postWriteVerify(context, { values: verifiedValues, fields: verifiedFields, filledCount: filledCount }).then(res => {
+            if (res.ok) {
+                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.complete();
+                return { success: true, filledCount: filledCount, patientName: _cachedPatientName, weight: weight, phieuId: _cachedPhieuId, sec17Count: (sec17Data ? Object.keys(sec17Data).length : 0) };
+            } else {
+                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(res.details);
+                return { success: false, error: res.details, filledCount: filledCount };
+            }
+        }).catch(err => {
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(err.message);
+            return { success: false, error: err.message, filledCount: filledCount };
+        });
     }
 
     /**
@@ -623,8 +911,14 @@ const QuyenCareSheetFiller = (function () {
 
         if (tasks.length === 0) return;
 
+        const context = HIS.OperationContext.getActive();
         QuyenLog.info('🏥 Gửi ' + tasks.length + ' Section 17 fields đến Bridge (direct set)...');
-        HIS.Message.send('QUYEN_FILL_COMBOGRID', { tasks: tasks, module: 'caresheet' });
+        HIS.Message.send('QUYEN_FILL_COMBOGRID', {
+            tasks: tasks,
+            module: 'caresheet',
+            patientSeq: context ? context.patientSeq : 0,
+            khambenhId: context ? context.khambenhId : ''
+        });
     }
 
     // ==========================================

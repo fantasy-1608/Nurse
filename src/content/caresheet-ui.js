@@ -163,6 +163,10 @@ const QuyenCareSheetUI = (function () {
     let _cachedVitals = null;
     let _cachedPatient = null;
     let _vitalsRequested = false;
+    let _cachedVitalsFromPrev = null;
+    let _cachedSec4Data = null;
+    let _cachedSec17Data = null;
+    let _manualFields = {};
 
     // ★ SAFETY v2: Track BN hiện tại để validate incoming care sheet data
     let _currentPatientSeq = 0;
@@ -180,6 +184,10 @@ const QuyenCareSheetUI = (function () {
             const v = event.data.vitals || {};
             _cachedPatient = p;
             _cachedVitals = v;
+            _cachedVitalsFromPrev = null;
+            _cachedSec4Data = null;
+            _cachedSec17Data = null;
+            _manualFields = {};
 
             // ★ SAFETY v2: Cập nhật patient tracking
             _currentPatientSeq = event.data.seq || 0;
@@ -248,6 +256,17 @@ const QuyenCareSheetUI = (function () {
                 return;
             }
 
+            // Save for source badge tracing
+            if (event.data.vitalsFromPrev) {
+                _cachedVitalsFromPrev = event.data.vitalsFromPrev;
+            }
+            if (event.data.data && Object.keys(event.data.data).length > 0) {
+                _cachedSec4Data = event.data.data;
+            }
+            if (event.data.sec17 && Object.keys(event.data.sec17).length > 0) {
+                _cachedSec17Data = event.data.sec17;
+            }
+
             // ★ KHÔNG prefill Section 4 (Cơ quan bệnh) nữa — chỉ lấy cân nặng
             if (event.data.weight) {
                 _customValues.canNang = event.data.weight;
@@ -286,6 +305,7 @@ const QuyenCareSheetUI = (function () {
                 highlightInput(weightInput);
             }
             QuyenLog.info('⚖️ Đã prefill cân nặng:', vitals.weight + 'kg');
+            updateFieldBadge('canNang');
         }
 
         // Tính BMI nếu có cả cân nặng + chiều cao
@@ -301,6 +321,7 @@ const QuyenCareSheetUI = (function () {
                     highlightInput(bmiInput);
                 }
                 QuyenLog.info('📊 Đã prefill BMI:', bmi, '(CN=' + vitals.weight + ', CC=' + vitals.height + ')');
+                updateFieldBadge('bmi');
             }
         }
     }
@@ -339,6 +360,7 @@ const QuyenCareSheetUI = (function () {
                 _customValues[vk.key] = val;
                 highlightInput(input);
                 count++;
+                updateFieldBadge(vk.key);
 
                 // ★ Kiểm tra khoảng bình thường
                 const warning = checkVitalRange(vk.key, val, VITAL_RANGES);
@@ -663,6 +685,7 @@ const QuyenCareSheetUI = (function () {
     // LOAD DEFAULT VALUES (⚠️ Không còn random)
     // ==========================================
     function loadDefaultValues() {
+        _manualFields = {};
         _customValues = CARESHEET_CONFIG.getDefaultEmptyValues();
 
         // ★ FIX Bug2: Ưu tiên vitals thật từ NT.006, fallback sang phiếu chăm sóc cũ
@@ -756,6 +779,106 @@ const QuyenCareSheetUI = (function () {
         });
     }
 
+    const fieldCtIdMap = {};
+    function initFieldCtIdMap() {
+        if (Object.keys(fieldCtIdMap).length > 0) return;
+        if (typeof CARESHEET_CONFIG !== 'undefined' && CARESHEET_CONFIG.SECTIONS) {
+            CARESHEET_CONFIG.SECTIONS.forEach(s => {
+                s.fields.forEach(f => {
+                    if (f.key) fieldCtIdMap[f.key] = f.ctFormId;
+                    if (f.splitKeys) {
+                        f.splitKeys.forEach(sk => {
+                            fieldCtIdMap[sk] = f.ctFormId;
+                        });
+                    }
+                });
+            });
+        }
+    }
+
+    function getFieldSourceBadgeHtml(key) {
+        initFieldCtIdMap();
+        const value = _customValues[key];
+        if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+            return '';
+        }
+
+        const vitalMap = {
+            nhipTim: 'pulse',
+            nhietDo: 'temp',
+            huyetAp: 'bp',
+            nhipTho: 'resp',
+            spO2: 'spo2',
+            canNang: 'weight'
+        };
+
+        let source = 'suggestion';
+
+        // 1. Check NT.006
+        if (vitalMap[key] && _cachedVitals && _cachedVitals[vitalMap[key]] !== undefined) {
+            const liveVal = String(_cachedVitals[vitalMap[key]]).trim();
+            if (liveVal && String(value).trim() === liveVal) {
+                source = 'nt006';
+            }
+        }
+
+        // 2. Check previous
+        if (source !== 'nt006') {
+            if (vitalMap[key] && _cachedVitalsFromPrev && _cachedVitalsFromPrev[key] !== undefined) {
+                const prevVal = String(_cachedVitalsFromPrev[key]).trim();
+                if (prevVal && String(value).trim() === prevVal) {
+                    source = 'prev';
+                }
+            } else if (key === 'canNang' && typeof QuyenCareSheetFiller !== 'undefined') {
+                const prevWeight = String(QuyenCareSheetFiller.getCachedWeight()).trim();
+                if (prevWeight && String(value).trim() === prevWeight) {
+                    source = 'prev';
+                }
+            } else if (_cachedSec4Data && _cachedSec4Data[fieldCtIdMap[key]] !== undefined) {
+                const prevVal = String(_cachedSec4Data[fieldCtIdMap[key]]).trim();
+                if (prevVal && String(value).trim() === prevVal) {
+                    source = 'prev';
+                }
+            }
+        }
+
+        // 3. Check manual
+        if (_manualFields && _manualFields[key]) {
+            source = 'manual';
+        }
+
+        let badgeText = '';
+        let badgeColor = '';
+        let badgeBg = '';
+
+        if (source === 'nt006') {
+            badgeText = 'NT.006';
+            badgeColor = 'white';
+            badgeBg = '#28a745';
+        } else if (source === 'prev') {
+            badgeText = 'Phiếu cũ — cần xác nhận';
+            badgeColor = '#333';
+            badgeBg = '#ffeeba';
+        } else if (source === 'manual') {
+            badgeText = 'Nhập tay';
+            badgeColor = 'white';
+            badgeBg = '#007bff';
+        } else {
+            badgeText = 'Gợi ý — chưa xác nhận';
+            badgeColor = '#666';
+            badgeBg = '#e2e3e5';
+        }
+
+        return `<span class="quyen-source-badge" style="display:inline-block;padding:2px 6px;margin-left:8px;font-size:10px;font-weight:bold;border-radius:4px;color:${badgeColor};background-color:${badgeBg};vertical-align:middle;" title="${badgeText}">${badgeText}</span>`;
+    }
+
+    function updateFieldBadge(key) {
+        const container = document.querySelector(`.quyen-badge-container[data-badge-key="${key}"]`);
+        if (container) {
+            container.innerHTML = getFieldSourceBadgeHtml(key);
+        }
+    }
+
     function renderFieldEditor(field) {
         const value = _customValues[field.key];
 
@@ -763,7 +886,7 @@ const QuyenCareSheetUI = (function () {
             case 'text':
                 return `
                     <div class="quyen-cs-field-row">
-                        <label class="quyen-cs-field-label">${field.label}</label>
+                        <label class="quyen-cs-field-label">${field.label} <span class="quyen-badge-container" data-badge-key="${field.key}">${getFieldSourceBadgeHtml(field.key)}</span></label>
                         <input class="quyen-cs-field-input" type="text" 
                             data-field-key="${field.key}" 
                             value="${escapeAttr(value || '')}" 
@@ -775,7 +898,7 @@ const QuyenCareSheetUI = (function () {
                 const options = field.options || [];
                 const selected = Array.isArray(value) ? value : [];
                 let checkHtml = `<div class="quyen-cs-field-row">
-                    <label class="quyen-cs-field-label">${field.label}</label>
+                    <label class="quyen-cs-field-label">${field.label} <span class="quyen-badge-container" data-badge-key="${field.key}">${getFieldSourceBadgeHtml(field.key)}</span></label>
                     <div class="quyen-cs-checkbox-group">`;
 
                 options.forEach(opt => {
@@ -803,7 +926,7 @@ const QuyenCareSheetUI = (function () {
                     const subLabel = subLabels[i] || `Ô ${i + 1}`;
                     splitHtml += `
                         <div class="quyen-cs-split-item">
-                            <span class="quyen-cs-split-label">${subLabel}</span>
+                            <span class="quyen-cs-split-label">${subLabel} <span class="quyen-badge-container" data-badge-key="${sk}">${getFieldSourceBadgeHtml(sk)}</span></span>
                             <input class="quyen-cs-field-input quyen-cs-split-input" type="text"
                                 data-field-key="${sk}"
                                 value="${escapeAttr(_customValues[sk] || '')}"
@@ -840,6 +963,8 @@ const QuyenCareSheetUI = (function () {
         } else {
             _customValues[key] = input.value;
         }
+        _manualFields[key] = true;
+        updateFieldBadge(key);
     }
 
     // ==========================================
@@ -1039,11 +1164,11 @@ const QuyenCareSheetUI = (function () {
             QuyenLog.info('📋 Fill mode: ' + mode + ', sections: ' + allowedSections.join(',') + ', fields: ' + Object.keys(valuesToFill).length);
         }
 
-        function runCareSheetFill() {
+        async function runCareSheetFill() {
             setStatus('⏳ Đang điền...', 'info');
             addExtensionStep('Bắt đầu điền ' + Object.keys(valuesToFill).length + ' mục cơ bản...', 'loading');
 
-            const result = QuyenCareSheetFiller.fillCustomValues(valuesToFill);
+            const result = await QuyenCareSheetFiller.fillCustomValues(valuesToFill);
             if (typeof HIS !== 'undefined' && HIS.Safety) {
                 HIS.Safety.auditResult('CARESHEET_FILL_RESULT', {
                     module: 'caresheet',
@@ -1056,6 +1181,7 @@ const QuyenCareSheetUI = (function () {
 
             if (result.success) {
                 setStatus(`✅ Đã điền ${result.filledCount} mục thành công! __EXT_EMOJI__`, 'success');
+                addExtensionStep(`Điền dữ liệu thành công (${result.filledCount} mục)`, 'done');
                 showMeritAnimation();
                 if (typeof QuyenUI !== 'undefined') {
                     QuyenUI.showToast(`✅ Đã điền phiếu chăm sóc — ${result.filledCount} mục! __EXT_EMOJI__`);
@@ -1076,23 +1202,16 @@ const QuyenCareSheetUI = (function () {
                         } else {
                             sec4Allowed = sec4Allowed.filter(function(i) { return i !== 4; });
                         }
-                        const sec4Result = QuyenCareSheetFiller.fillSection4FromPrevious(sec4Allowed);
-                        function showSec4Result(r) {
-                             if (r && r.success) {
-                                let msg = '📋 Phiếu cũ #' + (r.phieuId || '?') + ' → ' + r.filledCount + ' ô';
-                                if (r.sec17Count) msg += ' + Sec17: ' + r.sec17Count + ' mục';
-                                if (r.weight) msg += ' | Cân nặng: ' + r.weight + 'kg';
-                                setStatus('✅ Đã điền ' + result.filledCount + ' mục + ' + msg, 'success');
-                                addExtensionStep('Hoàn tất copy phiếu cũ (' + r.filledCount + ' ô)', 'done');
-                                if (typeof QuyenUI !== 'undefined') QuyenUI.showToast(msg);
-                            } else {
-                                addExtensionStep('Không có dữ liệu phiếu cũ để copy', 'done');
-                            }
-                        }
-                        if (sec4Result && sec4Result.then) {
-                            sec4Result.then(showSec4Result);
+                        const r = await QuyenCareSheetFiller.fillSection4FromPrevious(sec4Allowed);
+                        if (r && r.success) {
+                            let msg = '📋 Phiếu cũ #' + (r.phieuId || '?') + ' → ' + r.filledCount + ' ô';
+                            if (r.sec17Count) msg += ' + Sec17: ' + r.sec17Count + ' mục';
+                            if (r.weight) msg += ' | Cân nặng: ' + r.weight + 'kg';
+                            setStatus('✅ Đã điền ' + result.filledCount + ' mục + ' + msg, 'success');
+                            addExtensionStep('Hoàn tất copy phiếu cũ (' + r.filledCount + ' ô)', 'done');
+                            if (typeof QuyenUI !== 'undefined') QuyenUI.showToast(msg);
                         } else {
-                            showSec4Result(sec4Result);
+                            addExtensionStep('Không có dữ liệu phiếu cũ để copy', 'done');
                         }
                     }
                 } catch (e) {
@@ -1100,8 +1219,9 @@ const QuyenCareSheetUI = (function () {
                 }
             } else {
                 const errorCount = result.errors ? result.errors.length : 0;
-                const errorMsg = result.error || (result.errors ? result.errors.slice(0, 3).join(', ') : '');
+                const errorMsg = result.error || (result.errors ? result.errors.slice(0, 3).join(', ') : 'Điền dữ liệu thất bại');
                 setStatus(`⚠️ Điền ${result.filledCount || 0} mục, ${errorCount} lỗi: ${errorMsg}`, 'warning');
+                addExtensionStep(`Lỗi: ${errorMsg}`, 'error');
                 if (typeof QuyenUI !== 'undefined') {
                     QuyenUI.showToast(`⚠️ ${errorMsg}`, 'warning');
                 }
@@ -1225,6 +1345,7 @@ const QuyenCareSheetUI = (function () {
     // OPERATION COUNT ANIMATION
     // ==========================================
     function showMeritAnimation() {
+        if (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.UI_MODE === 'production') return;
         const fillBtn = document.getElementById('quyen-btn-cs-fill');
         if (!fillBtn) return;
 

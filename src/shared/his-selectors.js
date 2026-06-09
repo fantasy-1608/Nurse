@@ -105,9 +105,19 @@ HIS.Selectors = {
      * @returns {Element|null}
      */
     findFirst(selectors) {
+        const cacheKey = 'findFirst_' + selectors.join('|');
+        if (typeof HIS !== 'undefined' && HIS.PerfCache) {
+            const cached = HIS.PerfCache.get(cacheKey);
+            if (cached && cached.ownerDocument && cached.ownerDocument.body.contains(cached)) return cached;
+        }
         for (const sel of selectors) {
             const el = document.querySelector(sel);
-            if (el) return el;
+            if (el) {
+                if (typeof HIS !== 'undefined' && HIS.PerfCache) {
+                    HIS.PerfCache.set(cacheKey, el);
+                }
+                return el;
+            }
         }
         return null;
     },
@@ -119,9 +129,17 @@ HIS.Selectors = {
      * @returns {Element|null}
      */
     findByText(tagName, text) {
+        const cacheKey = 'findByText_' + tagName + '_' + text;
+        if (typeof HIS !== 'undefined' && HIS.PerfCache) {
+            const cached = HIS.PerfCache.get(cacheKey);
+            if (cached && cached.ownerDocument && cached.ownerDocument.body.contains(cached)) return cached;
+        }
         const elements = document.querySelectorAll(tagName);
         for (const el of elements) {
             if ((el.textContent || '').trim().includes(text)) {
+                if (typeof HIS !== 'undefined' && HIS.PerfCache) {
+                    HIS.PerfCache.set(cacheKey, el);
+                }
                 return el;
             }
         }

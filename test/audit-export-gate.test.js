@@ -15,6 +15,18 @@ let result = verifier.verifyAuditExport(goodCsv, {
 
 assert.strictEqual(result.ok, true, result.errors.join('\n'));
 
+const goodCsv64 = [
+    'Thời gian,Hành động,Module,PatientRef,ItemRef,RequestId,Phiên bản,Build hash,Kết quả,Lý do,Số mục',
+    '2026-05-31T08:00:00.000Z,INFUSION_FILL_RESULT,infusion,pt_ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb,it_ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb,req_001,1.3.4,' + hash + ',OK,,1'
+].join('\n');
+
+result = verifier.verifyAuditExport(goodCsv64, {
+    version: '1.3.4',
+    releaseHashes: { 'Nurse-v1.3.4.zip': hash }
+});
+
+assert.strictEqual(result.ok, true, result.errors.join('\n'));
+
 const badCsv = [
     'Thời gian,Hành động,Module,PatientRef,ItemRef,RequestId,Phiên bản,Build hash,Kết quả,Lý do,Số mục',
     '2026-05-31T08:00:00.000Z,INFUSION_FILL_RESULT,infusion,PHI_FIXTURE_DO_NOT_USE_REAL_DATA,it_ab12cd34,req_001,1.3.4,' + hash + ',OK,PHI_FIXTURE_DO_NOT_USE_REAL_DATA 01/01/1990,1'

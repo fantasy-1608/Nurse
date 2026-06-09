@@ -22,6 +22,78 @@ const QuyenInfusionFiller = (function () {
     let _fillSessionId = 0;  // ★ Session ID để cancel stale callbacks
     let _cachedDocs = null;  // ★ BUG-20: Cache getAllDocuments per session
     let _cachedDocsSessionId = 0;
+    let _activeTimeouts = [];
+    let _activeContext = null;
+    let _fillStartTime = 0;
+
+    function safeSetTimeout(fn, delay) {
+        const id = setTimeout(function () {
+            _activeTimeouts = _activeTimeouts.filter(function (t) { return t !== id; });
+            fn();
+        }, delay);
+        _activeTimeouts.push(id);
+        return id;
+    }
+
+    function clearAllTimers() {
+        QuyenLog.info(`  🧹 Clearing ${_activeTimeouts.length} active timers`);
+        _activeTimeouts.forEach(function (id) {
+            clearTimeout(id);
+        });
+        _activeTimeouts = [];
+    }
+
+    function clearInputMarkers() {
+        try {
+            const docs = getAllDocuments();
+            docs.forEach(function (d) {
+                try {
+                    const markedInputs = d.querySelectorAll('[data-quyen-input]');
+                    markedInputs.forEach(function (el) {
+                        el.removeAttribute('data-quyen-input');
+                        QuyenLog.info('  🧹 Removed data-quyen-input marker from element:', el.id || el.name || 'input');
+                    });
+                } catch (e) { /* ignore */ }
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    function cancel(reason) {
+        reason = reason || 'USER_CANCEL';
+        QuyenLog.info(`🛑 QuyenInfusionFiller.cancel called with reason: ${reason}`);
+        _fillSessionId++;
+        clearAllTimers();
+        clearInputMarkers();
+        _currentDrug = null;
+        _currentParsedInfo = null;
+        _formDoc = null;
+        _formRoot = null;
+
+        if (_fillStartTime > 0) {
+            const durationMs = Date.now() - _fillStartTime;
+            _fillStartTime = 0;
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.log({
+                    module: 'infusion',
+                    step: 'fillForm',
+                    durationMs: durationMs,
+                    result: 'cancelled',
+                    fallbackUsed: false,
+                    timeout: reason === 'TIMEOUT',
+                    staleDropped: reason === 'STALE' || reason === 'USER_CANCEL' || reason === 'CANCEL'
+                });
+            }
+        }
+
+        if (typeof HIS !== 'undefined') {
+            HIS.OperationContext.cancel(reason || 'USER_CANCEL');
+            _activeContext = null;
+            if (HIS.FillTracker) {
+                HIS.FillTracker.cancel(reason);
+            }
+        }
+        return true;
+    }
 
     // ==========================================
     // ROMAN NUMERAL → ARABIC
@@ -100,8 +172,11 @@ const QuyenInfusionFiller = (function () {
             QuyenLog.info(`  ⌨️ [${fieldName}] Đã gõ xong, chờ dropdown...`);
 
             // Bước 3: Chờ ComboGrid dropdown → xác định index → ArrowDown + Enter
-            waitForComboGrid(doc, inputEl, matchTexts, fieldName, 0, function (found) {
-                if (onComplete) onComplete(found);
+            waitForComboGrid(doc, inputEl, matchTexts, fieldName, 0, function (found, err) {
+                setTimeout(function() {
+                    try { inputEl.blur(); } catch(e) {}
+                }, 100);
+                if (onComplete) onComplete(found, err);
             });
         });
     }
@@ -110,37 +185,103 @@ const QuyenInfusionFiller = (function () {
      * Chờ ComboGrid dropdown xuất hiện, tìm best match index,
      * rồi dùng jQuery ArrowDown + Enter trên INPUT
      */
-    function waitForComboGrid(doc, inputEl, matchTexts, fieldName, attempt, callback) {
-        if (attempt > 50) {
-            QuyenLog.warn(`  ⏰ [${fieldName}] Dropdown không xuất hiện sau 15 giây`);
-            if (callback) callback(false);
-            return;
+    const latencyHistory = [];
+    function getP95Latency() {
+        if (latencyHistory.length === 0) return 150;
+        const sorted = [...latencyHistory].sort((a, b) => a - b);
+        const idx = Math.floor(sorted.length * 0.95);
+        return sorted[idx] || 150;
+    }
+
+    function observeElement(searchDocs, targetSelector, callback, timeoutMs) {
+        let finished = false;
+        let timeoutId = null;
+        let backupPollId = null;
+        const observers = [];
+
+        function cleanup() {
+            if (finished) return;
+            finished = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            if (backupPollId) clearInterval(backupPollId);
+            observers.forEach(obs => {
+                try { obs.disconnect(); } catch(e) {}
+            });
         }
 
-        setTimeout(function () {
-            // Hỗ trợ cả 3 loại: Doctor/Nurse (cg-menu-item/cg-comboltem) và Thuốc Grid (cg-colItem)
-            let items = Array.from(doc.querySelectorAll('.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item'));
-
-            // ★ QUAN TRỌNG: Tìm cả trong PARENT và TOP document!
-            // HIS có các iframe lồng nhau (manager.jsp -> BuongDieuTri -> jBox PhieuTruyenDich)
-            // Tùy theo nơi thư viện jQuery khởi tạo, popup có thể gắn vào body của window.parent hoặc window.top
-            try {
-                const docsToSearch = new Set();
-                if (window.parent && window.parent.document) docsToSearch.add(window.parent.document);
-                if (window.top && window.top.document) docsToSearch.add(window.top.document);
-                docsToSearch.delete(doc);
-
-                for (const d of docsToSearch) {
-                    if (d) {
-                        const dItems = d.querySelectorAll('.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item');
-                        if (dItems.length > 0) items = items.concat(Array.from(dItems));
+        function check() {
+            if (finished) return;
+            let foundItems = [];
+            for (let i = 0; i < searchDocs.length; i++) {
+                try {
+                    const doc = searchDocs[i];
+                    const items = doc.querySelectorAll(targetSelector);
+                    if (items.length > 0) {
+                        foundItems = foundItems.concat(Array.from(items));
                     }
-                }
-            } catch (e) { /* Ignore CORS errors */ }
+                } catch (e) {}
+            }
+            if (foundItems.length > 0) {
+                cleanup();
+                callback(foundItems);
+                return true;
+            }
+            return false;
+        }
 
-            if (items.length === 0) {
-                waitForComboGrid(doc, inputEl, matchTexts, fieldName, attempt + 1, callback);
+        if (check()) return cleanup;
+
+        for (let i = 0; i < searchDocs.length; i++) {
+            try {
+                const doc = searchDocs[i];
+                const targetNode = doc.body || doc.documentElement;
+                if (!targetNode) continue;
+                
+                const observer = new MutationObserver(() => {
+                    check();
+                });
+                observer.observe(targetNode, { childList: true, subtree: false });
+                observers.push(observer);
+            } catch (e) {}
+        }
+
+        backupPollId = setInterval(check, 500);
+
+        timeoutId = setTimeout(() => {
+            if (finished) return;
+            if (!check()) {
+                cleanup();
+                callback([], new Error('Timeout waiting for selector: ' + targetSelector));
+            }
+        }, timeoutMs || 10000);
+
+        return cleanup;
+    }
+
+    function waitForComboGrid(doc, inputEl, matchTexts, fieldName, attempt, callback) {
+        const startTime = Date.now();
+        const searchDocs = [doc];
+        try {
+            if (window.parent && window.parent.document) searchDocs.push(window.parent.document);
+            if (window.top && window.top.document) searchDocs.push(window.top.document);
+        } catch (e) {}
+
+        const p95 = getP95Latency();
+        const timeoutMs = Math.min(10000, Math.max(5000, p95 * 3));
+
+        const cleanup = observeElement(searchDocs, '.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item', function (items, err) {
+            if (err || !items || items.length === 0) {
+                QuyenLog.warn(`  ⏰ [${fieldName}] Dropdown không xuất hiện hoặc bị timeout`);
+                if (callback) callback(false);
                 return;
+            }
+
+            const elapsed = Date.now() - startTime;
+            latencyHistory.push(elapsed);
+            if (latencyHistory.length > 20) latencyHistory.shift();
+
+            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                HIS.PerfMetrics.record('observe', '.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item', elapsed);
             }
 
             QuyenLog.info(`  ✅ [${fieldName}] ComboGrid dropdown! (${items.length} items)`);
@@ -158,6 +299,15 @@ const QuyenInfusionFiller = (function () {
 
             // Tìm best match index
             const bestIndex = findBestMatchIndex(items, matchTexts, fieldName);
+
+            if (bestIndex === -1) {
+                if (callback) callback(false, 'DRUG_NOT_FOUND');
+                return;
+            }
+            if (bestIndex === -2) {
+                if (callback) callback(false, 'AMBIGUOUS_MATCH');
+                return;
+            }
 
             // Capture thể tích từ item text (nếu là Thuốc)
             if (_currentParsedInfo && !_currentParsedInfo.quantityML && fieldName === 'Thuốc' && bestIndex < items.length) {
@@ -196,10 +346,10 @@ const QuyenInfusionFiller = (function () {
             } catch (e) { /* ignore */ }
 
             // Approach 3: Fallback — bridge keyboard select
-            setTimeout(function () {
+            safeSetTimeout(function () {
                 selectByKeyboard(inputEl, bestIndex, fieldName, callback);
             }, 200);
-        }, 150);  // ★ tối ưu: 300→150ms polling
+        }, timeoutMs);
     }
 
     /**
@@ -207,8 +357,9 @@ const QuyenInfusionFiller = (function () {
      */
     function findBestMatchIndex(items, matchTexts, fieldName) {
         const matchLower = matchTexts.map(function (t) { return t.toLowerCase().trim(); });
-        let bestIndex = 0;
+        let bestIndex = -1;
         let bestScore = -1;
+        let secondBestScore = -1;
 
         for (let idx = 0; idx < items.length; idx++) {
             const itemText = (items[idx].textContent || '').toLowerCase();
@@ -223,7 +374,25 @@ const QuyenInfusionFiller = (function () {
                 if (matched.length > 0) score = Math.max(score, 10 + (matched.length / words.length) * 30);
             }
 
-            if (score > bestScore) { bestScore = score; bestIndex = idx; }
+            if (score > bestScore) {
+                secondBestScore = bestScore;
+                bestScore = score;
+                bestIndex = idx;
+            } else if (score > secondBestScore) {
+                secondBestScore = score;
+            }
+        }
+
+        // Ngưỡng an toàn tối thiểu (score >= 15)
+        if (bestScore < 15) {
+            QuyenLog.warn(`  ⚠️ [${fieldName}] Không tìm thấy thuốc khớp (bestScore=${bestScore} < 15)`);
+            return -1;
+        }
+
+        // Kiểm tra trùng lặp/nhập nhằng (difference < 10)
+        if (secondBestScore >= 15 && (bestScore - secondBestScore) < 10) {
+            QuyenLog.warn(`  ⚠️ [${fieldName}] Trùng lặp/nhập nhằng thuốc (bestScore=${bestScore}, secondBestScore=${secondBestScore})`);
+            return -2; // Báo lỗi AMBIGUOUS_MATCH
         }
 
         QuyenLog.info(`  🎯 [${fieldName}] Best match: item[${bestIndex}] (score=${bestScore})`);
@@ -275,11 +444,11 @@ const QuyenInfusionFiller = (function () {
 
         // Chờ bridge xử lý keyboard + widget update
         const waitTime = 300 + (itemIndex + 1) * 80 + 300;
-        setTimeout(function () {
+        safeSetTimeout(function () {
             try { inputEl.removeAttribute('data-quyen-input'); } catch (e) { /* ignore */ }
             QuyenLog.info(`  ✅ [${fieldName}] ComboGrid selection hoàn tất`);
             if (callback) {
-                setTimeout(function () { callback(true); }, 300);
+                safeSetTimeout(function () { callback(true); }, 300);
             }
         }, Math.max(waitTime, 800));
     }
@@ -288,6 +457,7 @@ const QuyenInfusionFiller = (function () {
     // FILL FORM — Entry point
     // ==========================================
     function fillForm(drug) {
+        _fillStartTime = Date.now();
         // ★ TĂNG SESSION ID — cancel mọi callback cũ ★
         _fillSessionId++;
         const mySession = _fillSessionId;
@@ -296,6 +466,23 @@ const QuyenInfusionFiller = (function () {
         // ★ SPRINT D: FillTracker start
         if (typeof HIS !== 'undefined' && HIS.FillTracker) {
             HIS.FillTracker.start(drug);
+        }
+
+        let context;
+        try {
+            context = HIS.OperationContext.create('infusion');
+            HIS.WriteVerifier.preWriteGuard(context);
+        } catch (err) {
+            if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                HIS.FillTracker.block(err.message);
+            }
+            QuyenLog.error(`[preWriteGuard] blocked: ${err.message}`);
+            return { success: false, error: err.message };
+        }
+
+        _activeContext = context;
+        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.WRITING);
         }
 
         // ★ RESET STATE trước khi điền form mới ★
@@ -355,7 +542,7 @@ const QuyenInfusionFiller = (function () {
             });
             return;
         }
-        setTimeout(function () {
+        safeSetTimeout(function () {
             if (sessionId !== _fillSessionId) return; // ★ Cancel stale
             const searchInput = findDrugSearchInput();
             if (searchInput) {
@@ -394,19 +581,23 @@ const QuyenInfusionFiller = (function () {
             matchTexts: matchTexts,
             label: 'Thuốc',
             sessionId: sessionId,
-            onComplete: function (success) {
+            onComplete: function (success, err) {
                 // ★ BUG-01: Check session sau mỗi bước async
                 if (sessionId !== _fillSessionId) {
                     QuyenLog.warn('  ⛔ Drug selection callback cancelled — stale session #' + sessionId);
                     return;
                 }
-                if (success) {
-                    QuyenLog.info('  ✅ Thuốc đã chọn, chờ form update...');
-                    // ★ SPRINT D: advance
-                    if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.advance('drug', drug.name);
+                if (!success) {
+                    QuyenLog.error('  ❌ Drug selection failed: ' + (err || 'unknown error'));
+                    if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                        HIS.FillTracker.error(err || 'DRUG_NOT_FOUND');
+                    }
+                    return;
                 }
-                // Luôn tiếp tục dù thành công hay thất bại
-                setTimeout(function () {
+                QuyenLog.info('  ✅ Thuốc đã chọn, chờ form update...');
+                // ★ SPRINT D: advance
+                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.advance('drug', drug.name);
+                safeSetTimeout(function () {
                     if (sessionId !== _fillSessionId) return; // ★ BUG-01
                     // ★ Cleanup tên thuốc: xóa "x2 Túi", "x1 Chai" etc.
                     cleanupDrugName(searchInput, parsedInfo);
@@ -526,14 +717,14 @@ const QuyenInfusionFiller = (function () {
         syncStartTime(doc);
 
         // ★ SEQUENTIAL: Doctor → Nurse (không chạy song song vì HIS chỉ hiện 1 dropdown) ★
-        setTimeout(function () {
+        safeSetTimeout(function () {
             // ★ BUG-01: Check session trước mỗi bước async
             if (sessionId !== undefined && sessionId !== _fillSessionId) {
                 QuyenLog.warn('  ⛔ Doctor step cancelled — stale session #' + sessionId);
                 return;
             }
             startDoctorSelection(function () {
-                setTimeout(function () {
+                safeSetTimeout(function () {
                     // ★ BUG-01: Check session trước nurse step
                     if (sessionId !== undefined && sessionId !== _fillSessionId) {
                         QuyenLog.warn('  ⛔ Nurse step cancelled — stale session #' + sessionId);
@@ -542,9 +733,54 @@ const QuyenInfusionFiller = (function () {
                     startNurseSelection(function () {
                         QuyenLog.info('__EXT_EMOJI__ Hoàn tất điền form! __EXT_NAME__ __EXT_EMOJI__');
                         showCompletionEffect(_currentDrug ? _currentDrug.name : 'thuốc');
-                        // ★ SPRINT D: complete
-                        if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.complete(_currentDrug ? _currentDrug.name : '');
 
+                        if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                            HIS.FillTracker.transitionTo(HIS.FillTracker.STATE.VERIFYING);
+                        }
+
+                        const expected = {
+                            drugName: _currentDrug.name,
+                            speed: _currentParsedInfo.speed,
+                            quantity: _currentParsedInfo.quantityML,
+                            doctor: _currentDrug.doctor || getDoctorFromPrescriptionTable(_currentDrug.prescriptionDate),
+                            nurse: getLoggedInUserName() || ''
+                        };
+
+                        HIS.WriteVerifier.postWriteVerify(_activeContext, expected).then(res => {
+                            const durationMs = _fillStartTime > 0 ? (Date.now() - _fillStartTime) : 0;
+                            _fillStartTime = 0;
+                            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                                HIS.PerfMetrics.log({
+                                    module: 'infusion',
+                                    step: 'fillForm',
+                                    durationMs: durationMs,
+                                    result: res.ok ? 'success' : 'failed',
+                                    fallbackUsed: false,
+                                    timeout: false,
+                                    staleDropped: false
+                                });
+                            }
+                            if (res.ok) {
+                                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.complete(_currentDrug.name);
+                            } else {
+                                if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(res.details);
+                            }
+                        }).catch(err => {
+                            const durationMs = _fillStartTime > 0 ? (Date.now() - _fillStartTime) : 0;
+                            _fillStartTime = 0;
+                            if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
+                                HIS.PerfMetrics.log({
+                                    module: 'infusion',
+                                    step: 'fillForm',
+                                    durationMs: durationMs,
+                                    result: 'failed',
+                                    fallbackUsed: false,
+                                    timeout: false,
+                                    staleDropped: false
+                                });
+                            }
+                            if (typeof HIS !== 'undefined' && HIS.FillTracker) HIS.FillTracker.block(err.message);
+                        });
                     });
                 }, 200);  // ★ tối ưu: 500→200ms
             });
@@ -958,6 +1194,7 @@ const QuyenInfusionFiller = (function () {
 
         const result = {
             speedDrops: '',
+            speed: '',
             quantityML: '',
             duration: '',
             quantity: ''
@@ -976,6 +1213,7 @@ const QuyenInfusionFiller = (function () {
             const arabic = romanToArabic(speedRomanMatch[1]);
             if (arabic > 0 && arabic <= 200) {
                 result.speedDrops = String(arabic);
+                result.speed = String(arabic);
                 QuyenLog.info(`  ⚡ Tốc độ: ${speedRomanMatch[1]} (La Mã) → ${arabic} giọt/phút`);
             }
         }
@@ -986,6 +1224,7 @@ const QuyenInfusionFiller = (function () {
             const speedNumMatch = allText.match(/(\d+)\s*(giọt|g)\s*\/\s*(phút|ph|p)\b/i);
             if (speedNumMatch) {
                 result.speedDrops = speedNumMatch[1];
+                result.speed = speedNumMatch[1];
                 QuyenLog.info(`  ⚡ Tốc độ: ${result.speedDrops} giọt/phút`);
             }
         }
@@ -1348,9 +1587,52 @@ const QuyenInfusionFiller = (function () {
         });
     }
 
+    function injectOverlayStyles(doc) {
+        if (!doc || typeof doc.createElement !== 'function') return;
+        if (doc.getElementById('quyen-badge-styles')) return;
+        const style = doc.createElement('style');
+        style.id = 'quyen-badge-styles';
+        style.textContent = `
+            input[data-quyen-source="nt006"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='65' height='18'><rect width='65' height='18' rx='4' fill='%2328a745'/><text x='6' y='13' fill='white' font-family='sans-serif' font-size='9' font-weight='bold'>NT.006</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 75px !important;
+            }
+            input[data-quyen-source="prev"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='18'><rect width='140' height='18' rx='4' fill='%23ffeeba'/><text x='6' y='13' fill='%23333' font-family='sans-serif' font-size='9' font-weight='bold'>Phiếu cũ — cần xác nhận</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 150px !important;
+            }
+            input[data-quyen-source="suggestion"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='130' height='18'><rect width='130' height='18' rx='4' fill='%23e2e3e5'/><text x='6' y='13' fill='%23666' font-family='sans-serif' font-size='9' font-weight='bold'>Gợi ý — chưa xác nhận</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 140px !important;
+            }
+            input[data-quyen-source="manual"]:focus {
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='70' height='18'><rect width='70' height='18' rx='4' fill='%23007bff'/><text x='6' y='13' fill='white' font-family='sans-serif' font-size='9' font-weight='bold'>Nhập tay</text></svg>") !important;
+                background-position: right 6px center !important;
+                background-repeat: no-repeat !important;
+                padding-right: 80px !important;
+            }
+        `;
+        (doc.head || doc.body || doc.documentElement).appendChild(style);
+    }
+
     function setInputValue(input, value) {
         input.focus();
         input.value = value;
+        input.setAttribute('data-quyen-source', 'suggestion');
+        if (!(input.dataset && input.dataset.hasQuyenSourceListener) && input.getAttribute('data-has-quyen-source-listener') !== 'true') {
+            if (input.dataset) input.dataset.hasQuyenSourceListener = 'true';
+            input.setAttribute('data-has-quyen-source-listener', 'true');
+            input.addEventListener('input', function () {
+                input.setAttribute('data-quyen-source', 'manual');
+            });
+        }
+        injectOverlayStyles(input.ownerDocument);
         triggerEvent(input, 'input');
         triggerEvent(input, 'change');
         triggerEvent(input, 'blur');
@@ -1382,6 +1664,9 @@ const QuyenInfusionFiller = (function () {
         }, 4000);
 
         // Operation count feedback
+        if (typeof QUYEN_CONFIG !== 'undefined' && QUYEN_CONFIG.UI_MODE === 'production') {
+            return;
+        }
         const fillBtn = document.querySelector('.quyen-btn-fill-all, .quyen-btn-fill');
         if (fillBtn) {
             const rect = fillBtn.getBoundingClientRect();
@@ -1408,6 +1693,7 @@ const QuyenInfusionFiller = (function () {
     // ==========================================
     return {
         fillForm,
+        cancel,
         romanToArabic,
         arabicToRoman,
         setUseRomanSpeed,

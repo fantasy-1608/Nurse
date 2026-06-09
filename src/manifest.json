@@ -42,9 +42,12 @@
                 "shared/his-core.js",
                 "shared/his-selectors.js",
                 "shared/patient-lock.js",
+                "shared/message-schema.js",
                 "shared/message.js",
                 "shared/audit.js",
                 "shared/safety.js",
+                "shared/operation-context.js",
+                "shared/write-verifier.js",
                 "shared/fill-tracker.js",
                 "shared/ui-components.js",
                 "content/constants.js",
@@ -69,6 +72,7 @@
     "web_accessible_resources": [
         {
             "resources": [
+                "shared/message-schema.js",
                 "injected/his-bridge.js",
                 "assets/icons/*"
             ],

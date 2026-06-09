@@ -3,15 +3,15 @@ const fs = require('fs');
 const path = require('path');
 
 const target = process.argv[2];
-if (!target || !['nurse', 'ddt'].includes(target)) {
-    console.error('❌ Vui lòng chỉ định target: pnpm run build:nurse hoặc pnpm run build:ddt');
+if (!target || target !== 'nurse') {
+    console.error('❌ Vui lòng chỉ định target: pnpm run build:nurse');
     process.exit(1);
 }
 
 const config = require(`./config.${target}.js`);
 const pkg = require('../package.json');
 const srcDir = path.join(__dirname, '../src');
-const distDir = path.join(__dirname, `../dist/${target === 'nurse' ? 'Nurse' : 'DDT'}`);
+const distDir = path.join(__dirname, '../dist/Nurse');
 
 console.log(`🚀 Bắt đầu build cho target: ${target.toUpperCase()}`);
 
@@ -40,6 +40,7 @@ function copyDir(src, dest) {
                 content = content.replace(/__EXT_PREFIX__/g, config.extPrefix);
                 content = content.replace(/__EXT_FOOTER_TEXT__/g, config.extFooterText);
                 content = content.replace(/__EXT_VERSION__/g, pkg.version);
+                content = content.replace(/__UI_MODE__/g, config.uiMode || 'production');
                 
                 // Thay thế chuỗi mảng JSON cho SUCCESS_MESSAGES
                 content = content.replace(/'__EXT_SUCCESS_MESSAGES__'/g, JSON.stringify(config.extSuccessMessages, null, 8));

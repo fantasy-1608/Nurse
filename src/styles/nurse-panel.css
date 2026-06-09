@@ -57,7 +57,8 @@
 #quyen-panel.quyen-minimized .quyen-patient-section,
 #quyen-panel.quyen-minimized .quyen-tab-bar,
 #quyen-panel.quyen-minimized .quyen-panel-body,
-#quyen-panel.quyen-minimized .quyen-footer {
+#quyen-panel.quyen-minimized .quyen-footer,
+#quyen-panel.quyen-minimized .quyen-safety-disclaimer {
     display: none !important;
 }
 
@@ -133,6 +134,10 @@
     filter: grayscale(1) brightness(0.32) sepia(0.5) !important;
     transform: scale(0.7) rotate(16deg) translateY(12px) !important;
     transition: all 0.5s;
+}
+.quyen-mini-danger {
+    color: #ef5350 !important;
+    filter: drop-shadow(0 0 4px #ef5350) !important;
 }
 
 #quyen-panel.quyen-dragging {
@@ -2303,4 +2308,26 @@
 .quyen-demo-care-missing_today {
     background: #fff8e1;
     border: 1px solid #ffe0a3;
+}
+
+.quyen-safety-disclaimer {
+    background: #fff9db;
+    border: 1px solid #ffe066;
+    color: #856404;
+    padding: 10px 12px;
+    margin: 8px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    line-height: 1.4;
+    font-family: 'Quicksand', sans-serif;
+}
+.quyen-safety-disclaimer strong {
+    color: #e65100;
+}
+.quyen-safety-disclaimer ol {
+    margin: 4px 0 0 16px;
+    padding: 0;
+}
+.quyen-safety-disclaimer li {
+    margin-bottom: 2px;
 }

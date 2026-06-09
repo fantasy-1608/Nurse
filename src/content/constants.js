@@ -6,6 +6,7 @@
 /* exported QUYEN_CONFIG, getRandomThank, QuyenLog */
 const QUYEN_CONFIG = {
     VERSION: '__EXT_VERSION__',
+    UI_MODE: '__UI_MODE__',
     DEBUG: false,
 
     // URL pattern cho trang Buồng Điều Trị (nội trú)
@@ -87,9 +88,9 @@ const QuyenLog = {
         if (QUYEN_CONFIG.DEBUG) console.log('[__EXT_PREFIX__]', ...this._safeArgs(args));
     },
     warn: function (...args) {
-        console.warn('[__EXT_PREFIX__]', ...this._safeArgs(args));
+        if (QUYEN_CONFIG.DEBUG) console.log('%c[__EXT_PREFIX__] ⚠️', 'color: orange; font-weight: bold;', ...this._safeArgs(args));
     },
     error: function (...args) {
-        console.error('[__EXT_PREFIX__]', ...this._safeArgs(args));
+        if (QUYEN_CONFIG.DEBUG) console.log('%c[__EXT_PREFIX__] ❌', 'color: red; font-weight: bold;', ...this._safeArgs(args));
     }
 };

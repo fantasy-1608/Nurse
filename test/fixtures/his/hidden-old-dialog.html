@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HIS Hidden and Old Dialogs</title>
+</head>
+<body>
+    <!-- Hidden Outdated Dialog for Patient B (Stale) -->
+    <div id="oldDlgInfusion" class="ui-dialog" style="display: none; visibility: hidden;">
+        <div class="ui-dialog-titlebar">
+            <span class="ui-dialog-title">Phiếu Truyền Dịch (TRAN THI B / 1990)</span>
+        </div>
+        <div class="ui-dialog-content">
+            <div id="patient-header-stale">
+                1001001002 | TRAN THI B | 02/02/1990
+            </div>
+            <form id="frmInfusionStale">
+                <div>
+                    <input type="text" id="txtTKDT" value="" />
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Active Visible Dialog for Patient A (Target) -->
+    <div id="divDlgInfusion" class="ui-dialog" style="display: block;">
+        <div class="ui-dialog-titlebar">
+            <span class="ui-dialog-title">Phiếu Truyền Dịch (NGUYEN VAN A / 1980)</span>
+        </div>
+        <div class="ui-dialog-content">
+            <div id="patient-header">
+                1001001001 | NGUYEN VAN A | 01/01/1980
+            </div>
+            <form id="frmInfusion">
+                <div>
+                    <input type="text" id="txtTKDT" value="" />
+                </div>
+                <div>
+                    <input type="text" id="txtTOCDO_NHOGIOT" value="" />
+                </div>
+                <div>
+                    <input type="text" id="txtSO_LUONG" value="" />
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

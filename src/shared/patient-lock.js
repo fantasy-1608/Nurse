@@ -99,7 +99,8 @@ HIS.PatientLock = (function () {
             khambenhId: patient.khambenhId || '',
             hosobenhanid: patient.hosobenhanid || '',
             dob: patient.dob || '',
-            gender: patient.gender || ''
+            gender: patient.gender || '',
+            seq: patient.seq || patient.patientSeq || 0
         };
         _lockActive = true;
         _targetHint = null;  // ★ FIX: Clear hint cũ khi đổi source — tránh merge dữ liệu BN cũ
@@ -108,6 +109,13 @@ HIS.PatientLock = (function () {
         if (typeof HIS !== 'undefined' && HIS.Logger) {
             HIS.Logger.info('PatientLock', '🔒 Source context locked.');
         }
+    }
+
+    /**
+     * Lấy sequence của bệnh nhân hiện tại
+     */
+    function getCurrentSeq() {
+        return _source ? (_source.seq || _source.patientSeq || 0) : 0;
     }
 
     /**
@@ -474,22 +482,19 @@ HIS.PatientLock = (function () {
 
     /** Collect all documents (top + iframes, 2 levels) */
     function _getAllDocuments() {
+        if (typeof HIS !== 'undefined' && HIS.DocCache) {
+            return HIS.DocCache.getAll();
+        }
         const docs = [document];
         try {
             const iframes = document.querySelectorAll('iframe');
             for (let i = 0; i < iframes.length; i++) {
-                // Bỏ qua iframe ẩn (background tabs) - Cập nhật cách bắt vị trí cực mạnh
-                const rect = iframes[i].getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0 || iframes[i].style.visibility === 'hidden' || iframes[i].style.display === 'none') continue;
-
                 try {
                     const iDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
                     if (iDoc) {
                         docs.push(iDoc);
                         const subIframes = iDoc.querySelectorAll('iframe');
                         for (let j = 0; j < subIframes.length; j++) {
-                            const subRect = subIframes[j].getBoundingClientRect();
-                            if (subRect.width === 0 || subRect.height === 0 || subIframes[j].style.visibility === 'hidden' || subIframes[j].style.display === 'none') continue;
                             try {
                                 const sDoc = subIframes[j].contentDocument || subIframes[j].contentWindow.document;
                                 if (sDoc) docs.push(sDoc);
@@ -553,6 +558,7 @@ HIS.PatientLock = (function () {
         setSourceContext,
         clearSourceContext,
         getSourceContext,
+        getCurrentSeq,
         hasSource,
         setTargetHint,
         verify,

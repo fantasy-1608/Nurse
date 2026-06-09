@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HIS Vattu Dialog</title>
+</head>
+<body>
+    <div id="divDlgVattu" class="ui-dialog" style="display: block;">
+        <div class="ui-dialog-titlebar">
+            <span class="ui-dialog-title">Chỉ Định Vật Tư</span>
+        </div>
+        <div class="ui-dialog-content">
+            <form id="frmVattu">
+                <div>
+                    <label for="cboMA_KHO">Kho vật tư:</label>
+                    <select id="cboMA_KHO" name="cboMA_KHO">
+                        <option value="-1">-- Chọn kho --</option>
+                        <option value="12">Kho khoa Ngoại</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="txtDS_THUOC">Tìm vật tư:</label>
+                    <input type="text" id="txtDS_THUOC" name="txtDS_THUOC" value="" />
+                </div>
+                <div>
+                    <label for="cboDUONG_DUNG">Đường dùng:</label>
+                    <select id="cboDUONG_DUNG" name="cboDUONG_DUNG">
+                        <option value="">-- Chọn đường dùng --</option>
+                        <option value="2445">Dùng ngoài</option>
+                        <option value="1234">Uống</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="txtSOLUONG_TONG">Số lượng:</label>
+                    <input type="text" id="txtSOLUONG_TONG" name="txtSOLUONG_TONG" value="" />
+                </div>
+                <div>
+                    <label for="txtGHICHU">Ghi chú / Cách dùng:</label>
+                    <input type="text" id="txtGHICHU" name="txtGHICHU" value="" />
+                </div>
+                <div>
+                    <button type="button" id="btnThemVT">Thêm vật tư</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
