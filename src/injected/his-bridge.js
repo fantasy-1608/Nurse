@@ -373,6 +373,37 @@
         return null;
     }
 
+    /**
+     * ★ TÌM ELEMENT CÓ SELECTOR XUYÊN QUA MỌI IFRAME ★
+     * Quét top document + tất cả iframe.contentDocument để tìm element khớp với selector.
+     */
+    function findElementBySelector(selector) {
+        // 1. Tìm trong top document
+        let el = document.querySelector(selector);
+        if (el) return el;
+        // 2. Quét tất cả iframe
+        const iframes = document.querySelectorAll('iframe');
+        for (let i = 0; i < iframes.length; i++) {
+            try {
+                const iDoc = iframes[i].contentDocument;
+                if (!iDoc) continue;
+                el = iDoc.querySelector(selector);
+                if (el) return el;
+                // 3. Quét iframe lồng bên trong (nested level 2)
+                const innerFrames = iDoc.querySelectorAll('iframe');
+                for (let j = 0; j < innerFrames.length; j++) {
+                    try {
+                        const jDoc = innerFrames[j].contentDocument;
+                        if (!jDoc) continue;
+                        el = jDoc.querySelector(selector);
+                        if (el) return el;
+                    } catch (e2) { /* cross-origin */ }
+                }
+            } catch (e) { /* cross-origin */ }
+        }
+        return null;
+    }
+
     function messageListener(event) {
         if (!isValidIncoming(event)) return;
 
@@ -431,13 +462,19 @@
                     break;
                 case 'QUYEN_TRIGGER_CHANGE':
                     try {
-                        if (_$) {
-                            const sel = event.data.selector;
-                            const val = event.data.value;
-                            const $el = _$(sel);
-                            if ($el.length) {
-                                $el.val(val).trigger('change');
+                        const sel = event.data.selector;
+                        const val = event.data.value;
+                        const el = findElementBySelector(sel);
+                        if (el) {
+                            const elDoc = el.ownerDocument;
+                            const elWin = elDoc.defaultView || window;
+                            const elJq = elWin.jQuery || elWin.$ || _$;
+                            if (elJq) {
+                                elJq(el).val(val).trigger('change');
                                 log.debug('TRIGGER_CHANGE: set', sel, '=', val);
+                            } else {
+                                el.value = val;
+                                el.dispatchEvent(new elWin.Event('change', { bubbles: true }));
                             }
                         }
                     } catch (e) { log.warn('TRIGGER_CHANGE error:', e); }
@@ -2891,12 +2928,6 @@
     // Trigger ArrowDown + Enter bằng jQuery $.Event
     // ==========================================
     function handleKeyboardSelect(inputMarker, itemIndex, requestId) {
-        if (!_$) {
-            log.warn('Keyboard select: no jQuery');
-            sendResult('QUYEN_KEYBOARD_SELECT_RESULT', { success: false, error: 'no jQuery' }, requestId);
-            return;
-        }
-
         try {
             const el = findMarkedElement('data-quyen-input', inputMarker);
             if (!el) {
@@ -2905,103 +2936,42 @@
                 return;
             }
 
-            const $input = _$(el);
+            const elDoc = el.ownerDocument;
+            const elWin = elDoc.defaultView || window;
+            const elJq = elWin.jQuery || elWin.$ || _$;
+
+            if (!elJq) {
+                log.warn('Keyboard select: no jQuery found in local or top context');
+                sendResult('QUYEN_KEYBOARD_SELECT_RESULT', { success: false, error: 'no jQuery' }, requestId);
+                return;
+            }
+
+            const $input = elJq(el);
             const idx = parseInt(itemIndex) || 0;
 
             log.debug('Keyboard select on:', $input.attr('id'), 'itemIndex=' + idx);
 
-            // ★ APPROACH: Tìm dropdown items trực tiếp rồi click ★
-            // Tìm trong tất cả documents (main, parent, top, iframes)
-            function findDropdownItems() {
-                const allDocs = [];
-                try { allDocs.push(document); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
-                try { if (window.parent && window.parent.document !== document) allDocs.push(window.parent.document); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
-                try { if (window.top && window.top.document !== document && window.top.document !== (window.parent && window.parent.document)) allDocs.push(window.top.document); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
-                // Tìm trong iframes
-                for (let di = 0; di < allDocs.length; di++) {
-                    try {
-                        const ifs = allDocs[di].querySelectorAll('iframe');
-                        for (let fi = 0; fi < ifs.length; fi++) {
-                            try { if (ifs[fi].contentDocument) allDocs.push(ifs[fi].contentDocument); } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
-                        }
-                    } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
-                }
-
-                const items = [];
-                for (let d = 0; d < allDocs.length; d++) {
-                    try {
-                        const found = allDocs[d].querySelectorAll('.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item');
-                        if (found.length > 0) {
-                            for (let j = 0; j < found.length; j++) items.push(found[j]);
-                        }
-                    } catch (e) { if (e && e.message) console.debug("[Bridge] catch:", e.message); }
-                }
-                return items;
-            }
-
-            // Chờ một chút cho dropdown ổn định rồi click
+            // Luôn dùng bàn phím (ArrowDown + Enter) để đảm bảo jQuery UI Combogrid ghi nhận đúng dữ liệu (tránh lỗi data error)
             setTimeout(function () {
-                const items = findDropdownItems();
-                if (items.length > 0 && idx < items.length) {
-                    const target = items[idx];
-                    log.debug('Direct click on dropdown item[' + idx + ']:', target.textContent.substring(0, 50));
-
-                    // Dispatch native mouse events
-                    try {
-                        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                        target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                        target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                    } catch (e) {
-                        log.warn('Native click failed, trying jQuery click...');
+                const arrowCount = idx + 1;
+                log.debug('Keyboard selection starting: ArrowDown x ' + arrowCount + ' + Enter');
+                $input.trigger('focus');
+                let i = 0;
+                function pressArrowDown() {
+                    if (i >= arrowCount) {
+                        setTimeout(function () {
+                            $input.trigger(elJq.Event('keydown', { keyCode: 13, which: 13, key: 'Enter' }));
+                            $input.trigger(elJq.Event('keypress', { keyCode: 13, which: 13, key: 'Enter' }));
+                            $input.trigger(elJq.Event('keyup', { keyCode: 13, which: 13, key: 'Enter' }));
+                            sendResult('QUYEN_KEYBOARD_SELECT_RESULT', { success: true }, requestId);
+                        }, 80);
+                        return;
                     }
-
-                    // Thử jQuery click trên item luôn
-                    try {
-                        let $items = null;
-                        // Tìm jQuery từ document chứa dropdown item
-                        const itemDoc = target.ownerDocument;
-                        const itemWin = itemDoc.defaultView;
-                        if (itemWin && itemWin.jQuery) {
-                            $items = itemWin.jQuery(target);
-                        } else if (itemWin && itemWin.$ && itemWin.$.fn) {
-                            $items = itemWin.$(target);
-                        } else {
-                            $items = _$(target);
-                        }
-                        if ($items) {
-                            $items.trigger('mousedown');
-                            $items.trigger('mouseup');
-                            $items.trigger('click');
-                            log.debug('jQuery click triggered on item');
-                        }
-                    } catch (e) {
-                        log.warn('jQuery click error:', e.message);
-                    }
-
-                    log.debug('Keyboard select done ✅ (direct click)');
-                    sendResult('QUYEN_KEYBOARD_SELECT_RESULT', { success: true }, requestId);
-                } else {
-                    // Fallback: ArrowDown + Enter
-                    log.debug('No dropdown items found, trying ArrowDown+Enter fallback...');
-                    const arrowCount = idx + 1;
-                    $input.trigger('focus');
-                    let i = 0;
-                    function pressArrowDown() {
-                        if (i >= arrowCount) {
-                            setTimeout(function () {
-                                $input.trigger(_$.Event('keydown', { keyCode: 13, which: 13, key: 'Enter' }));
-                                $input.trigger(_$.Event('keypress', { keyCode: 13, which: 13, key: 'Enter' }));
-                                $input.trigger(_$.Event('keyup', { keyCode: 13, which: 13, key: 'Enter' }));
-                                sendResult('QUYEN_KEYBOARD_SELECT_RESULT', { success: true }, requestId);
-                            }, 80);
-                            return;
-                        }
-                        $input.trigger(_$.Event('keydown', { keyCode: 40, which: 40, key: 'ArrowDown' }));
-                        i++;
-                        setTimeout(pressArrowDown, 60);
-                    }
-                    pressArrowDown();
+                    $input.trigger(elJq.Event('keydown', { keyCode: 40, which: 40, key: 'ArrowDown' }));
+                    i++;
+                    setTimeout(pressArrowDown, 60);
                 }
+                pressArrowDown();
             }, 400);
         } catch (e) {
             log.error('Keyboard select error:', e);
@@ -3014,17 +2984,21 @@
     // Giả lập phím Shift để kích hoạt search của HIS sau khi gán value (paste)
     // ==========================================
     function handleTriggerSearch(inputMarker) {
-        if (!_$) return;
         try {
             // ★ QUAN TRỌNG: Dùng Native JS thay vì jQuery để tránh lỗi cross-frame Sizzle engine
             const el = findMarkedElement('data-quyen-input', inputMarker);
             if (el) {
-                const $input = _$(el);
+                const elDoc = el.ownerDocument;
+                const elWin = elDoc.defaultView || window;
+                const elJq = elWin.jQuery || elWin.$ || _$;
+                if (!elJq) return;
+
+                const $input = elJq(el);
                 $input.trigger('focus');
                 // Trigger change và keyup với keyCode 16 (Shift) để đánh thức HIS search
                 $input.trigger('change');
-                $input.trigger(_$.Event('keydown', { keyCode: 16, which: 16, key: 'Shift' }));
-                $input.trigger(_$.Event('keyup', { keyCode: 16, which: 16, key: 'Shift' }));
+                $input.trigger(elJq.Event('keydown', { keyCode: 16, which: 16, key: 'Shift' }));
+                $input.trigger(elJq.Event('keyup', { keyCode: 16, which: 16, key: 'Shift' }));
                 log.debug('Triggered search (Shift) on input', inputMarker);
             }
         } catch (e) {
@@ -3043,10 +3017,75 @@
                 return;
             }
 
-            // ★ LẤY WINDOW CỦA IFRAME CHỨA ELEMENT ★
-            // Đây là chìa khóa: event phải được tạo từ đúng window context
-            // thì jQuery handlers trong iframe mới nhận ra!
+            // LẤY MỌI JQUERY CÓ THỂ ĐỂ ĐẢM BẢO CLEAR THÀNH CÔNG
             const elWin = el.ownerDocument.defaultView || window;
+            const jqs = [elWin.jQuery, elWin.$, window.parent && window.parent.jQuery, window.top && window.top.jQuery, _$].filter(Boolean);
+
+            // Tự động tìm và click nút "X" (Clear) bên cạnh input nếu có (native HIS logic)
+            try {
+                if (el.id === 'txtTKDT' && typeof elWin.ClearTKDT === 'function') elWin.ClearTKDT();
+                else if (el.id === 'txtTKBS' && typeof elWin.ClearTKBS === 'function') elWin.ClearTKBS();
+                else if (el.id === 'txtTKYT' && typeof elWin.ClearTKYT === 'function') elWin.ClearTKYT();
+
+                const combo = el.closest('.combo');
+                if (combo) {
+                    const clearBtn = combo.querySelector('.combo-clear');
+                    if (clearBtn && clearBtn.style.display !== 'none') clearBtn.click();
+                }
+                const parentTd = el.closest('td, div, tr');
+                if (parentTd) {
+                    const clearBtns = parentTd.querySelectorAll('button, a.btn, a.combo-clear');
+                    for (let i = 0; i < clearBtns.length; i++) {
+                        const btn = clearBtns[i];
+                        const text = (btn.textContent || '').trim().toLowerCase();
+                        const hasTimesIcon = btn.querySelector('.fa-times, .fa-remove, .fa-trash, .icon-clear');
+                        const hasClearOnClick = btn.getAttribute('onclick') && btn.getAttribute('onclick').toLowerCase().includes('clear');
+                        if (btn.classList.contains('combo-clear') && btn.style.display === 'none') continue;
+                        if (text === 'x' || text === 'clear' || text === 'xóa' || hasTimesIcon || hasClearOnClick || btn.classList.contains('combo-clear')) {
+                            btn.click();
+                            break;
+                        }
+                    }
+                }
+            } catch(e) {}
+
+            // Clear widget value trước khi gõ để tránh bị append (multiple: true)
+            for (const jq of jqs) {
+                try {
+                    let $target = jq(el);
+                    if ($target.hasClass('combo-text')) {
+                        const comboContainer = $target.closest('.combo');
+                        if (comboContainer.length > 0) {
+                            const prevInput = comboContainer.prev('.combo-f');
+                            if (prevInput.length > 0) $target = prevInput;
+                            else {
+                                const nextInput = comboContainer.next('.combo-f');
+                                if (nextInput.length > 0) $target = nextInput;
+                            }
+                        }
+                    }
+
+                    if ($target.hasClass('combogrid-f')) {
+                        $target.combogrid('clear');
+                        $target.combogrid('setValue', '');
+                        $target.combogrid('setValues', []);
+                        try { $target.combogrid('grid').datagrid('clearSelections'); } catch(e){}
+                        break;
+                    } else if ($target.hasClass('combobox-f')) {
+                        $target.combobox('clear');
+                        $target.combobox('setValue', '');
+                        $target.combobox('setValues', []);
+                        try { $target.combobox('unselect'); } catch(e){}
+                        break;
+                    } else if ($target.hasClass('combo-f')) {
+                        $target.combo('clear');
+                        $target.combo('setValue', '');
+                        $target.combo('setValues', []);
+                        break;
+                    }
+                } catch (e) { /* ignore */ }
+            }
+            el.value = ''; // Clear native input value
 
             el.focus();
 
@@ -3083,7 +3122,7 @@
                 // Cập nhật giá trị
                 el.value = el.value + char;
                 el.dispatchEvent(new elWin.Event('input', { bubbles: true }));
-                
+
                 el.dispatchEvent(new elWin.KeyboardEvent('keyup', {
                     keyCode: kc, which: kc, key: char,
                     bubbles: true, cancelable: true
