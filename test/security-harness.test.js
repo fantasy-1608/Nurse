@@ -6,7 +6,7 @@ const { webcrypto } = require('crypto');
 
 const root = path.join(__dirname, '..');
 
-function makeChromeMock(store, manifestVersion) {
+function makeChromeMock(store, manifestVersion, manifestExtra) {
     const runtimeMessages = [];
     const installed = [];
     const startup = [];
@@ -37,7 +37,7 @@ function makeChromeMock(store, manifestVersion) {
         chrome: {
             runtime: {
                 lastError: null,
-                getManifest: () => ({ version: manifestVersion || '1.3.4', name: 'Nurse Test' }),
+                getManifest: () => Object.assign({ version: manifestVersion || '1.3.4', name: 'Nurse Test' }, manifestExtra || {}),
                 onInstalled: { addListener: (fn) => installed.push(fn) },
                 onStartup: { addListener: (fn) => startup.push(fn) },
                 onMessage: { addListener: (fn) => runtimeMessages.push(fn) }
@@ -197,8 +197,23 @@ async function expectReject(promise, message) {
     swStore.quyen_kill_switch = false;
     swStore.quyen_release_policy = { allowedVersions: ['0.0.1'], expiresAt: '', buildHash: '' };
     swChrome.runtimeMessages[0]({ type: 'CHECK_RELEASE_POLICY' }, {}, (value) => { response = value; });
-    assert.strictEqual(response.ok, false, 'version outside allowlist must be blocked');
-    assert.strictEqual(response.reason, 'VERSION_NOT_ALLOWED', 'version allowlist reason must be explicit');
+    assert.strictEqual(response.ok, true, 'local manual policy from older version must migrate to current version');
+    assert.strictEqual(JSON.stringify(swStore.quyen_release_policy.allowedVersions), '["1.3.4"]', 'migrated local policy must allow current version');
+
+    const prodStore = {
+        quyen_release_policy: {
+            allowedVersions: ['0.0.1'],
+            expiresAt: '',
+            buildHash: 'a'.repeat(64),
+            channel: 'production'
+        }
+    };
+    const prodChrome = makeChromeMock(prodStore, '1.3.4', { update_url: 'https://clients2.google.com/service/update2/crx' });
+    const prodContext = vm.createContext({ console, Date, chrome: prodChrome.chrome });
+    runScript(prodContext, 'src/background/background.js');
+    prodChrome.runtimeMessages[0]({ type: 'CHECK_RELEASE_POLICY' }, {}, (value) => { response = value; });
+    assert.strictEqual(response.ok, false, 'production version outside allowlist must be blocked');
+    assert.strictEqual(response.reason, 'VERSION_NOT_ALLOWED', 'production version allowlist reason must be explicit');
 
     // Verify schema validation library exists
     assert(context.HIS.MessageSchema, 'HIS.MessageSchema must be defined');

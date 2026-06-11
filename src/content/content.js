@@ -218,8 +218,12 @@
     }
 
     function normalizePolicy(policy) {
+        let allowedVersions = Array.isArray(policy && policy.allowedVersions) ? policy.allowedVersions.map(String) : [getCurrentVersion()];
+        if (allowedVersions.indexOf(getCurrentVersion()) < 0) {
+            allowedVersions = [getCurrentVersion()];
+        }
         return {
-            allowedVersions: Array.isArray(policy && policy.allowedVersions) ? policy.allowedVersions.map(String) : [getCurrentVersion()],
+            allowedVersions,
             expiresAt: policy && policy.expiresAt ? String(policy.expiresAt) : '',
             buildHash: policy && policy.buildHash ? String(policy.buildHash) : '',
             channel: policy && policy.channel ? String(policy.channel) : 'manual'

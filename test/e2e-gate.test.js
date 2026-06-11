@@ -441,7 +441,7 @@ function loadFixture(filename) {
 // 2. VM CONTEXT BUILDER
 // ==========================================
 
-function makeChromeMock(store, manifestVersion = '1.3.6') {
+function makeChromeMock(store, manifestVersion = '1.3.7') {
     const runtimeMessages = [];
     const storageChanged = [];
 

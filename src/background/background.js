@@ -23,8 +23,12 @@ function defaultReleasePolicy() {
 function normalizePolicy(policy) {
     const base = defaultReleasePolicy();
     if (!policy || typeof policy !== 'object') return base;
+    let allowedVersions = Array.isArray(policy.allowedVersions) ? policy.allowedVersions.map(String) : base.allowedVersions;
+    if (allowedVersions.indexOf(currentVersion()) < 0) {
+        allowedVersions = base.allowedVersions;
+    }
     return {
-        allowedVersions: Array.isArray(policy.allowedVersions) ? policy.allowedVersions.map(String) : base.allowedVersions,
+        allowedVersions,
         expiresAt: policy.expiresAt ? String(policy.expiresAt) : '',
         buildHash: policy.buildHash ? String(policy.buildHash) : '',
         channel: policy.channel ? String(policy.channel) : 'manual',
@@ -84,6 +88,12 @@ function ensureReleasePolicy(callback) {
         if (!policy && isDev) {
             policy = defaultReleasePolicy();
             updates[RELEASE_POLICY_KEY] = policy;
+        } else if (policy && isDev) {
+            const normalized = normalizePolicy(policy);
+            if (JSON.stringify(normalized) !== JSON.stringify(policy)) {
+                policy = normalized;
+                updates[RELEASE_POLICY_KEY] = policy;
+            }
         }
         
         if (typeof data[KILL_SWITCH_KEY] !== 'boolean') {
