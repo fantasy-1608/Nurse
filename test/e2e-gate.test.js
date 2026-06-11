@@ -998,7 +998,7 @@ async function runE2ETests() {
         const store = Object.assign({}, storeTemplate);
         const ctx = makeDomContext(store, 'vattu-dialog.html');
         ctx.window.userInfo = { USER_GROUP_ID: '3' }; // Doctor (forbidden role)
-        
+
         let blocked = false;
         ctx.window.addEventListener('message', function(ev) {
             if (ev.data && ev.data.type === 'QUYEN_ROLE_BLOCK') {
@@ -1011,6 +1011,52 @@ async function runE2ETests() {
         await new Promise(resolve => setTimeout(resolve, 200));
         assert.strictEqual(blocked, true, 'E2E-09: Non-nurse roles must trigger role block');
         console.log('✅ E2E-09 passed: Access blocked when user role is not Nurse.');
+    }
+
+    // --------------------------------------------------
+    // E2E-09b — Role block hides panel without modal
+    // --------------------------------------------------
+    {
+        const store = Object.assign({}, storeTemplate);
+        const ctx = makeDomContext(store, 'vattu-dialog.html');
+        ctx.window.top = ctx.window;
+        ctx.document.createElement = function(tagName) {
+            const node = new MockNode(1, tagName);
+            node.ownerDocument = ctx.document;
+            return node;
+        };
+        ctx.document.head = ctx.document.body;
+        ctx.document.documentElement = ctx.document.body;
+
+        runScript(ctx, 'src/content/constants.js');
+        ctx.QuyenInfusionReader = { init: function() {} };
+        ctx.QuyenUI = {
+            init: function() {
+                const panel = ctx.document.createElement('div');
+                panel.id = 'quyen-panel';
+                ctx.document.body.appendChild(panel);
+            },
+            updateDrugList: function() {},
+            showToast: function() {}
+        };
+
+        runScript(ctx, 'src/content/content.js');
+
+        const existingModal = ctx.document.createElement('div');
+        existingModal.id = 'quyen-role-blocker-modal';
+        ctx.document.body.appendChild(existingModal);
+        assert.ok(ctx.document.getElementById('quyen-panel'), 'E2E-09b setup: panel should be visible before role block');
+
+        ctx.HIS.Message.send('QUYEN_ROLE_BLOCK', {
+            source: 'bridge',
+            role: '3',
+            reason: 'ROLE_MISMATCH'
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+        assert.strictEqual(ctx.document.getElementById('quyen-panel'), null, 'E2E-09b: Non-nurse role must hide the flower icon/panel');
+        assert.strictEqual(ctx.document.getElementById('quyen-role-blocker-modal'), null, 'E2E-09b: Non-nurse role must not show access-denied modal');
+        console.log('✅ E2E-09b passed: Role block hides panel without modal.');
     }
 
     // --------------------------------------------------

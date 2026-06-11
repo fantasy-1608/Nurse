@@ -178,89 +178,14 @@
 
         if (event.data && event.data.type === 'QUYEN_ROLE_BLOCK') {
             QuyenLog.error('TỪ CHỐI TRUY CẬP: Tiện ích chỉ dành cho Điều dưỡng. Nhóm:', event.data.role);
+            _initialized = false;
             
-            // Xóa UI panel (ID thực của giao diện là quyen-panel)
+            // Tài khoản không phải Điều dưỡng: ẩn icon/panel, không chặn màn hình HIS bằng modal.
             const panel = document.getElementById('quyen-panel');
             if (panel) panel.remove();
 
-            // Remove existing modal if already exists to avoid duplicates
             const oldModal = document.getElementById('quyen-role-blocker-modal');
             if (oldModal) oldModal.remove();
-
-            // Create new modal overlay
-            const modal = document.createElement('div');
-            modal.id = 'quyen-role-blocker-modal';
-            modal.style.position = 'fixed';
-            modal.style.top = '0';
-            modal.style.left = '0';
-            modal.style.width = '100vw';
-            modal.style.height = '100vh';
-            modal.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
-            modal.style.zIndex = '999999';
-            modal.style.display = 'flex';
-            modal.style.flexDirection = 'column';
-            modal.style.alignItems = 'center';
-            modal.style.justifyContent = 'center';
-            modal.style.color = '#fff';
-            modal.style.fontFamily = 'Arial, sans-serif';
-            modal.style.padding = '20px';
-            modal.style.boxSizing = 'border-box';
-            
-            // Inner content box
-            const contentBox = document.createElement('div');
-            contentBox.style.backgroundColor = '#2c3e50';
-            contentBox.style.border = '2px solid #e74c3c';
-            contentBox.style.borderRadius = '8px';
-            contentBox.style.padding = '30px';
-            contentBox.style.maxWidth = '500px';
-            contentBox.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
-            contentBox.style.textAlign = 'center';
-            
-            const title = document.createElement('h2');
-            title.style.color = '#e74c3c';
-            title.style.marginTop = '0';
-            title.style.fontSize = '24px';
-            title.innerText = 'TỪ CHỐI TRUY CẬP';
-            
-            const message = document.createElement('p');
-            message.style.fontSize = '16px';
-            message.style.lineHeight = '1.6';
-            message.style.whiteSpace = 'pre-line';
-            
-            const reason = event.data.reason;
-            const role = event.data.role || 'UNVERIFIED';
-            
-            if (reason === 'ROLE_MISMATCH') {
-                message.innerText = `TỪ CHỐI TRUY CẬP: Tiện ích Nurse Helper chỉ dành cho Điều dưỡng.\nNhóm người dùng hiện tại: ${role} (Yêu cầu: 5).`;
-            } else if (reason === 'ROLE_TIMEOUT') {
-                message.innerText = `TỪ CHỐI TRUY CẬP: Không thể xác minh quyền người dùng từ VNPT HIS (Hết thời gian chờ).\nVui lòng tải lại trang và thử lại.`;
-            } else {
-                if (role === 'UNVERIFIED') {
-                    message.innerText = `TỪ CHỐI TRUY CẬP: Không thể xác minh quyền người dùng từ VNPT HIS (Hết thời gian chờ).\nVui lòng tải lại trang và thử lại.`;
-                } else {
-                    message.innerText = `TỪ CHỐI TRUY CẬP: Tiện ích Nurse Helper chỉ dành cho Điều dưỡng.\nNhóm người dùng hiện tại: ${role} (Yêu cầu: 5).`;
-                }
-            }
-            
-            const button = document.createElement('button');
-            button.innerText = 'Tải lại trang';
-            button.style.marginTop = '20px';
-            button.style.padding = '10px 20px';
-            button.style.backgroundColor = '#e74c3c';
-            button.style.color = '#fff';
-            button.style.border = 'none';
-            button.style.borderRadius = '4px';
-            button.style.cursor = 'pointer';
-            button.style.fontSize = '16px';
-            button.addEventListener('click', function() {
-                window.location.reload();
-            });
-            
-            contentBox.appendChild(title);
-            contentBox.appendChild(message);
-            contentBox.appendChild(button);
-            modal.appendChild(contentBox);
-            document.body.appendChild(modal);
         }
 
         // ★ 3.2: Persist HIS environment info for debugging
