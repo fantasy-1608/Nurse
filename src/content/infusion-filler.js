@@ -164,8 +164,70 @@ const QuyenInfusionFiller = (function () {
         // Bước 1: Focus + clear
         inputEl.focus();
         inputEl.click();
-        inputEl.value = '';
-        triggerEvent(inputEl, 'input');
+        // Bổ sung: Tìm và gọi trực tiếp các hàm global của HIS
+        try {
+            const itemWin = (inputEl.ownerDocument && inputEl.ownerDocument.defaultView) || window;
+            const idStr = (inputEl.id || '').toLowerCase();
+            const isDrug = fieldName === 'Thuốc' || idStr.includes('tkdt') || idStr.includes('thuoc');
+            const isDoc = fieldName === 'BS chỉ định' || idStr.includes('tkbs');
+            const isNurse = fieldName === 'Y tá' || idStr.includes('tkyt') || fieldName.includes('điều dưỡng');
+
+            if (isDrug && typeof itemWin.ClearTKDT === 'function') itemWin.ClearTKDT();
+            if (isDoc && typeof itemWin.ClearTKBS === 'function') itemWin.ClearTKBS();
+            if (isNurse && typeof itemWin.ClearTKYT === 'function') itemWin.ClearTKYT();
+
+            // Tìm nút X trên toàn bộ dialog
+            const dialog = inputEl.closest('.ui-dialog') || inputEl.closest('form') || doc;
+            const allBtns = dialog.querySelectorAll('a.btn[onclick], button[onclick]');
+            for (const btn of allBtns) {
+                const onclickStr = (btn.getAttribute('onclick') || '').toLowerCase();
+                if (isDrug && onclickStr.includes('cleartkdt')) { btn.click(); break; }
+                if (isDoc && onclickStr.includes('cleartkbs')) { btn.click(); break; }
+                if (isNurse && onclickStr.includes('cleartkyt')) { btn.click(); break; }
+            }
+        } catch(e) {}
+
+        try {
+            const itemWin = (inputEl.ownerDocument && inputEl.ownerDocument.defaultView) || window;
+            const jqs = [itemWin.jQuery, itemWin.$, window.parent && window.parent.jQuery, window.top && window.top.jQuery].filter(Boolean);
+            
+            for (const jq of jqs) {
+                try {
+                    let $target = jq(inputEl);
+                    if ($target.hasClass('combo-text')) {
+                        const comboContainer = $target.closest('.combo');
+                        if (comboContainer.length > 0) {
+                            const prevInput = comboContainer.prev('.combo-f');
+                            if (prevInput.length > 0) $target = prevInput;
+                            else {
+                                const nextInput = comboContainer.next('.combo-f');
+                                if (nextInput.length > 0) $target = nextInput;
+                            }
+                        }
+                    }
+                    if ($target.hasClass('combogrid-f')) {
+                        $target.combogrid('clear');
+                        $target.combogrid('setValue', '');
+                        $target.combogrid('setValues', []);
+                        try { $target.combogrid('grid').datagrid('clearSelections'); } catch(e){}
+                        break;
+                    } else if ($target.hasClass('combobox-f')) {
+                        $target.combobox('clear');
+                        $target.combobox('setValue', '');
+                        $target.combobox('setValues', []);
+                        try { $target.combobox('unselect'); } catch(e){}
+                        break;
+                    } else if ($target.hasClass('combo-f')) {
+                        $target.combo('clear');
+                        $target.combo('setValue', '');
+                        $target.combo('setValues', []);
+                        break;
+                    }
+                } catch(e) {}
+            }
+        } catch (e) {
+            QuyenLog.warn('  ⚠️ Lỗi clear combogrid content-side: ' + e.message);
+        }
 
         // Bước 2: Gõ từng ký tự
         typeTextSlowly(inputEl, searchTerm, function () {
@@ -193,7 +255,7 @@ const QuyenInfusionFiller = (function () {
         return sorted[idx] || 150;
     }
 
-    function observeElement(searchDocs, targetSelector, callback, timeoutMs) {
+    function observeElement(searchDocs, targetSelector, callback, timeoutMs, filterFn) {
         let finished = false;
         let timeoutId = null;
         let backupPollId = null;
@@ -221,6 +283,11 @@ const QuyenInfusionFiller = (function () {
                     }
                 } catch (e) {}
             }
+
+            if (filterFn) {
+                foundItems = foundItems.filter(filterFn);
+            }
+
             if (foundItems.length > 0) {
                 cleanup();
                 callback(foundItems);
@@ -258,6 +325,19 @@ const QuyenInfusionFiller = (function () {
         return cleanup;
     }
 
+    function elementContains(parent, child) {
+        if (!parent || !child) return false;
+        if (typeof parent.contains === 'function') {
+            return parent.contains(child);
+        }
+        let curr = child;
+        while (curr) {
+            if (curr === parent) return true;
+            curr = curr.parentElement || curr.parentNode;
+        }
+        return false;
+    }
+
     function waitForComboGrid(doc, inputEl, matchTexts, fieldName, attempt, callback) {
         const startTime = Date.now();
         const searchDocs = [doc];
@@ -269,7 +349,37 @@ const QuyenInfusionFiller = (function () {
         const p95 = getP95Latency();
         const timeoutMs = Math.min(10000, Math.max(5000, p95 * 3));
 
-        const cleanup = observeElement(searchDocs, '.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item', function (items, err) {
+        function getActivePanel() {
+            try {
+                const itemWin = (inputEl.ownerDocument && inputEl.ownerDocument.defaultView) || window;
+                const jq = itemWin.jQuery || itemWin.$ || (window.parent && window.parent.jQuery) || (window.top && window.top.jQuery);
+                if (jq) {
+                    let $panel = null;
+                    if (jq(inputEl).data('combogrid')) {
+                        $panel = jq(inputEl).combogrid('panel');
+                    } else if (jq(inputEl).data('combobox')) {
+                        $panel = jq(inputEl).combobox('panel');
+                    } else if (jq(inputEl).data('combo')) {
+                        $panel = jq(inputEl).combo('panel');
+                    }
+                    if ($panel && $panel.length > 0) {
+                        return { panelEl: $panel[0], isVisible: $panel.is(':visible') };
+                    }
+                }
+            } catch (e) {}
+            return null;
+        }
+
+        const filterFn = function (item) {
+            const panelInfo = getActivePanel();
+            if (panelInfo) {
+                return panelInfo.isVisible && elementContains(panelInfo.panelEl, item);
+            }
+            // Fallback for non-EasyUI widgets
+            return item.offsetWidth > 0 || item.offsetHeight > 0 || (item.offsetParent !== null);
+        };
+
+        const cleanup = observeElement(searchDocs, '.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item, .ui-menu-item', function (items, err) {
             if (err || !items || items.length === 0) {
                 QuyenLog.warn(`  ⏰ [${fieldName}] Dropdown không xuất hiện hoặc bị timeout`);
                 if (callback) callback(false);
@@ -281,13 +391,25 @@ const QuyenInfusionFiller = (function () {
             if (latencyHistory.length > 20) latencyHistory.shift();
 
             if (typeof HIS !== 'undefined' && HIS.PerfMetrics) {
-                HIS.PerfMetrics.record('observe', '.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item', elapsed);
+                HIS.PerfMetrics.record('observe', '.cg-colItem, .cg-comboltem, .cg-combottem, .cg-menu-item, .ui-menu-item', elapsed);
             }
 
             QuyenLog.info(`  ✅ [${fieldName}] ComboGrid dropdown! (${items.length} items)`);
 
+            // Filter out nested duplicates and hidden elements (only match visible items)
+            const uniqueItems = items.filter(function (item) {
+                const isVisible = item.offsetWidth > 0 || item.offsetHeight > 0 || (item.offsetParent !== null);
+                if (!isVisible) return false;
+
+                return !items.some(function (other) {
+                    return other !== item && elementContains(other, item);
+                });
+            });
+
+            QuyenLog.info(`  🔍 Filtered to ${uniqueItems.length} unique row items`);
+
             // Log items
-            items.forEach(function (item, i) {
+            uniqueItems.forEach(function (item, i) {
                 if (i < 5) {
                     const cells = item.querySelectorAll('.cg-DivItem');
                     const texts = Array.from(cells)
@@ -298,24 +420,27 @@ const QuyenInfusionFiller = (function () {
             });
 
             // Tìm best match index
-            const bestIndex = findBestMatchIndex(items, matchTexts, fieldName);
+            const matchResult = findBestMatchIndex(uniqueItems, matchTexts, fieldName);
+            const bestIndex = matchResult.index;
 
             if (bestIndex === -1) {
                 if (callback) callback(false, 'DRUG_NOT_FOUND');
                 return;
             }
             if (bestIndex === -2) {
+                const debugMsg = `AMBIGUOUS_MATCH (bestScore=${matchResult.bestScore}, secondBestScore=${matchResult.secondBestScore}, itemsCount=${uniqueItems.length}, matchTexts=${JSON.stringify(matchTexts)})`;
+                QuyenLog.error(`  ❌ Drug selection failed: ` + debugMsg);
                 if (callback) callback(false, 'AMBIGUOUS_MATCH');
                 return;
             }
 
             // Capture thể tích từ item text (nếu là Thuốc)
-            if (_currentParsedInfo && !_currentParsedInfo.quantityML && fieldName === 'Thuốc' && bestIndex < items.length) {
-                captureQuantityFromItem(items[bestIndex]);
+            if (_currentParsedInfo && !_currentParsedInfo.quantityML && fieldName === 'Thuốc' && bestIndex < uniqueItems.length) {
+                captureQuantityFromItem(uniqueItems[bestIndex]);
             }
 
             // ★ DIRECT CLICK APPROACH — Click item trực tiếp từ content script ★
-            const targetItem = items[bestIndex];
+            const targetItem = uniqueItems[bestIndex];
             QuyenLog.info(`  🖱️ [${fieldName}] Direct click item[${bestIndex}]: "${targetItem.textContent.substring(0, 50)}"`);
 
             // Approach 1: Click trên .cg-DivItem bên trong (click target thực sự)
@@ -328,33 +453,79 @@ const QuyenInfusionFiller = (function () {
                 }
             }
 
-            // Native mouse events
-            clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-            clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-            clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-            clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-
-            // Approach 2: jQuery click từ window chứa dropdown
+            // Native mouse events fallback if no jQuery, or trigger jQuery click if available.
+            // Never do both to avoid double selection in multi-select fields (like drugs).
+            let clicked = false;
             try {
                 const itemWin = (targetItem.ownerDocument && targetItem.ownerDocument.defaultView) || window;
                 const jq = itemWin.jQuery || itemWin.$ || (window.parent && window.parent.jQuery) || (window.top && window.top.jQuery);
                 if (jq) {
-                    jq(clickTarget).trigger('mousedown').trigger('mouseup').trigger('click');
-                    jq(targetItem).trigger('mousedown').trigger('mouseup').trigger('click');
-                    QuyenLog.info(`  🖱️ [${fieldName}] jQuery click triggered`);
+                    const $target = jq(clickTarget);
+                    $target.trigger('mouseover').trigger('mouseenter');
+                    $target.trigger('mousedown');
+                    $target.trigger('mouseup');
+                    $target.trigger('click');
+                    QuyenLog.info(`  🖱️ [${fieldName}] jQuery click triggered on target`);
+                    clicked = true;
                 }
             } catch (e) { /* ignore */ }
 
-            // Approach 3: Fallback — bridge keyboard select
-            safeSetTimeout(function () {
-                selectByKeyboard(inputEl, bestIndex, fieldName, callback);
-            }, 200);
-        }, timeoutMs);
+            if (!clicked) {
+                // Native fallback
+                clickTarget.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                QuyenLog.info(`  🖱️ [${fieldName}] Native click dispatched on target`);
+            }
+
+            // Bỏ Approach 3 (selectByKeyboard) vì nó gây lỗi "chọn rồi đổi thành dòng đầu tiên"
+            // Hoàn tất việc chọn
+            setTimeout(function() {
+                if (callback) callback(true);
+            }, 100);
+        }, timeoutMs, filterFn);
     }
 
     /**
      * Tìm index của item khớp nhất
      */
+    /**
+     * Tìm khoa hiện tại của bệnh nhân từ chân trang (footer)
+     */
+    function getDepartmentBoost(itemText) {
+        let boost = 0;
+        try {
+            // Tìm footer hoặc các thẻ chứa thông tin khoa
+            const footer = document.querySelector('.main-footer, #footer, [class*="footer"]');
+            let footerText = footer ? footer.textContent : '';
+            if (!footerText) {
+                // Quét toàn bộ body để tìm text "Khoa:"
+                const elements = document.querySelectorAll('span, div, td, b');
+                for (const el of elements) {
+                    if (el.textContent && el.textContent.includes('Khoa:')) {
+                        footerText = el.textContent;
+                        break;
+                    }
+                }
+            }
+            if (footerText) {
+                const match = footerText.match(/Khoa:\s*([^;]+)/i);
+                if (match) {
+                    const dept = match[1].toLowerCase();
+                    // Split thành các từ để so sánh
+                    const deptWords = dept.split(/[\s\-_/]+/).filter(function(w) { return w.length > 2; });
+                    for (const word of deptWords) {
+                        if (itemText.includes(word)) {
+                            boost += 5; // Tăng 5 điểm cho mỗi từ khớp của khoa
+                        }
+                    }
+                }
+            }
+        } catch (e) {}
+        return boost;
+    }
+
     function findBestMatchIndex(items, matchTexts, fieldName) {
         const matchLower = matchTexts.map(function (t) { return t.toLowerCase().trim(); });
         let bestIndex = -1;
@@ -362,41 +533,67 @@ const QuyenInfusionFiller = (function () {
         let secondBestScore = -1;
 
         for (let idx = 0; idx < items.length; idx++) {
-            const itemText = (items[idx].textContent || '').toLowerCase();
+            const itemText = (items[idx].textContent || '').toLowerCase().replace(/\s+/g, ' ').trim();
             let score = 0;
 
             for (const mt of matchLower) {
                 if (!mt) continue;
-                if (itemText === mt) { score = 100; break; }
-                if (itemText.includes(mt)) score = Math.max(score, 50 + mt.length);
-                const words = mt.split(/\s+/).filter(function (w) { return w.length > 1; });
-                const matched = words.filter(function (w) { return itemText.includes(w); });
-                if (matched.length > 0) score = Math.max(score, 10 + (matched.length / words.length) * 30);
+                let mtScore = 0;
+                if (itemText === mt) {
+                    mtScore = 100;
+                } else if (itemText.includes(mt)) {
+                    mtScore = 50 + mt.length;
+                } else {
+                    const words = mt.split(/\s+/).filter(function (w) { return w.length > 1; });
+                    const matched = words.filter(function (w) { return itemText.includes(w); });
+                    if (matched.length > 0) {
+                        mtScore = 10 + (matched.length / words.length) * 30;
+                    }
+                }
+                score += mtScore;
+            }
+
+            // BẮT BUỘC phải khớp ít nhất 1 phần của tên tìm kiếm thì mới tính điểm
+            if (score === 0) continue;
+
+            // Nếu là Bác sĩ hoặc Y tá, cộng điểm ưu tiên theo khoa của bệnh nhân
+            if (fieldName !== 'Thuốc') {
+                score += getDepartmentBoost(itemText);
             }
 
             if (score > bestScore) {
-                secondBestScore = bestScore;
+                // Update second best only if the old best was different text
+                const oldBestText = bestIndex >= 0 ? (items[bestIndex].textContent || '').toLowerCase().replace(/\s+/g, ' ').trim() : '';
+                if (bestScore > 0 && itemText !== oldBestText) {
+                    secondBestScore = bestScore;
+                }
                 bestScore = score;
                 bestIndex = idx;
             } else if (score > secondBestScore) {
-                secondBestScore = score;
+                // Only update second best if it's genuinely a different item
+                const bestItemText = (items[bestIndex].textContent || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                if (itemText !== bestItemText) {
+                    secondBestScore = score;
+                }
             }
         }
 
         // Ngưỡng an toàn tối thiểu (score >= 15)
         if (bestScore < 15) {
             QuyenLog.warn(`  ⚠️ [${fieldName}] Không tìm thấy thuốc khớp (bestScore=${bestScore} < 15)`);
-            return -1;
+            return { index: -1, bestScore: bestScore, secondBestScore: secondBestScore };
         }
 
         // Kiểm tra trùng lặp/nhập nhằng (difference < 10)
-        if (secondBestScore >= 15 && (bestScore - secondBestScore) < 10) {
+        // Chỉ áp dụng cho Thuốc để tránh bị block khi chọn BS/Y tá trùng tên hoặc có nhiều tài khoản
+        const isDrug = (fieldName === 'Thuốc' || fieldName === 'ComboGrid');
+        if (isDrug && secondBestScore >= 15 && (bestScore - secondBestScore) < 10) {
             QuyenLog.warn(`  ⚠️ [${fieldName}] Trùng lặp/nhập nhằng thuốc (bestScore=${bestScore}, secondBestScore=${secondBestScore})`);
-            return -2; // Báo lỗi AMBIGUOUS_MATCH
+            return { index: -2, bestScore: bestScore, secondBestScore: secondBestScore };
         }
 
         QuyenLog.info(`  🎯 [${fieldName}] Best match: item[${bestIndex}] (score=${bestScore})`);
-        return bestIndex;
+        return { index: bestIndex, bestScore: bestScore, secondBestScore: secondBestScore };
     }
 
     function captureQuantityFromItem(item) {
@@ -567,8 +764,28 @@ const QuyenInfusionFiller = (function () {
 
         // matchTexts: tên thuốc + ngày
         const matchTexts = [drug.name];
+        
+        let targetDateStr = '';
         if (drug.prescriptionDate) {
             matchTexts.push(drug.prescriptionDate);
+            const matchDate1 = String(drug.prescriptionDate).match(/(\d{2}\/\d{2}\/\d{4})/);
+            if (matchDate1) targetDateStr = matchDate1[1];
+            
+            const matchDate2 = String(drug.prescriptionDate).match(/(\d{4})-(\d{2})-(\d{2})/);
+            if (matchDate2) targetDateStr = `${matchDate2[3]}/${matchDate2[2]}/${matchDate2[1]}`;
+        }
+        
+        if (!targetDateStr) {
+            // Fallback to today's date if prescription date is unparseable or missing
+            const today = new Date();
+            const dd = String(today.getDate()).padStart(2, '0');
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            targetDateStr = `${dd}/${mm}/${today.getFullYear()}`;
+        }
+        
+        if (targetDateStr) {
+            matchTexts.push(targetDateStr);
+            QuyenLog.info(`  📅 Thêm ngày vào matchTexts: ${targetDateStr}`);
         }
 
         comboGridAutoSelect({
@@ -723,14 +940,28 @@ const QuyenInfusionFiller = (function () {
                 QuyenLog.warn('  ⛔ Doctor step cancelled — stale session #' + sessionId);
                 return;
             }
-            startDoctorSelection(function () {
+            startDoctorSelection(function (docSuccess, docErr) {
+                if (!docSuccess) {
+                    QuyenLog.error('  ❌ Doctor selection failed, aborting form fill');
+                    if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                        HIS.FillTracker.block(docErr || 'Không tìm thấy bác sĩ chỉ định');
+                    }
+                    return;
+                }
                 safeSetTimeout(function () {
                     // ★ BUG-01: Check session trước nurse step
                     if (sessionId !== undefined && sessionId !== _fillSessionId) {
                         QuyenLog.warn('  ⛔ Nurse step cancelled — stale session #' + sessionId);
                         return;
                     }
-                    startNurseSelection(function () {
+                    startNurseSelection(function (nurseSuccess, nurseErr) {
+                        if (!nurseSuccess) {
+                            QuyenLog.error('  ❌ Nurse selection failed, aborting form fill');
+                            if (typeof HIS !== 'undefined' && HIS.FillTracker) {
+                                HIS.FillTracker.block(nurseErr || 'Không tìm thấy y tá thực hiện');
+                            }
+                            return;
+                        }
                         QuyenLog.info('__EXT_EMOJI__ Hoàn tất điền form! __EXT_NAME__ __EXT_EMOJI__');
                         showCompletionEffect(_currentDrug ? _currentDrug.name : 'thuốc');
 
@@ -866,7 +1097,7 @@ const QuyenInfusionFiller = (function () {
 
         if (!doctorName) {
             QuyenLog.warn('  ⚠️ Không tìm được tên BS chỉ định');
-            if (onComplete) onComplete();
+            if (onComplete) onComplete(false, 'Không tìm được tên BS chỉ định');
             return;
         }
 
@@ -880,12 +1111,48 @@ const QuyenInfusionFiller = (function () {
         if (!doctorInput) {
             QuyenLog.warn('  ⚠️ Không tìm thấy ô tìm kiếm BS');
             logAllInputs(doc);
-            if (onComplete) onComplete();
+            if (onComplete) onComplete(false, 'Không tìm thấy ô tìm kiếm BS');
             return;
         }
 
-        // Tạo search term: lấy 2-3 từ cuối tên (VD: "Lê Ngọc Đức" → "Ngọc Đức" hoặc "ngọc đức")  
-        const searchTerm = getNameSearchTerm(doctorName);
+        // Kiểm tra xem Y tá đã tự nhập/chọn bác sĩ trước đó chưa
+        let existingValue = doctorInput.value || '';
+        try {
+            let parent = doctorInput.parentElement;
+            let comboText = null;
+            while (parent && parent.tagName !== 'TR' && parent.tagName !== 'BODY') {
+                comboText = parent.querySelector('.combo-text');
+                if (comboText) break;
+                parent = parent.parentElement;
+            }
+            if (!comboText) {
+                let sibling = doctorInput.nextElementSibling;
+                while (sibling) {
+                    if (sibling.classList && sibling.classList.contains('combo')) {
+                        comboText = sibling.querySelector('.combo-text');
+                        if (comboText) break;
+                    }
+                    sibling = sibling.nextElementSibling;
+                }
+            }
+            if (comboText && comboText.value && comboText.value.trim().length > 0) {
+                existingValue = comboText.value;
+            }
+        } catch(e) {}
+
+        if (existingValue && existingValue.trim().length > 0) {
+            const exNorm = existingValue.trim().toLowerCase();
+            const tgNorm = doctorName.trim().toLowerCase();
+            if (exNorm === tgNorm || exNorm.includes(tgNorm) || tgNorm.includes(exNorm)) {
+                QuyenLog.info(`  👨‍⚕️ Ô BS đã có giá trị đúng ("${existingValue}"), giữ nguyên không ghi đè.`);
+                if (onComplete) onComplete(true);
+                return;
+            }
+            QuyenLog.warn(`  ⚠️ Ô BS đang có "${existingValue}" (có thể do form cũ), nhưng BS đúng là "${doctorName}". Bắt buộc ghi đè!`);
+        }
+
+        // Điền TOÀN BỘ tên bác sĩ để tránh nhầm lẫn/trùng lặp (VD: "Trần Thị Ngọc Dung" thay vì chỉ "Ngọc Dung")
+        const searchTerm = doctorName.trim();
 
         comboGridAutoSelect({
             target: 'YTA',
@@ -897,13 +1164,14 @@ const QuyenInfusionFiller = (function () {
             matchTexts: [doctorName],
             label: 'BS chỉ định',
             sessionId: null, // BS không phụ thuộc session fill chính
-            onComplete: function (success) {
+            onComplete: function (success, err) {
                 if (success) {
                     QuyenLog.info(`  ✅ BS chỉ định đã chọn: ${doctorName}`);
+                    if (onComplete) onComplete(true);
                 } else {
-                    QuyenLog.warn(`  ⚠️ Không thể tự động chọn BS: ${doctorName}`);
+                    QuyenLog.error(`  ⚠️ Không thể tự động chọn BS: ${doctorName}. Lỗi: ${err}`);
+                    if (onComplete) onComplete(false, err || 'Không tìm thấy bác sĩ trong danh sách');
                 }
-                if (onComplete) onComplete();
             }
         });
     }
@@ -918,13 +1186,112 @@ const QuyenInfusionFiller = (function () {
         const userName = getLoggedInUserName();
         if (!userName) {
             QuyenLog.warn('  ⚠️ Không tìm thấy tên người dùng');
-            if (onComplete) onComplete();
+            if (onComplete) onComplete(false, 'Không tìm thấy tên người dùng');
             return;
         }
 
         QuyenLog.info(`  👤 Người dùng (Y tá): ${userName}`);
 
-        // ★ ƯU TIÊN 1: Tìm select#cboYT_CHIDINH trong _formRoot trước ★
+        // ★ DEBUG: Log toàn bộ thông tin tìm kiếm Y tá ★
+        QuyenLog.info(`  🔬 DEBUG startNurseSelection: _formDoc=${_formDoc ? 'SET' : 'null'}, _formRoot=${_formRoot ? (_formRoot.tagName + '#' + (_formRoot.id || '?')) : 'null'}, doc===document: ${doc === document}`);
+
+        // ★ ƯU TIÊN 0: Tìm TRỰC TIẾP bằng getElementById — KHÔNG phụ thuộc visibility/CSS ★
+        let nurseInput = null;
+        const directIds = ['txtTKYT_CHIDINH', 'txtTKDD_CHIDINH', 'txtTKTP_CHIDINH'];
+
+        // Collect ALL possible documents
+        const docsToSearch = [];
+        if (doc) docsToSearch.push(doc);
+        if (document && docsToSearch.indexOf(document) === -1) docsToSearch.push(document);
+        if (_formDoc && docsToSearch.indexOf(_formDoc) === -1) docsToSearch.push(_formDoc);
+        try {
+            const allDocs = typeof getAllDocuments === 'function' ? getAllDocuments() : [];
+            for (let dd = 0; dd < allDocs.length; dd++) {
+                if (docsToSearch.indexOf(allDocs[dd]) === -1) docsToSearch.push(allDocs[dd]);
+            }
+        } catch(e) {}
+        QuyenLog.info(`  🔬 DEBUG: Tìm trong ${docsToSearch.length} documents`);
+
+        // Tìm bằng getElementById (tin cậy nhất)
+        for (var di = 0; di < directIds.length && !nurseInput; di++) {
+            for (var dj = 0; dj < docsToSearch.length && !nurseInput; dj++) {
+                try {
+                    var foundEl = docsToSearch[dj].getElementById(directIds[di]);
+                    if (foundEl) {
+                        QuyenLog.info(`  🎯 getElementById TÌM THẤY: #${foundEl.id} (doc[${dj}], offsetWidth=${foundEl.offsetWidth}, offsetHeight=${foundEl.offsetHeight})`);
+                        nurseInput = foundEl;
+                    }
+                } catch(e) {
+                    QuyenLog.warn(`  ⚠️ getElementById lỗi ở doc[${dj}]: ${e.message}`);
+                }
+            }
+        }
+
+        // Nếu getElementById không tìm được → thử querySelector trong _formRoot
+        if (!nurseInput && _formRoot) {
+            try {
+                var qEl = _formRoot.querySelector('#txtTKYT_CHIDINH, input[id*="TKYT" i], input[id*="TKDD" i], input[id*="TKTP" i]');
+                if (qEl) {
+                    QuyenLog.info(`  🎯 querySelector trong _formRoot TÌM THẤY: #${qEl.id}`);
+                    nurseInput = qEl;
+                }
+            } catch(e) {}
+        }
+
+        // Nếu vẫn không tìm được → thử querySelectorAll trên tất cả documents
+        if (!nurseInput) {
+            for (var dk = 0; dk < docsToSearch.length && !nurseInput; dk++) {
+                try {
+                    var allInputs = docsToSearch[dk].querySelectorAll('input[id*="TKYT" i], input[id*="YT_CHIDINH" i]');
+                    QuyenLog.info(`  🔬 DEBUG doc[${dk}]: querySelectorAll('input[id*=TKYT]') found ${allInputs.length} elements`);
+                    for (var ai = 0; ai < allInputs.length; ai++) {
+                        QuyenLog.info(`    → input#${allInputs[ai].id}, type=${allInputs[ai].type}, offsetW=${allInputs[ai].offsetWidth}, display=${window.getComputedStyle(allInputs[ai]).display}`);
+                        if (!nurseInput) nurseInput = allInputs[ai];
+                    }
+                } catch(e) {}
+            }
+        }
+
+        // ★ ƯU TIÊN 1: Tìm ComboGrid input (generic fallback) ★
+        if (!nurseInput) {
+            QuyenLog.info('  🔬 DEBUG: Tất cả cách tìm trực tiếp đều thất bại, thử findComboGridInput...');
+            nurseInput = findComboGridInput(doc, [
+                'txtTKTP', 'TKTP', 'txtTKYT', 'TKYT', 'txtTKDD', 'TKDD',
+                'timYT', 'searchYT', 'timDD', 'searchDD'
+            ], ['y tá', 'điều dưỡng', 'y tá (điều dưỡng)']);
+        }
+
+        QuyenLog.info(`  🔬 DEBUG: Kết quả tìm Y tá input: ${nurseInput ? '#' + nurseInput.id : 'NULL'}`);
+
+
+        if (nurseInput) {
+            QuyenLog.info('  🔎 Tìm thấy ô tìm kiếm Y tá (ComboGrid)');
+            // Điền toàn bộ tên y tá
+            const searchTerm = userName.trim();
+            comboGridAutoSelect({
+                target: 'YTA',
+                doc: doc,
+                inputEl: nurseInput,
+                ma: '',
+                ten: userName,
+                searchTerm: searchTerm,
+                matchTexts: [userName],
+                label: 'Y tá',
+                sessionId: null, // Y tá không có sessionId của fill drug
+                onComplete: function (success, err) {
+                    if (success) {
+                        QuyenLog.info(`  ✅ Y tá đã chọn: ${userName}`);
+                        if (onComplete) onComplete(true);
+                    } else {
+                        QuyenLog.error(`  ⚠️ Không thể tự động chọn Y tá: ${userName}. Lỗi: ${err}`);
+                        if (onComplete) onComplete(false, err || 'Không tìm thấy y tá trong danh sách');
+                    }
+                }
+            });
+            return;
+        }
+
+        // ★ ƯU TIÊN 2: Tìm select#cboYT_CHIDINH trong _formRoot trước (Fallback cho form cũ) ★
         let nurseSelect = null;
         if (_formRoot && _formRoot.querySelector) {
             nurseSelect = _formRoot.querySelector('select#cboYT_CHIDINH, select[id*="cboYT"]');
@@ -982,41 +1349,15 @@ const QuyenInfusionFiller = (function () {
             }
             if (!found) {
                 QuyenLog.warn(`  ⚠️ Không tìm thấy "${userName}" trong dropdown Y tá`);
+                if (onComplete) onComplete(false, 'Không tìm thấy tên y tá trong danh sách dropdown');
+                return;
             }
-            if (onComplete) onComplete();
+            if (onComplete) onComplete(true);
             return;
         }
 
-        // ★ Fallback: ComboGrid input ★
-        const nurseInput = findComboGridInput(doc, [
-            'txtTKTP', 'TKTP', 'txtTKYT', 'TKYT', 'txtTKDD', 'TKDD',
-            'timYT', 'searchYT', 'timDD', 'searchDD'
-        ], ['y tá', 'điều dưỡng', 'y tá (điều dưỡng)']);
-
-        if (!nurseInput) {
-            QuyenLog.warn('  ⚠️ Không tìm thấy ô tìm kiếm Y tá');
-            if (onComplete) onComplete();
-            return;
-        }
-
-        const searchTerm = getNameSearchTerm(userName);
-        comboGridAutoSelect({
-            target: 'YTA',
-            doc: doc,
-            inputEl: nurseInput,
-            ma: '',
-            ten: userName,
-            searchTerm: searchTerm,
-            matchTexts: [userName],
-            label: 'Y tá',
-            sessionId: null, // Y tá không có sessionId của fill drug
-            onComplete: function (success) {
-                if (success) {
-                    QuyenLog.info(`  ✅ Y tá đã chọn: ${userName}`);
-                }
-                if (onComplete) onComplete();
-            }
-        });
+        QuyenLog.warn('  ⚠️ Không tìm thấy ô nhập Y tá (cả ComboGrid và Select)');
+        if (onComplete) onComplete(false, 'Không tìm thấy ô nhập Y tá trên form');
     }
 
     // ==========================================
@@ -1026,14 +1367,73 @@ const QuyenInfusionFiller = (function () {
     function findComboGridInput(doc, idPatterns, labelTexts) {
         doc = doc || _formDoc || document;
 
-        // Cách 1: Tìm theo ID patterns
+        // Ưu tiên 0: Tìm ngay trong form hiện tại (_formRoot) mà không cần quan tâm ẩn/hiện
+        if (typeof _formRoot !== 'undefined' && _formRoot) {
+            for (const p of idPatterns) {
+                const els = _formRoot.querySelectorAll(
+                    `input[id*="${p}" i]:not([type="hidden"]):not([type="button"]):not([type="checkbox"])`
+                );
+                if (els.length > 0) {
+                    QuyenLog.info(`  🔎 Tìm thấy ComboGrid input TRONG FORM GỐC (bỏ qua check ẩn): id="${els[0].id}" (by pattern "${p}")`);
+                    return els[0];
+                }
+            }
+        }
+
+        // Hàm helper kiểm tra xem input CÓ THỰC SỰ NẰM TRÊN FORM ĐANG MỞ KHÔNG (kể cả khi input bị ẩn)
+        function isActiveInput(el) {
+            // Nếu bản thân nó đang hiển thị -> OK
+            if (el.offsetWidth > 0 || el.offsetHeight > 0 || (el.getClientRects && el.getClientRects().length > 0)) {
+                return true;
+            }
+            // Nếu nó bị ẩn, kiểm tra parent của nó (tránh form đã đóng)
+            let parent = el.parentElement;
+            let levels = 0;
+            while (parent && levels < 5) { // Kiểm tra 5 class cha
+                if (parent.offsetWidth > 0 || parent.offsetHeight > 0) {
+                    // Parent đang hiển thị -> Form này đang mở!
+                    // Đảm bảo parent không phải là thẻ vô hình
+                    if (window.getComputedStyle(parent).display !== 'none') {
+                        return true;
+                    }
+                }
+                parent = parent.parentElement;
+                levels++;
+            }
+            return false;
+        }
+
+        // Cách 1: Tìm theo ID patterns trong doc hiện tại
         for (const p of idPatterns) {
-            const el = doc.querySelector(
+            const els = doc.querySelectorAll(
                 `input[id*="${p}" i]:not([type="hidden"]):not([type="button"]):not([type="checkbox"])`
             );
-            if (el) {
-                QuyenLog.info(`  🔎 Tìm thấy ComboGrid input: id="${el.id}" (by pattern "${p}")`);
-                return el;
+            for (let i = 0; i < els.length; i++) {
+                const el = els[i];
+                if (isActiveInput(el)) {
+                    QuyenLog.info(`  🔎 Tìm thấy ComboGrid input: id="${el.id}" (by pattern "${p}")`);
+                    return el;
+                }
+            }
+        }
+
+        // Cách 1.5: Tìm trong TẤT CẢ documents nếu chưa thấy
+        const allDocs = typeof getAllDocuments === 'function' ? getAllDocuments() : [];
+        for (let d = 0; d < allDocs.length; d++) {
+            const sDoc = allDocs[d];
+            for (const p of idPatterns) {
+                try {
+                    const els = sDoc.querySelectorAll(
+                        `input[id*="${p}" i]:not([type="hidden"]):not([type="button"]):not([type="checkbox"])`
+                    );
+                    for (let i = 0; i < els.length; i++) {
+                        const el = els[i];
+                        if (isActiveInput(el)) {
+                            QuyenLog.info(`  🔎 Tìm thấy ComboGrid input trong frame khác: id="${el.id}" (by pattern "${p}")`);
+                            return el;
+                        }
+                    }
+                } catch (e) {}
             }
         }
 
@@ -1376,7 +1776,12 @@ const QuyenInfusionFiller = (function () {
                 // Ưu tiên: tìm span.footer-content-fullname
                 const fullnameEl = searchDoc.querySelector('.footer-content-fullname, [id*="footer-content-fullname"]');
                 if (fullnameEl) {
-                    const name = (fullnameEl.textContent || '').trim();
+                    let name = (fullnameEl.textContent || '').trim();
+                    if (name.includes(' - ')) {
+                        name = name.split(' - ')[0].trim();
+                    } else if (name.includes('-')) {
+                        name = name.split('-')[0].trim();
+                    }
                     if (name.length >= 2 && name.includes(' ')) {
                         QuyenLog.info(`  👤 Tên đăng nhập từ footer: "${name}"`);
                         return name;
@@ -1445,7 +1850,17 @@ const QuyenInfusionFiller = (function () {
      */
     function postToBridge(msg) {
         if (typeof HIS !== 'undefined' && HIS.Message && msg && msg.type) {
-            HIS.Message.send(msg.type, Object.assign({ module: 'infusion' }, msg));
+            let patientCtx = {};
+            try {
+                if (HIS.PatientLock && typeof HIS.PatientLock.getSourceContext === 'function') {
+                    const src = HIS.PatientLock.getSourceContext();
+                    if (src) {
+                        patientCtx.patientSeq = src.seq || src.patientSeq || 0;
+                        patientCtx.khambenhId = src.khambenhId || '';
+                    }
+                }
+            } catch (e) {}
+            HIS.Message.send(msg.type, Object.assign({ module: 'infusion' }, patientCtx, msg));
             return;
         }
         window.postMessage(msg, location.origin);

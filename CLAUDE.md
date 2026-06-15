@@ -1,12 +1,28 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Nurse** (3062 symbols, 5391 relationships, 272 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Nurse** (3204 symbols, 5619 relationships, 285 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
+## Build Workflow (BẮT BUỘC)
+
+> **⚠️ CRITICAL:** Code nguồn nằm trong `src/`, nhưng Chrome Extension load từ `dist/Nurse/`. Mọi thay đổi trong `src/` sẽ **KHÔNG CÓ HIỆU LỰC** cho đến khi chạy build.
+
+Sau **MỖI LẦN** sửa file trong `src/`, agent **PHẢI** chạy:
+
+```bash
+node build/build.js nurse
+```
+
+Quy trình đầy đủ để thay đổi có hiệu lực:
+1. Sửa code trong `src/`
+2. Chạy `node build/build.js nurse` để copy sang `dist/Nurse/`
+3. Hướng dẫn user: Reload tiện ích trong `chrome://extensions` + F5 trang HIS
+
 ## Always Do
 
+- **MUST run `node build/build.js nurse` after ANY code change in `src/`.** The extension loads from `dist/Nurse/`, not `src/`. Forgetting this step means your changes have ZERO effect.
 - **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
 - **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
@@ -15,6 +31,7 @@ This project is indexed by GitNexus as **Nurse** (3062 symbols, 5391 relationshi
 
 ## Never Do
 
+- NEVER forget to run `node build/build.js nurse` after editing files in `src/`. This is the #1 cause of "code changes not working".
 - NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
 - NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
@@ -41,3 +58,4 @@ This project is indexed by GitNexus as **Nurse** (3062 symbols, 5391 relationshi
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
