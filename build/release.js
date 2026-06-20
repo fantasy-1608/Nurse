@@ -26,7 +26,7 @@ fs.mkdirSync(distZipDir, { recursive: true });
 // 3. Đóng gói zip
 console.log('\n📦 [2/2] Đóng gói Nurse...');
 execSync(
-    `cd dist/Nurse && zip -r "../../dist-zip/Nurse-v${version}.zip" . -x "*.DS_Store"`,
+    `cd dist/Nurse && zip -r "../../dist-zip/Nurse-v${version}.zip" . -x "*.DS_Store" "docs/*"`,
     { stdio: 'inherit', cwd: path.join(__dirname, '..') }
 );
 

@@ -5,7 +5,6 @@
     "description": "__EXT_DESC__",
     "author": "Huỳnh Trung Anh",
     "permissions": [
-        "activeTab",
         "storage"
     ],
     "background": {

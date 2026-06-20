@@ -38,7 +38,7 @@ function assertNoText(relPath, needles) {
 
 function assertManifestHardening(manifest, label) {
     assert.strictEqual(manifest.manifest_version, 3, label + ' must be MV3');
-    assert.deepStrictEqual(manifest.permissions.slice().sort(), ['activeTab', 'storage'], label + ' permissions must stay minimal');
+    assert.deepStrictEqual(manifest.permissions.slice().sort(), ['storage'], label + ' permissions must stay minimal');
     assert.deepStrictEqual(manifest.host_permissions, ['*://*.vncare.vn/*'], label + ' host permission must stay VNPT HIS only');
     assert(!manifest.optional_host_permissions || manifest.optional_host_permissions.length === 0, label + ' must not request optional hosts');
     assert(manifest.action && manifest.action.default_popup, label + ' must define extension action popup');
@@ -148,6 +148,10 @@ assertManifestHardening(readJson('src/manifest.json'), 'source manifest');
 assertNoExternalRuntimeUrls('src');
 assertNoLegacyRuntimeStorage('src');
 assertNoText('src/content/content.js', ['quyen_error_log']);
+assertNoText('src/injected/his-bridge.js', [
+    "position:fixed;top:0;left:0;width:100%;height:100%",
+    'quyen-role-blocker-modal.style'
+]);
 assertNoText('src/content/ui-panel.js', ['localStorage.setItem(\'quyen_stats\'', 'localStorage.getItem(\'quyen_stats\'']);
 assertNoText('src/popup/popup.js', ['quyen_error_log']);
 assert(!fs.existsSync(path.join(root, 'src/shared/crypto.js')), 'unused crypto/API-key module must not ship');

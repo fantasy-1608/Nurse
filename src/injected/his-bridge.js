@@ -2037,7 +2037,8 @@
             if (!overlay) {
                 overlay = doc.createElement('div');
                 overlay.id = 'quyen-bridge-loading';
-                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:bold;color:#e91e63;font-size:16px;pointer-events:none;transition:opacity 0.2s;';
+                // Non-blocking status chip: never cover or intercept the HIS workspace.
+                overlay.style.cssText = 'position:fixed;right:20px;bottom:20px;max-width:min(360px,calc(100vw - 40px));z-index:99999;display:flex;align-items:center;gap:8px;font-weight:bold;color:#e91e63;font-size:13px;pointer-events:none;transition:opacity 0.2s;';
                 if (!doc.getElementById('quyen-spin-style')) {
                     var style = doc.createElement('style');
                     style.id = 'quyen-spin-style';
@@ -2046,7 +2047,7 @@
                 }
                 doc.body.appendChild(overlay);
             }
-            overlay.innerHTML = '<span style="display:inline-block;animation:quyen-spin 1s linear infinite;margin-bottom:8px;font-size:32px;">⏳</span><div style="background:#fff;padding:6px 16px;border-radius:20px;box-shadow:0 4px 12px rgba(0,0,0,0.15);border:1px solid #f8bbd0;">' + msg + '</div>';
+            overlay.innerHTML = '<span style="display:inline-block;animation:quyen-spin 1s linear infinite;font-size:20px;">⏳</span><div style="background:#fff;padding:6px 12px;border-radius:20px;box-shadow:0 4px 12px rgba(0,0,0,0.15);border:1px solid #f8bbd0;">' + msg + '</div>';
         }
 
         function hideBridgeLoading(doc) {
