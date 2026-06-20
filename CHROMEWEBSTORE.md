@@ -72,6 +72,7 @@ Tiện ích xử lý nội dung trang và thông tin sức khỏe đang hiển t
 
 ### Chrome Web Store disclosure guidance
 
+- Personally identifiable information: patient name and record identifiers are handled transiently and locally for patient-context verification; raw identifiers are not transmitted to the developer or third parties.
 - Health information: handled locally for core functionality; not transmitted off-device by the extension.
 - Website content: handled locally on `vncare.vn`; not transmitted to the developer or third parties.
 - User activity: local audit and performance events only; identifiers are redacted or pseudonymized.
