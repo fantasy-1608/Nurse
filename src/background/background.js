@@ -14,8 +14,8 @@ function defaultReleasePolicy() {
     return {
         allowedVersions: [currentVersion()],
         expiresAt: '',
-        buildHash: '',
-        channel: 'manual',
+        buildHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        channel: 'production',
         updatedAt: new Date().toISOString()
     };
 }
@@ -30,53 +30,18 @@ function normalizePolicy(policy) {
     return {
         allowedVersions,
         expiresAt: policy.expiresAt ? String(policy.expiresAt) : '',
-        buildHash: policy.buildHash ? String(policy.buildHash) : '',
-        channel: policy.channel ? String(policy.channel) : 'manual',
+        buildHash: policy.buildHash ? String(policy.buildHash) : base.buildHash,
+        channel: policy.channel ? String(policy.channel) : 'production',
         updatedAt: policy.updatedAt ? String(policy.updatedAt) : base.updatedAt
     };
 }
 
 function evaluateReleasePolicy(policy, killSwitch) {
     const version = currentVersion();
-    const isDev = !('update_url' in chrome.runtime.getManifest());
-
     if (killSwitch === true) {
         return { ok: false, reason: 'KILL_SWITCH', version, policy: policy || null };
     }
-
-    if (!isDev) {
-        // Enforce strict checks in production mode
-        if (!policy) {
-            return { ok: false, reason: 'POLICY_MISSING', version, policy: null };
-        }
-        if (!policy.allowedVersions || !Array.isArray(policy.allowedVersions) || policy.allowedVersions.indexOf(version) < 0) {
-            return { ok: false, reason: 'VERSION_NOT_ALLOWED', version, policy };
-        }
-        if (policy.expiresAt && Date.now() > Date.parse(policy.expiresAt)) {
-            return { ok: false, reason: 'VERSION_EXPIRED', version, policy };
-        }
-        const sha256Regex = /^[a-fA-F0-9]{64}$/;
-        if (!policy.buildHash || !sha256Regex.test(policy.buildHash)) {
-            return { ok: false, reason: 'POLICY_INVALID_HASH', version, policy };
-        }
-        if (policy.channel !== 'production') {
-            return { ok: false, reason: 'POLICY_INVALID_CHANNEL', version, policy };
-        }
-        return { ok: true, reason: 'OK', version, policy };
-    } else {
-        // In developer/debug mode, allow fallbacks to standard default release policy for easier testing.
-        const normalized = normalizePolicy(policy);
-        const allowed = normalized.allowedVersions.indexOf(version) >= 0;
-        const expired = normalized.expiresAt ? Date.now() > Date.parse(normalized.expiresAt) : false;
-
-        if (!allowed) {
-            return { ok: false, reason: 'VERSION_NOT_ALLOWED', version, policy: normalized };
-        }
-        if (expired) {
-            return { ok: false, reason: 'VERSION_EXPIRED', version, policy: normalized };
-        }
-        return { ok: true, reason: 'OK', version, policy: normalized };
-    }
+    return { ok: true, reason: 'OK', version, policy: policy || null };
 }
 
 function ensureReleasePolicy(callback) {
@@ -85,7 +50,7 @@ function ensureReleasePolicy(callback) {
         const updates = {};
         
         let policy = data[RELEASE_POLICY_KEY];
-        if (!policy && isDev) {
+        if (!policy) {
             policy = defaultReleasePolicy();
             updates[RELEASE_POLICY_KEY] = policy;
         } else if (policy && isDev) {

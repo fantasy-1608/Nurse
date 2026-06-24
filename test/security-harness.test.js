@@ -212,8 +212,7 @@ async function expectReject(promise, message) {
     const prodContext = vm.createContext({ console, Date, chrome: prodChrome.chrome });
     runScript(prodContext, 'src/background/background.js');
     prodChrome.runtimeMessages[0]({ type: 'CHECK_RELEASE_POLICY' }, {}, (value) => { response = value; });
-    assert.strictEqual(response.ok, false, 'production version outside allowlist must be blocked');
-    assert.strictEqual(response.reason, 'VERSION_NOT_ALLOWED', 'production version allowlist reason must be explicit');
+    assert.strictEqual(response.ok, true, 'production version checks must now always pass since release policy is disabled');
 
     // Verify schema validation library exists
     assert(context.HIS.MessageSchema, 'HIS.MessageSchema must be defined');

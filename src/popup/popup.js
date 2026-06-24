@@ -210,26 +210,20 @@ function reasonLabel(reason) {
     const labels = {
         OK: 'Được phép chạy',
         KILL_SWITCH: 'Đã khóa khẩn cấp',
-        VERSION_NOT_ALLOWED: 'Version không nằm trong allowlist',
-        VERSION_EXPIRED: 'Version đã hết hạn'
+        VERSION_NOT_ALLOWED: 'Phiên bản không nằm trong allowlist',
+        VERSION_EXPIRED: 'Phiên bản đã hết hạn hoạt động',
+        POLICY_MISSING: 'Thiếu chính sách cấu hình (Giấy phép)',
+        POLICY_INVALID_HASH: 'Mã hash bản dựng không hợp lệ',
+        POLICY_INVALID_CHANNEL: 'Kênh phát hành không hợp lệ'
     };
     return labels[reason] || reason || 'Không rõ';
 }
 
 function showReleaseStatus() {
     const statusEl = document.getElementById('release-status');
-    if (!statusEl) return;
-
-    chrome.runtime.sendMessage({ type: 'CHECK_RELEASE_POLICY' }, function (status) {
-        if (chrome.runtime.lastError || !status) {
-            statusEl.textContent = 'Không đọc được release policy';
-            statusEl.className = 'release-status release-status-warn';
-            return;
-        }
-        const hash = status.policy && status.policy.buildHash ? ' · hash ' + status.policy.buildHash.substring(0, 12) : '';
-        statusEl.textContent = 'v' + status.version + ' · ' + reasonLabel(status.reason) + hash;
-        statusEl.className = status.ok ? 'release-status release-status-ok' : 'release-status release-status-block';
-    });
+    if (statusEl) {
+        statusEl.style.display = 'none';
+    }
 }
 
 function setupKillSwitch() {

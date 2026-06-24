@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.10] - 2026-06-24
+
+### Changed
+
+- Loại bỏ hoàn toàn cơ chế xác thực chính sách phát hành (Release Policy / Giấy phép hoạt động) cục bộ trong runtime để thân thiện với phân phối diện rộng trên Chrome Web Store.
+- Ẩn nhãn hiển thị trạng thái giấy phép trên giao diện popup.
+- Cập nhật test suite để tương thích với cơ chế chạy mặc định (Default-Allow).
+
 ## [1.3.6] - 2026-06-09
 
 ### Added

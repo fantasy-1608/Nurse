@@ -40,7 +40,7 @@ fs.writeFileSync(path.join(distZipDir, 'sha256.txt'), shaLines.join('\n') + '\n'
 
 const policy = {
     generatedAt: new Date().toISOString(),
-    channel: 'manual',
+    channel: 'production',
     version,
     packages: zipFiles.map((file, index) => ({
         file,
