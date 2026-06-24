@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.11] - 2026-06-24
+
+### Changed
+
+- Dọn dẹp hoàn toàn tàn dư của cơ chế chính sách phát hành (Release Policy).
+- Loại bỏ việc tạo file cấu hình `release-policy.json` và `sha256.txt` trong thư mục đóng gói `dist-zip/`.
+- Cập nhật test release gate để tương thích với cấu trúc đóng gói tối giản (chỉ chứa file zip tiện ích).
+
 ## [1.3.10] - 2026-06-24
 
 ### Changed

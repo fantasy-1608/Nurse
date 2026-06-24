@@ -36,22 +36,6 @@ const shaLines = zipFiles.map((file) => {
     const hash = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
     return `${hash}  ${file}`;
 });
-fs.writeFileSync(path.join(distZipDir, 'sha256.txt'), shaLines.join('\n') + '\n');
-
-const policy = {
-    generatedAt: new Date().toISOString(),
-    channel: 'production',
-    version,
-    packages: zipFiles.map((file, index) => ({
-        file,
-        sha256: shaLines[index].split('  ')[0],
-        allowedVersions: [version],
-        expiresAt: '',
-        storageKey: 'quyen_release_policy'
-    })),
-    installNote: 'Nhập đúng sha256 của gói đã cài vào quyen_release_policy.buildHash trên máy pilot/toàn viện.'
-};
-fs.writeFileSync(path.join(distZipDir, 'release-policy.json'), JSON.stringify(policy, null, 2) + '\n');
 
 // Update static CSV evidence files dynamically with the new hashes and version
 const nurseHash = shaLines[0].split('  ')[0];
@@ -145,7 +129,4 @@ updateCsvFile('rollout-inventory.csv', (row) => {
 
 console.log('\n' + '='.repeat(50));
 console.log(`\n✅ Hoàn tất! File zip nằm tại thư mục dist-zip/:`);
-console.log(`   📁 Nurse-v${version}.zip`);
-console.log(`   🔐 sha256.txt`);
-console.log(`   🔐 release-policy.json`);
-console.log(`\n💡 Kiểm hash theo sha256.txt và lưu buildHash vào release policy cục bộ khi pilot/toàn viện.\n`);
+console.log(`   📁 Nurse-v${version}.zip\n`);
